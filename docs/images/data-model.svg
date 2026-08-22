@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="620" fill="#ffffff"/>
+
+  <text x="40" y="28" font-size="14" font-weight="700" fill="#0f172a">wellisearch data model — Postgres 18 (pgvector · pg_trgm)</text>
+
+  <!-- pages -->
+  <rect x="40" y="50" width="270" height="30" fill="#1e3a8a"/>
+  <text x="175" y="70" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">pages</text>
+  <rect x="40" y="80" width="270" height="260" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="52" y="99" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="80" y="99" font-size="11.5" fill="#0f172a">url (TEXT, unique)</text>
+  <text x="80" y="119" font-size="11.5" fill="#334155">title</text>
+  <text x="80" y="139" font-size="11.5" fill="#334155">domain</text>
+  <text x="80" y="159" font-size="11.5" fill="#334155">fit_markdown (TEXT)</text>
+  <text x="80" y="179" font-size="11.5" fill="#334155">content_hash (sha256)</text>
+  <text x="80" y="199" font-size="11.5" fill="#334155">embedding_model</text>
+  <text x="80" y="219" font-size="11.5" fill="#334155">first_seen · last_crawled</text>
+  <text x="80" y="239" font-size="11.5" fill="#334155">last_status · crawl_count</text>
+  <text x="80" y="259" font-size="11.5" fill="#334155">fetch_count</text>
+  <text x="80" y="279" font-size="11.5" fill="#334155">search_hit_count</text>
+  <text x="80" y="299" font-size="11.5" fill="#334155">disabled (bool)</text>
+  <text x="80" y="322" font-size="10.5" fill="#94a3b8">fetch_count = prominence prior + watchlist</text>
+
+  <!-- chunks -->
+  <rect x="40" y="400" width="270" height="30" fill="#1e3a8a"/>
+  <text x="175" y="420" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">chunks</text>
+  <rect x="40" y="430" width="270" height="150" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="52" y="449" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="80" y="449" font-size="11.5" fill="#0f172a">id (BIGSERIAL)</text>
+  <text x="52" y="469" font-size="11" fill="#1d4ed8" font-weight="700">FK</text><text x="80" y="469" font-size="11.5" fill="#334155">url → pages.url (CASCADE)</text>
+  <text x="80" y="489" font-size="11.5" fill="#334155">seq (position)</text>
+  <text x="80" y="509" font-size="11.5" fill="#334155">text (chunk body)</text>
+  <text x="80" y="529" font-size="11.5" fill="#334155">tsv (GENERATED tsvector)</text>
+  <text x="80" y="549" font-size="11.5" fill="#334155">embedding (vector 384)</text>
+  <text x="80" y="572" font-size="10.5" fill="#94a3b8">UQ (url, seq) · GIN on tsv</text>
+
+  <!-- 1:N -->
+  <line x1="175" y1="340" x2="175" y2="398" stroke="#64748b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="185" y="374" font-size="11" fill="#475569">1 : N</text>
+
+  <!-- crawl_queue -->
+  <rect x="380" y="50" width="270" height="30" fill="#0f766e"/>
+  <text x="515" y="70" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">crawl_queue</text>
+  <rect x="380" y="80" width="270" height="150" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="392" y="99" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="420" y="99" font-size="11.5" fill="#0f172a">id (BIGSERIAL)</text>
+  <text x="420" y="119" font-size="11.5" fill="#334155">url</text>
+  <text x="420" y="139" font-size="11.5" fill="#334155">source (search|manual)</text>
+  <text x="420" y="159" font-size="11.5" fill="#334155">enqueued_at</text>
+  <text x="420" y="179" font-size="11.5" fill="#334155">attempts (≤3)</text>
+  <text x="420" y="199" font-size="11.5" fill="#334155">last_error</text>
+  <text x="420" y="219" font-size="11.5" fill="#334155">status (pending|in_flight|done|failed)</text>
+  <text x="420" y="242" font-size="10.5" fill="#94a3b8">partial UQ url WHERE pending/in_flight</text>
+
+  <!-- crawl_log -->
+  <rect x="380" y="290" width="270" height="30" fill="#0f766e"/>
+  <text x="515" y="310" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">crawl_log</text>
+  <rect x="380" y="320" width="270" height="170" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="392" y="339" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="420" y="339" font-size="11.5" fill="#0f172a">id (BIGSERIAL)</text>
+  <text x="420" y="359" font-size="11.5" fill="#334155">ts</text>
+  <text x="420" y="379" font-size="11.5" fill="#334155">url</text>
+  <text x="420" y="399" font-size="11.5" fill="#334155">trigger (search|manual|refresh|fetch)</text>
+  <text x="420" y="419" font-size="11.5" fill="#334155">status (ok|unchanged|error)</text>
+  <text x="420" y="439" font-size="11.5" fill="#334155">ms</text>
+  <text x="420" y="459" font-size="11.5" fill="#334155">chunks_written</text>
+  <text x="420" y="479" font-size="11.5" fill="#334155">detail</text>
+
+  <!-- dashed relations to pages -->
+  <line x1="380" y1="120" x2="312" y2="120" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+  <text x="318" y="112" font-size="10.5" fill="#64748b">queues a crawl of</text>
+  <line x1="380" y1="400" x2="312" y2="300" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+  <text x="318" y="352" font-size="10.5" fill="#64748b">records a crawl of</text>
+
+  <!-- search_log -->
+  <rect x="720" y="50" width="270" height="30" fill="#7c3aed"/>
+  <text x="855" y="70" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">search_log</text>
+  <rect x="720" y="80" width="270" height="130" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="732" y="99" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="760" y="99" font-size="11.5" fill="#0f172a">id (BIGSERIAL)</text>
+  <text x="760" y="119" font-size="11.5" fill="#334155">ts</text>
+  <text x="760" y="139" font-size="11.5" fill="#334155">query</text>
+  <text x="760" y="159" font-size="11.5" fill="#334155">source (local|tavily|brave|searxng|error)</text>
+  <text x="760" y="179" font-size="11.5" fill="#334155">local_hits</text>
+  <text x="760" y="199" font-size="11.5" fill="#334155">results (jsonb)</text>
+
+  <!-- provider_quota -->
+  <rect x="720" y="250" width="270" height="30" fill="#b45309"/>
+  <text x="855" y="270" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">provider_quota</text>
+  <rect x="720" y="280" width="270" height="110" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="732" y="299" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="760" y="299" font-size="11.5" fill="#0f172a">provider</text>
+  <text x="732" y="319" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="760" y="319" font-size="11.5" fill="#0f172a">month (YYYY-MM)</text>
+  <text x="760" y="339" font-size="11.5" fill="#334155">used (int)</text>
+  <text x="760" y="359" font-size="11.5" fill="#334155">quota_limit (NULL = unlimited)</text>
+  <text x="760" y="382" font-size="10.5" fill="#94a3b8">monthly ledger, rolled over on new month</text>
+
+  <!-- provider_state -->
+  <rect x="720" y="420" width="270" height="30" fill="#b45309"/>
+  <text x="855" y="440" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffffff">provider_state</text>
+  <rect x="720" y="450" width="270" height="150" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="732" y="469" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="760" y="469" font-size="11.5" fill="#0f172a">provider</text>
+  <text x="760" y="489" font-size="11.5" fill="#334155">enabled (bool)</text>
+  <text x="760" y="509" font-size="11.5" fill="#334155">limit_override</text>
+  <text x="760" y="529" font-size="11.5" fill="#334155">last_served (ts)</text>
+  <text x="760" y="549" font-size="11.5" fill="#334155">last_error</text>
+  <text x="760" y="569" font-size="11.5" fill="#334155">updated_at</text>
+
+  <!-- quota <-> state -->
+  <line x1="855" y1="390" x2="855" y2="418" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="865" y1="420" x2="865" y2="392" stroke="#64748b" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <text x="875" y="408" font-size="10.5" fill="#64748b">gateway reads both per attempt</text>
+</svg>
