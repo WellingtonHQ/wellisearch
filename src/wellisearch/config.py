@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # --- search ---
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
-    SEARCH_MIN_SCORE: float = 0.2
+    SEARCH_MIN_SCORE: float = 0.12
     STALE_HOURS: int = 72
     MAX_CHUNK_TOKENS: int = 800
 
