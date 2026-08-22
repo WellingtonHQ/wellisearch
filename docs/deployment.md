@@ -43,7 +43,7 @@ docker compose -f compose.yml logs -f wellisearch
 
 `db.startup` (§11, cross-project) does, in order:
 
-1. **Retry-connect** to the admin DB (`POSTGRES_ADMIN_DB`, default `shared`)
+1. **Retry-connect** to the admin DB (`POSTGRES_ADMIN_DB`, default `postgres`)
    — up to `STARTUP_RETRIES` (10) × `STARTUP_RETRY_S` (3 s).
 2. **Idempotently `CREATE DATABASE`** the app DB (`POSTGRES_DB`, default
    `wellisearch`) if it doesn't exist. The identifier is quote-escaped.
@@ -68,7 +68,7 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 | `POSTGRES_USER` | `wellington` | |
 | `POSTGRES_PASSWORD` | `change-me` | **set this** |
 | `POSTGRES_DB` | `wellisearch` | app DB (self-created) |
-| `POSTGRES_ADMIN_DB` | `shared` | maintenance DB used only to self-create the app DB |
+| `POSTGRES_ADMIN_DB` | `postgres` | maintenance DB used only to self-create the app DB |
 
 ### Crawl4AI
 | Var | Default | Notes |

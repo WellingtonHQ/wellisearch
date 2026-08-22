@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "change-me"
     POSTGRES_DB: str = "wellisearch"
     # Admin/maintenance DB used only to self-create the app DB at startup (§11).
-    POSTGRES_ADMIN_DB: str = "shared"
+    POSTGRES_ADMIN_DB: str = "postgres"
 
     # --- crawl4ai (the single crawling path) ---
     CRAWL4AI_URL: str = "http://crawl4ai:11235"

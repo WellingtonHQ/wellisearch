@@ -13,14 +13,14 @@ talking to **three external services**:
 
 | Dependency | Role | Config |
 |---|---|---|
-| shared Postgres 18 | index, logs, queue, quota ledger, ranking function | `POSTGRES_*` (defaults host `postgres`, db `wellisearch`, admin db `shared`) |
+| shared Postgres 18 | index, logs, queue, quota ledger, ranking function | `POSTGRES_*` (defaults host `postgres`, db `wellisearch`, admin db `postgres`) |
 | Crawl4AI server | the only crawling path (`POST /md` → fit markdown) | `CRAWL4AI_URL` (default `http://crawl4ai:11235`), `CRAWL4AI_API_KEY` |
 | search providers | fallback web search, ordered failover | `SEARCH_PROVIDERS`, `TAVILY_API_KEY`, `BRAVE_API_KEY`, `SEARXNG_URL` |
 
 All three are reachable via the shared Docker network (hostnames `postgres`,
 `crawl4ai`, `searxng`). Postgres is **shared infrastructure outside this
 repo** — wellisearch self-creates its app database at startup
-(`POSTGRES_ADMIN_DB`, default `shared`) and applies `schema.sql` idempotently.
+(`POSTGRES_ADMIN_DB`, default `postgres`) and applies `schema.sql` idempotently.
 
 ## Process model
 
