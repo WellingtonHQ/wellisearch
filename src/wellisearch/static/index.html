@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wellisearch</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --dim: #8b949e; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+           border-bottom: 1px solid var(--border); background: var(--panel);
+           position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; }
+  .pill { padding: 1px 8px; border-radius: 10px; font-size: 12px; border: 1px solid var(--border); }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.bad { color: var(--bad); border-color: var(--bad); }
+  .pill.warn { color: var(--warn); border-color: var(--warn); }
+  main { padding: 12px 16px 60px; max-width: 1280px; margin: 0 auto; }
+  section { margin-bottom: 22px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+       color: var(--dim); margin: 0 0 8px; }
+  .grid { display: grid; gap: 10px; }
+  .grid.c4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--border);
+          border-radius: 8px; padding: 10px 12px; }
+  .card .big { font-size: 22px; margin: 2px 0; }
+  .card .sub { color: var(--dim); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--dim); font-weight: normal; white-space: nowrap; }
+  td.num, th.num { text-align: right; }
+  .bar { height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; min-width: 80px; }
+  .bar > div { height: 100%; background: var(--accent); }
+  .bar > div.over { background: var(--bad); }
+  button { background: #21262d; color: var(--text); border: 1px solid var(--border);
+           border-radius: 6px; padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+  button:hover { border-color: var(--accent); }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  button.on { border-color: var(--ok); color: var(--ok); }
+  input, select { background: #0d1117; color: var(--text); border: 1px solid var(--border);
+          border-radius: 6px; padding: 3px 8px; font: inherit; font-size: 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .muted { color: var(--dim); }
+  .err { color: var(--bad); }
+  .ok { color: var(--ok); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .tag { font-size: 11px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--border); }
+  .tag.local { border-color: var(--ok); color: var(--ok); }
+  .tag.provider { border-color: var(--accent); color: var(--accent); }
+  #toast { position: fixed; bottom: 16px; right: 16px; background: var(--panel);
+           border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;
+           opacity: 0; transition: opacity .3s; z-index: 10; max-width: 420px; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>wellisearch</h1>
+  <span id="health" class="pill">…</span>
+  <span class="muted" id="updated"></span>
+  <span style="flex:1"></span>
+  <span id="authbox" class="row" style="display:none">
+    <input id="apikey" type="password" placeholder="API key" style="width:160px">
+    <button onclick="saveKey()">save key</button>
+  </span>
+</header>
+<main>
+
+<section>
+  <h2>Now</h2>
+  <div class="grid c4" id="now"></div>
+</section>
+
+<section>
+  <h2>Actions</h2>
+  <div class="card row">
+    <input id="seed-url" placeholder="seed url — https://…" style="flex:1;min-width:200px">
+    <button onclick="doSeed()">seed + kick</button>
+    <span class="muted">|</span>
+    <input id="refresh-url" placeholder="refresh url" style="flex:1;min-width:200px">
+    <button onclick="doRefresh()">refresh now</button>
+  </div>
+</section>
+
+<section>
+  <h2>Providers &amp; quota (this month)</h2>
+  <div class="card">
+    <table id="providers">
+      <thead><tr>
+        <th>provider</th><th>status</th><th class="num">quota used</th>
+        <th>usage</th><th class="num">limit (runtime override)</th>
+        <th>last served</th><th>last error</th><th>actions</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Search trends (by source)</h2>
+  <div class="grid c4" id="trends"></div>
+</section>
+
+<section>
+  <h2>Index</h2>
+  <div class="grid c4">
+    <div class="card"><div class="sub">pages / chunks</div><div class="big" id="idx-size">—</div></div>
+    <div class="card"><div class="sub">crawl queue</div><div class="big" id="queue-depth">—</div><div class="sub" id="queue-oldest"></div></div>
+    <div class="card"><div class="sub">freshness</div><div class="row" id="fresh" style="gap:12px;margin-top:6px"></div></div>
+    <div class="card"><div class="sub">crawls 30d</div><div class="row" id="crawls30" style="gap:12px;margin-top:6px"></div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Top pages by fetch_count</h2>
+  <div class="card"><table id="top-fetch"><thead><tr>
+    <th>url</th><th>title</th><th class="num">fetches</th><th class="num">search hits</th>
+    <th>last crawled</th><th>status</th><th>actions</th>
+  </tr></thead><tbody></tbody></table></div>
+</section>
+
+<section>
+  <h2>Top pages by search_hit_count</h2>
+  <div class="card"><table id="top-hits"><thead><tr>
+    <th>url</th><th>title</th><th class="num">search hits</th><th class="num">fetches</th>
+    <th>last crawled</th><th>status</th><th>actions</th>
+  </tr></thead><tbody></tbody></table></div>
+</section>
+
+<section>
+  <h2>Recent crawls</h2>
+  <div class="card"><table id="recent-crawls"><thead><tr>
+    <th>time</th><th>url</th><th>trigger</th><th>status</th><th class="num">ms</th><th class="num">chunks</th><th>detail</th>
+  </tr></thead><tbody></tbody></table></div>
+</section>
+
+<section>
+  <h2>Recent searches</h2>
+  <div class="card"><table id="recent-searches"><thead><tr>
+    <th>time</th><th>query</th><th>source</th><th class="num">local hits</th><th>results</th>
+  </tr></thead><tbody></tbody></table></div>
+</section>
+
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({
+  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const age = (iso) => {
+  if (!iso) return "—";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return Math.round(s) + "s";
+  if (s < 3600) return Math.round(s/60) + "m";
+  if (s < 86400) return Math.round(s/3600) + "h";
+  return Math.round(s/86400) + "d";
+};
+const ts = (iso) => iso ? new Date(iso).toLocaleTimeString() : "—";
+
+async function api(path, opts = {}) {
+  const key = localStorage.getItem("wkey") || "";
+  const headers = { ...(opts.headers || {}) };
+  if (opts.body && typeof opts.body === "object" && !(opts.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(opts.body);
+  }
+  if (key) headers["Authorization"] = "Bearer " + key;
+  const r = await fetch(path, opts);
+  if (r.status === 401) {
+    localStorage.removeItem("wkey");
+    $("#authbox").style.display = "flex";
+    throw new Error("401 unauthorized");
+  }
+  let data;
+  try { data = await r.json(); } catch { data = { raw: await r.text() }; }
+  if (!r.ok) throw new Error(data?.error || r.status + " " + r.statusText);
+  return data;
+}
+
+function toast(msg, ok = true) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = ok ? "show" : "show err";
+  setTimeout(() => t.className = "", 4000);
+}
+function saveKey() {
+  localStorage.setItem("wkey", $("#apikey").value.trim());
+  toast("key saved");
+  refresh();
+}
+
+// ---------------------------------------------------------------- actions
+async function doSeed() {
+  const url = $("#seed-url").value.trim();
+  if (!url) return;
+  try { await api("/api/seed", { method: "POST", body: { url } }); toast("seeded " + url); }
+  catch (e) { toast(e.message, false); }
+}
+async function doRefresh() {
+  const url = $("#refresh-url").value.trim();
+  if (!url) return;
+  try { const r = await api("/api/refresh", { method: "POST", body: { url } });
+        toast(`refreshed: ${r.status} (${r.ms}ms)`); }
+  catch (e) { toast(e.message, false); }
+}
+async function togglePage(url, disabled) {
+  try { await api("/api/pages/" + encodeURIComponent(url), { method: "PATCH", body: { disabled } });
+        toast("page " + (disabled ? "disabled" : "enabled")); refresh(); }
+  catch (e) { toast(e.message, false); }
+}
+async function delPage(url) {
+  if (!confirm("Delete " + url + " from the index?")) return;
+  try { await api("/api/pages/" + encodeURIComponent(url), { method: "DELETE" });
+        toast("deleted"); refresh(); }
+  catch (e) { toast(e.message, false); }
+}
+async function setProvider(name, enabled) {
+  try { await api("/api/providers/" + name, { method: "PATCH", body: { enabled } });
+        toast(name + (enabled ? " enabled" : " disabled")); refresh(); }
+  catch (e) { toast(e.message, false); }
+}
+async function setLimit(name, input) {
+  const v = input.value === "" ? null : parseInt(input.value, 10);
+  if (Number.isNaN(v)) return;
+  try { await api("/api/providers/" + name, { method: "PATCH", body: { limit: v } });
+        toast(name + " limit " + (v ?? "default")); refresh(); }
+  catch (e) { toast(e.message, false); }
+}
+
+// ------------------------------------------------------------------ panels
+function renderNow(st) {
+  const rt = st.runtime || {};
+  const w = rt.worker || {};
+  const inFlight = rt.in_flight_crawls || [];
+  const q = st.crawl_queue || {};
+  const ls = st.last_search;
+  const cards = [
+    {
+      sub: "worker",
+      big: w.last_tick_at ? "tick " + age(w.last_tick_at) + " ago" : "no tick yet",
+      html: w.last_tick_stats
+        ? `<div class="sub">last: queue=${w.last_tick_stats.queue?.processed ?? 0} refreshed=${w.last_tick_stats.refresh?.refreshed ?? 0} in ${w.last_tick_stats.ms}ms</div>`
+        : "",
+    },
+    {
+      sub: "in-flight crawls",
+      big: inFlight.length ? inFlight.length : "0",
+      html: inFlight.map(u => `<div class="sub" title="${esc(u)}">${esc(u)}</div>`).join(""),
+    },
+    {
+      sub: "crawl queue",
+      big: `${q.pending ?? 0} pending / ${q.in_flight ?? 0} in flight`,
+      html: `<div class="sub">done=${q.done ?? 0} failed=${q.failed ?? 0}${q.oldest_pending ? " · oldest pending " + age(q.oldest_pending) : ""}</div>`,
+    },
+    {
+      sub: "last search",
+      big: ls ? `<span class="tag ${ls.source === "local" ? "local" : "provider"}">${esc(ls.source)}</span>` : "—",
+      html: ls
+        ? `<div class="sub" title="${esc(ls.query)}">${esc(ls.query)}</div><div class="sub">local hits: ${ls.local_hits ?? 0} · ${age(ls.ts)} ago</div>`
+        : `<div class="sub">none yet</div>`,
+    },
+  ];
+  $("#now").innerHTML = cards.map(c =>
+    `<div class="card"><div class="sub">${c.sub}</div><div class="big">${c.big}</div>${c.html}</div>`
+  ).join("");
+}
+
+function renderProviders(provs) {
+  const rows = provs.map(p => {
+    const limit = p.quota_limit ?? p.limit_default;
+    const used = p.quota_used ?? 0;
+    const pct = limit ? Math.min(100, used / limit * 100) : 0;
+    const over = limit ? used >= limit : false;
+    const status = !p.configured
+      ? `<span class="pill bad">not configured</span>`
+      : p.enabled
+        ? `<span class="pill ok">enabled</span>`
+        : `<span class="pill warn">disabled</span>`;
+    const limVal = p.limit_runtime ?? (limit === p.limit_default ? "" : limit);
+    return `<tr>
+      <td><b>${esc(p.name)}</b></td>
+      <td>${status}</td>
+      <td class="num">${used}${limit ? " / " + limit : ""}</td>
+      <td><div class="bar"><div class="${over ? "over" : ""}" style="width:${pct}%"></div></div></td>
+      <td class="num"><input type="number" min="0" placeholder="env" style="width:90px"
+          value="${limVal === "" ? "" : (limVal ?? "")}"
+          onchange="setLimit('${esc(p.name)}', this)">
+          <span class="muted">${p.limit_default ? "env:" + p.limit_default : "no env limit"}</span></td>
+      <td>${p.last_served ? ts(p.last_served) : "—"}</td>
+      <td class="muted" style="max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(p.last_error)}">${esc(p.last_error) || "—"}</td>
+      <td>
+        <button class="${p.enabled ? "" : "on"}" onclick="setProvider('${esc(p.name)}', ${!p.enabled})">
+          ${p.enabled ? "disable" : "enable"}</button>
+      </td>
+    </tr>`;
+  }).join("");
+  $("#providers tbody").innerHTML = rows;
+}
+
+function renderTrends(st) {
+  const t = st.search_trends || {};
+  $("#trends").innerHTML = ["24h", "7d", "30d"].map(label => {
+    const d = t[label] || { total: 0, by_source: {}, hit_rate: {} };
+    const entries = Object.entries(d.by_source || {});
+    const srcs = entries.length
+      ? entries.map(([k, v]) => `<span class="tag ${k === "local" ? "local" : "provider"}">${esc(k)} ${v} (${Math.round((d.hit_rate?.[k] ?? 0) * 100)}%)</span>`).join(" ")
+      : `<span class="muted">no searches</span>`;
+    return `<div class="card"><div class="sub">${label}</div><div class="big">${d.total ?? 0}</div>
+            <div class="row" style="gap:6px;margin-top:4px">${srcs}</div></div>`;
+  }).join("");
+}
+
+function renderIndex(st, pagesData) {
+  const idx = st.index || {};
+  $("#idx-size").textContent = `${idx.pages ?? 0} / ${idx.chunks ?? 0}`;
+  const q = st.crawl_queue || {};
+  $("#queue-depth").textContent = `${q.pending ?? 0} pending`;
+  $("#queue-oldest").textContent = q.oldest_pending ? "oldest pending " + age(q.oldest_pending) : "";
+  const f = pagesData?.freshness || {};
+  const total = (f["<1d"] ?? 0) + (f["1-7d"] ?? 0) + (f["7-30d"] ?? 0) + (f[">30d"] ?? 0) + (f["never"] ?? 0);
+  const seg = (k, v, color) => total
+    ? `<div class="bar" style="flex:${v};min-width:0"><div style="width:${v / total * 100}%;background:${color}"></div></div>`
+    : "";
+  $("#fresh").innerHTML =
+    (f["<1d"] ? `<span class="muted">&lt;1d: ${f["<1d"]}</span>` : "") +
+    (f["1-7d"] ? `<span class="muted">1–7d: ${f["1-7d"]}</span>` : "") +
+    (f["7-30d"] ? `<span class="muted">7–30d: ${f["7-30d"]}</span>` : "") +
+    (f[">30d"] ? `<span class="muted">&gt;30d: ${f[">30d"]}</span>` : "") +
+    (f["never"] ? `<span class="muted">never: ${f["never"]}</span>` : "") || `<span class="muted">empty index</span>`;
+  const c = st.crawls_30d || {};
+  $("#crawls30").innerHTML =
+    `<span class="ok">ok: ${c.ok ?? 0}</span>` +
+    `<span class="muted">unchanged: ${c.unchanged ?? 0}</span>` +
+    `<span class="err">errors: ${(c.http_404 ?? 0) + (c.error ?? 0) + Object.entries(c).filter(([k, v]) => k.startsWith("http_") && k !== "http_404" && v > 0).reduce((a, [, v]) => a + v, 0)}</span>`;
+}
+
+function pageRows(pages, showHitsFirst) {
+  return (pages || []).map(p => `<tr>
+    <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${esc(p.url)}">
+       <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a></td>
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" class="muted" title="${esc(p.title)}">${esc(p.title) || "—"}</td>
+    ${showHitsFirst
+      ? `<td class="num">${p.search_hit_count}</td><td class="num">${p.fetch_count}</td>`
+      : `<td class="num">${p.fetch_count}</td><td class="num">${p.search_hit_count}</td>`}
+    <td>${p.last_crawled ? ts(p.last_crawled) + " <span class='muted'>(" + age(p.last_crawled) + ")</span>" : "never"}</td>
+    <td>${p.disabled ? `<span class="pill warn">disabled</span>` : `<span class="muted">ok: ${esc(p.last_status) || "—"}</span>`}</td>
+    <td>
+      <button class="${p.disabled ? "on" : ""}" onclick="togglePage('${esc(p.url)}', ${!p.disabled})">${p.disabled ? "enable" : "disable"}</button>
+      <button class="danger" onclick="delPage('${esc(p.url)}')">delete</button>
+    </td>
+  </tr>`).join("");
+}
+
+function renderLogs() {
+  // rendered by refresh() from /api/logs/*
+}
+
+// ------------------------------------------------------------------ refresh
+async function refresh() {
+  try {
+    const [st, prov, pagesF, pagesH, crawls, searches, health] = await Promise.all([
+      api("/api/stats"),
+      api("/api/providers"),
+      api("/api/pages?sort=fetch_count&limit=20"),
+      api("/api/pages?sort=search_hit_count&limit=20"),
+      api("/api/logs/crawls?limit=30"),
+      api("/api/logs/searches?limit=30"),
+      api("/health").catch(() => null),
+    ]);
+    if (health) {
+      const el = $("#health");
+      const ok = health.status === "ok";
+      el.className = "pill " + (ok ? "ok" : "bad");
+      el.textContent = health.status;
+      el.title = `db: ${health.database}\ncrawl4ai: ${health.crawl4ai}`;
+    }
+    renderNow(st);
+    renderProviders(prov.providers || []);
+    renderTrends(st);
+    renderIndex(st, pagesF);
+    $("#top-fetch tbody").innerHTML = pageRows(pagesF.pages, false);
+    $("#top-hits tbody").innerHTML = pageRows(pagesH.pages, true);
+    $("#recent-crawls tbody").innerHTML = (crawls.crawls || []).map(c => `<tr>
+      <td>${ts(c.ts)} <span class="muted">(${age(c.ts)})</span></td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${esc(c.url)}">${esc(c.url)}</td>
+      <td>${esc(c.trigger)}</td>
+      <td class="${c.status === "ok" ? "ok" : c.status === "unchanged" ? "muted" : "err"}">${esc(c.status)}</td>
+      <td class="num">${c.ms ?? ""}</td>
+      <td class="num">${c.chunks_written ?? ""}</td>
+      <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(c.detail)}">${esc(c.detail) || ""}</td>
+    </tr>`).join("") || `<tr><td colspan="7" class="muted">no crawls yet</td></tr>`;
+    $("#recent-searches tbody").innerHTML = (searches.searches || []).map(s => `<tr>
+      <td>${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></td>
+      <td title="${esc(s.query)}">${esc(s.query)}</td>
+      <td><span class="tag ${s.source === "local" ? "local" : "provider"}">${esc(s.source)}</span></td>
+      <td class="num">${s.local_hits ?? 0}</td>
+      <td class="muted">${(s.results || []).length} results</td>
+    </tr>`).join("") || `<tr><td colspan="5" class="muted">no searches yet</td></tr>`;
+    $("#updated").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    if (String(e.message).includes("401")) return; // auth box is showing
+    $("#health").textContent = "error: " + e.message;
+    $("#health").className = "pill bad";
+  }
+}
+
+if (localStorage.getItem("wkey")) { /* keep hidden auth box hidden */ }
+setInterval(refresh, 5000);
+refresh();
+</script>
+</body>
+</html>

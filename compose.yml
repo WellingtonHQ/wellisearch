@@ -1,0 +1,36 @@
+# wellisearch — app container.
+#
+# Networks (both external, created by their owning projects):
+#   - wellington_default : OWUI stack network — reach crawl4ai + searxng by
+#                          service name, and be reachable as `wellisearch:8780`
+#                          from OWUI / mcpo for the MCP SSE endpoint.
+#   - postgres-net       : infra project network — reach the shared Postgres
+#                          container by the `postgres` alias.
+#
+# No depends_on on postgres: cross-project ordering is handled by the app's
+# startup DB retry (~10 x 3 s) + self-creating the `wellisearch` DB.
+name: wellisearch
+
+services:
+  wellisearch:
+    build: .
+    container_name: wellisearch
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8780:8780"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8780/health', timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - wellington_default
+      - postgres-net
+
+networks:
+  wellington_default:
+    external: true
+  postgres-net:
+    external: true
