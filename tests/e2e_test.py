@@ -132,6 +132,33 @@ async def main() -> None:
         r = await c.get("/api/logs/searches")
         check("logs/searches: rows present", r.status_code == 200 and len(r.json().get("searches", [])) >= 1, f"n={len(r.json().get('searches', []))}")
 
+        # 9.5 window + merged log stream -------------------------------------------
+        r = await c.get("/api/window", params={"secs": "86400"})
+        j = r.json()
+        check("window: 200 + shape + searches>=1",
+              r.status_code == 200 and j.get("secs") == 86400
+              and (j.get("searches", {}).get("total") or 0) >= 1
+              and "by_status" in j.get("crawls", {})
+              and "local_rate" in j.get("searches", {}),
+              json.dumps(j)[:160])
+        r = await c.get("/api/window", params={"secs": "1"})
+        j = r.json()
+        check("window: secs clamped to 600 floor", r.status_code == 200 and j.get("secs") == 600, f"secs={j.get('secs')}")
+        r = await c.get("/api/logs", params={"secs": "86400", "limit": "50"})
+        j = r.json()
+        logs = j.get("logs", [])
+        check("logs: 200 + rows with ts/kind/message/info",
+              r.status_code == 200 and len(logs) >= 1
+              and all(k in logs[0] for k in ("ts", "kind", "message", "info")),
+              f"n={len(logs)} first={json.dumps(logs[0])[:120] if logs else '-'}")
+        r10 = await c.get("/api/logs", params={"secs": "600"})
+        j10 = r10.json()
+        r24 = await c.get("/api/logs", params={"secs": "86400"})
+        j24 = r24.json()
+        check("logs: 10m window is a subset of 24h window",
+              r10.status_code == 200 and (j10.get("total") or 0) <= (j24.get("total") or 0),
+              f"10m={j10.get('total')} 24h={j24.get('total')}")
+
         # 10. dashboard HTML ----------------------------------------------------------------
         r = await c.get("/")
         check("dashboard: 200 + html", r.status_code == 200 and "<html" in r.text.lower(), f"len={len(r.text)}")

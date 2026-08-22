@@ -119,6 +119,39 @@ Returns `{ crawls: [{ ts, url, trigger, status, ms, chunks_written, detail }] }`
 Recent searches. `?limit=` (default 50, max 500).
 Returns `{ searches: [{ ts, query, source, local_hits, results }] }`.
 
+### `GET /api/window`
+Windowed activity stats for the dashboard.
+
+| Param | Default | Notes |
+|---|---|---|
+| `secs` | 86400 | clamped to 600 (10m) .. 86400 (24h) |
+
+Returns:
+```json
+{
+  "secs": 86400,
+  "searches": { "total": 27, "by_source": { "local": 21, "brave": 5 }, "local_rate": 0.778 },
+  "crawls": { "total": 623, "by_status": { "ok": 269, "unchanged": 350 } }
+}
+```
+
+### `GET /api/logs`
+Merged windowed log stream (crawls + searches + operational events), newest
+first. The dashboard's "Log" view renders this.
+
+| Param | Default | Notes |
+|---|---|---|
+| `secs` | 86400 | clamped to 600 (10m) .. 86400 (24h) |
+| `limit` | 200 | max 500 |
+
+Returns `{ logs: [{ ts, kind: "crawl" \| "search" \| "event", message, info }],
+total, secs }` where `total` is the row count in the window before `limit`.
+
+Operational events (worker ticks, provider gateway failures/serves, admin
+actions, startup) are written to the `event_log` table by the service itself
+and appear here with `kind: "event"`. Log tables are pruned after
+`LOG_RETENTION_DAYS` (default 30).
+
 ### `GET /`
 Serves `static/index.html` (the dashboard). Mounted last (catch-all) so it
 never shadows `/api/*` or `/mcp/*`.

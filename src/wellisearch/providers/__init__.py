@@ -51,6 +51,13 @@ class Gateway:
                 continue
             self._providers.append(cls(self.s, self._client))
 
+    async def _ev(self, message: str, info: dict | None = None) -> None:
+        """Best-effort event logging (dashboard log view)."""
+        try:
+            await db.log_event(message, info)
+        except Exception as e:
+            log.warning("event logging failed: %s", e)
+
     # ------------------------------------------------------------ queries
 
     @property
@@ -75,25 +82,34 @@ class Gateway:
                 log.warning("provider %s failed: %s", p.name, e)
                 await db.set_provider_state(p.name, last_error=str(e))
                 errors.append({"provider": p.name, "error": str(e), "status": e.status})
+                await self._ev(f"provider {p.name} failed", {"error": str(e)[:300], "status": e.status})
                 continue
             except Exception as e:  # defensive: never leak a provider bug to the LLM
                 log.exception("provider %s crashed", p.name)
                 await db.set_provider_state(p.name, last_error=f"crash: {e!r}"[:500])
                 errors.append({"provider": p.name, "error": f"crash: {e!r}"[:200]})
+                await self._ev(f"provider {p.name} crashed", {"error": repr(e)[:300]})
                 continue
 
             ms = int((time.monotonic() - t0) * 1000)
             if not results:
                 await db.set_provider_state(p.name, last_error="empty result set")
                 errors.append({"provider": p.name, "error": "empty result set", "ms": ms})
+                await self._ev(f"provider {p.name} returned no results", {"query": query[:200], "ms": ms})
                 continue
 
             # success: quota ledger + state
             await db.quota_bump(p.name)
             await db.set_provider_state(p.name, last_served=dt.datetime.now(dt.timezone.utc), last_error=None)
             log.info("provider %s served %r in %d ms (%d results)", p.name, query, ms, len(results))
+            await self._ev(
+                f"provider {p.name} served search",
+                {"query": query[:200], "ms": ms, "results": len(results),
+                 "skipped": [e["provider"] for e in errors] or None},
+            )
             return results, p.name, errors
 
+        await self._ev("search failed — all providers exhausted", {"query": query[:200], "errors": errors})
         raise GatewayExhausted(errors)
 
     async def _provider_available(self, p: Provider, errors: list[dict]) -> bool:
@@ -105,9 +121,10 @@ class Gateway:
             errors.append({"provider": p.name, "error": "not configured (missing key/url)"})
             return False
         used, limit = await db.quota_used_limit(p.name)
-        if limit is not None and used >= limit:
-            await db.set_provider_state(p.name, last_error=f"quota exhausted ({used}/{limit})")
-            errors.append({"provider": p.name, "error": f"quota exhausted ({used}/{limit})"})
+        if limit and used >= limit:
+            await db.set_provider_state(p.name, last_error="quota exhausted")
+            log.info("%s quota exhausted (%d/%d) — skipping", p.name, used, limit)
+            await self._ev(f"provider {p.name} quota exhausted", {"used": used, "limit": limit})
             return False
         return True
 

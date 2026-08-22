@@ -97,6 +97,19 @@ CREATE TABLE IF NOT EXISTS crawl_log (
 CREATE INDEX IF NOT EXISTS crawl_log_ts_idx ON crawl_log (ts DESC);
 
 -- ---------------------------------------------------------------------------
+-- event_log: operational events (worker ticks, provider gateway, admin
+-- actions, lifecycle) — the "message + info" stream behind the dashboard
+-- log view. Crawls/searches stay in their own tables; this carries the rest.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS event_log (
+  id BIGSERIAL PRIMARY KEY,
+  ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+  message TEXT NOT NULL,
+  info JSONB
+);
+CREATE INDEX IF NOT EXISTS event_log_ts_idx ON event_log (ts DESC);
+
+-- ---------------------------------------------------------------------------
 -- provider_state: runtime provider gateway state (toggles persist across
 -- restarts; env supplies the defaults — see PATCH /api/providers/{name})
 -- ---------------------------------------------------------------------------

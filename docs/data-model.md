@@ -21,6 +21,7 @@ images/data-model.svg
 | `crawl_queue` | one row per pending/in-flight crawl | durable background work |
 | `search_log` | one row per search request | observability + local-hit rate |
 | `crawl_log` | one row per crawl attempt | observability (trigger, status, timing) |
+| `event_log` | one row per operational event | dashboard log view (worker, providers, admin) |
 | `provider_quota` | one row per provider per month | usage ledger |
 | `provider_state` | one row per provider | runtime toggles + last error |
 
@@ -120,6 +121,21 @@ One row per crawl attempt.
 | `chunks_written` | `int` | `0` when `unchanged` |
 | `detail` | `text` | error detail (≤500 chars) |
 
+## event_log
+
+One row per operational event — the "message + info" stream behind the
+dashboard's Log view (merged with `crawl_log` + `search_log` by
+`GET /api/logs`). Emitters: worker (tick / crash / retention sweep), provider
+gateway (served / failed / crashed / empty / quota exhausted / all-exhausted),
+app (startup, seed, refresh, page + provider changes).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `bigserial` **PK** | |
+| `ts` | `timestamptz` | indexed `DESC` |
+| `message` | `text` | human-readable one-liner |
+| `info` | `jsonb` | structured detail (nullable) |
+
 ## provider_quota
 
 Monthly usage ledger, one row per provider per calendar month.
@@ -161,6 +177,7 @@ dashboard survives a redeploy.
 | `crawl_queue_url_pending_uq` | crawl_queue | partial unique | queue dedupe |
 | `search_log_ts_idx` | search_log | B-tree `DESC` | recent-searches |
 | `crawl_log_ts_idx` | crawl_log | B-tree `DESC` | recent-crawls |
+| `event_log_ts_idx` | event_log | B-tree `DESC` | dashboard log view |
 
 ## Deleting / disabling
 

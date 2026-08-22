@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     QUEUE_MAX_ATTEMPTS: int = 3
     CRAWL_TIMEOUT_S: int = 45
     CRAWL_MAX_PARALLEL: int = 3
+    LOG_RETENTION_DAYS: int = 30  # event_log / crawl_log / search_log prune age
 
     # --- server ---
     BIND_PORT: int = 8780

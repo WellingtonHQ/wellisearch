@@ -28,7 +28,7 @@ async def main() -> None:
     names = [t["tablename"] for t in tables]
     for expected in (
         "pages", "chunks", "crawl_queue", "search_log",
-        "provider_quota", "crawl_log", "provider_state",
+        "provider_quota", "crawl_log", "provider_state", "event_log",
     ):
         assert expected in names, f"missing table {expected}"
     print("OK tables:", names)
@@ -115,6 +115,16 @@ async def main() -> None:
     assert st["enabled"] is False
     await db.set_provider_state("brave", enabled=True, last_error=None)
     print("OK provider state toggle")
+
+    # --- event_log: roundtrip + prune
+    await db.log_event("test event", {"foo": "bar", "n": 42})
+    row = await db.fetch_one("SELECT message, info FROM event_log ORDER BY id DESC LIMIT 1")
+    assert row and row["message"] == "test event" and (row["info"] or {}) == {"foo": "bar", "n": 42}, row
+    print("OK event_log roundtrip")
+    await db.log_event("test event no info")
+    row = await db.fetch_one("SELECT message, info FROM event_log ORDER BY id DESC LIMIT 1")
+    assert row and row["message"] == "test event no info" and row["info"] is None, row
+    print("OK event_log null info")
 
     # --- cleanup test rows (keep the example page? delete both for a clean slate)
     await db.execute("DELETE FROM pages WHERE url LIKE 'https://example.com/%%'")

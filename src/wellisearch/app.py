@@ -13,6 +13,8 @@ REST (one implementation shared with the MCP tools):
   DELETE /api/pages/{url}
   GET  /api/logs/crawls?limit=
   GET  /api/logs/searches?limit=
+  GET  /api/window?secs=           (windowed stats, clamped 10m..24h)
+  GET  /api/logs?secs=&limit=      (merged ts/message/info stream)
   GET  /health
   GET  /                            (static/index.html)
 
@@ -56,6 +58,14 @@ _worker_task: asyncio.Task | None = None
 
 # ------------------------------------------------------------------ lifecycle
 
+async def _ev(message: str, info: dict | None = None) -> None:
+    """Best-effort event logging (dashboard log view)."""
+    try:
+        await db.log_event(message, info)
+    except Exception as e:
+        log.warning("event logging failed: %s", e)
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     global _worker_task
@@ -67,6 +77,10 @@ async def _startup() -> None:
     await db.queue_reset_in_flight()
     _worker_task = asyncio.create_task(run_forever(), name="worker")
     log.info("wellisearch up (worker task started)")
+    await _ev(
+        "wellisearch started",
+        {"version": app.version, "providers": get_settings().provider_order},
+    )
 
 
 @app.on_event("shutdown")
@@ -244,6 +258,10 @@ async def api_provider_patch(name: str, body: ProviderPatch) -> Any:
         await db.set_provider_state(name, enabled=body.enabled)
     if body.limit is not None:
         await db.set_provider_state(name, limit=body.limit)
+    await _ev(
+        f"provider {name} updated",
+        {"enabled": body.enabled, "limit": body.limit},
+    )
     return {"ok": True, "name": name, "enabled": body.enabled, "limit": body.limit}
 
 
@@ -252,6 +270,7 @@ async def api_seed(body: SeedBody) -> Any:
     if not _valid_url(body.url):
         raise HTTPException(400, "invalid or non-http(s) url")
     inserted = await queue.enqueue(body.url, source="manual")
+    await _ev("seed url", {"url": body.url, "newly_queued": inserted})
     return {"ok": True, "url": body.url, "newly_queued": inserted}
 
 
@@ -264,6 +283,10 @@ async def api_refresh(body: RefreshBody) -> Any:
     except Exception as e:
         raise HTTPException(502, str(e))
     page = await db.page_get(body.url)
+    await _ev(
+        f"manual refresh — {body.url}",
+        {"status": r.get("status"), "chunks": r.get("chunks"), "ms": r.get("ms")},
+    )
     return {
         "ok": True,
         "url": body.url,
@@ -281,6 +304,7 @@ async def api_page_patch(url: str, body: PagePatch) -> Any:
     n = await db.execute("UPDATE pages SET disabled = %s WHERE url = %s", (body.disabled, url))
     if not n:
         raise HTTPException(404, "page not in index")
+    await _ev(f"page {'disabled' if body.disabled else 'enabled'}", {"url": url})
     return {"ok": True, "url": url, "disabled": body.disabled}
 
 
@@ -289,6 +313,7 @@ async def api_page_delete(url: str) -> Any:
     n = await db.execute("DELETE FROM pages WHERE url = %s", (url,))
     if not n:
         raise HTTPException(404, "page not in index")
+    await _ev("page deleted", {"url": url})
     return {"ok": True, "url": url, "deleted": True}
 
 
@@ -351,6 +376,117 @@ async def api_logs_searches(limit: int = 50) -> Any:
         (min(limit, 500),),
     )
     return {"searches": rows}
+
+
+WIN_MIN_SECS = 600    # window floor: 10 minutes
+WIN_MAX_SECS = 86400  # window ceiling: 24 hours
+
+
+def _clamp_window(secs: int) -> int:
+    return max(WIN_MIN_SECS, min(int(secs), WIN_MAX_SECS))
+
+
+@app.get("/api/window")
+async def api_window(secs: int = 86400) -> Any:
+    """Windowed activity stats (searches + crawls), clamped to 10m..24h."""
+    secs = _clamp_window(secs)
+    srows = await db.fetch_all(
+        "SELECT source, count(*) AS n FROM search_log "
+        "WHERE ts >= now() - make_interval(secs => %s) GROUP BY source",
+        (secs,),
+    )
+    crows = await db.fetch_all(
+        "SELECT status, count(*) AS n FROM crawl_log "
+        "WHERE ts >= now() - make_interval(secs => %s) GROUP BY status",
+        (secs,),
+    )
+    by_source = {r["source"]: r["n"] for r in srows}
+    s_total = sum(by_source.values())
+    return {
+        "secs": secs,
+        "searches": {
+            "total": s_total,
+            "by_source": by_source,
+            "local_rate": round(by_source.get("local", 0) / s_total, 3) if s_total else 0.0,
+        },
+        "crawls": {
+            "total": sum(r["n"] for r in crows),
+            "by_status": {r["status"]: r["n"] for r in crows},
+        },
+    }
+
+
+def _short_url(url: str) -> str:
+    from urllib.parse import urlparse
+
+    p = urlparse(url)
+    first = p.path.strip("/").split("/", 1)[0]
+    return f"{p.netloc}/{first}" if first else p.netloc
+
+
+@app.get("/api/logs")
+async def api_logs(secs: int = 86400, limit: int = 200) -> Any:
+    """Merged windowed log stream: crawls + searches + events, ts DESC.
+
+    Each row: {ts, kind: crawl|search|event, message, info}.
+    """
+    secs = _clamp_window(secs)
+    limit = max(1, min(int(limit), 500))
+    cutoff = "ts >= now() - make_interval(secs => %s)"
+    crawls = await db.fetch_all(
+        "SELECT ts, url, trigger, status, ms, chunks_written, detail FROM crawl_log "
+        f"WHERE {cutoff} ORDER BY id DESC",
+        (secs,),
+    )
+    searches = await db.fetch_all(
+        "SELECT ts, query, source, local_hits, results FROM search_log "
+        f"WHERE {cutoff} ORDER BY id DESC",
+        (secs,),
+    )
+    events = await db.fetch_all(
+        f"SELECT ts, message, info FROM event_log WHERE {cutoff} ORDER BY id DESC",
+        (secs,),
+    )
+    logs: list[dict] = []
+    for c in crawls:
+        logs.append({
+            "ts": c["ts"],
+            "kind": "crawl",
+            "message": f"crawl {c['status']} — {_short_url(c['url'])}",
+            "info": {
+                "url": c["url"],
+                "trigger": c["trigger"],
+                "ms": c["ms"],
+                "chunks": c["chunks_written"],
+                "detail": c["detail"],
+            },
+        })
+    for srow in searches:
+        n_results = len(srow["results"] or [])
+        if srow["source"] == "local":
+            msg = f"search '{(srow['query'] or '')[:100]}' → local ({srow['local_hits'] or 0} hits)"
+        else:
+            msg = f"search '{(srow['query'] or '')[:100]}' → {srow['source']} ({n_results} results)"
+        logs.append({
+            "ts": srow["ts"],
+            "kind": "search",
+            "message": msg,
+            "info": {
+                "query": srow["query"],
+                "source": srow["source"],
+                "local_hits": srow["local_hits"],
+                "results": n_results,
+            },
+        })
+    for e in events:
+        logs.append({
+            "ts": e["ts"],
+            "kind": "event",
+            "message": e["message"],
+            "info": e["info"] or {},
+        })
+    logs.sort(key=lambda r: r["ts"], reverse=True)
+    return {"logs": logs[:limit], "total": len(logs), "secs": secs}
 
 
 # ------------------------------------------------------------------------ MCP

@@ -1,7 +1,7 @@
 """Postgres access: pool, startup retry, self-create app DB, DDL apply, helpers.
 
 Startup sequence (§11, cross-project — no depends_on):
-  1. retry-connect to the admin DB (default `shared`) — ~10 × 3 s
+  1. retry-connect to the admin DB (default `postgres`) — ~10 × 3 s
   2. idempotently CREATE DATABASE if the app DB does not exist
   3. open the main pool against the app DB
   4. apply schema.sql (idempotent DDL + fn_search_local)
@@ -279,6 +279,25 @@ class Database:
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (url, trigger, status, ms, chunks_written, detail),
         )
+
+    async def log_event(self, message: str, info: dict[str, Any] | None = None) -> None:
+        """One operational event (worker, provider gateway, admin, lifecycle)."""
+        import json
+
+        await self.execute(
+            "INSERT INTO event_log (message, info) VALUES (%s, %s)",
+            (message, json.dumps(info, default=str) if info is not None else None),
+        )
+
+    async def prune_logs(self, days: int) -> dict[str, int]:
+        """Retention sweep for the log tables. Returns per-table deleted counts."""
+        out: dict[str, int] = {}
+        for table in ("event_log", "crawl_log", "search_log"):
+            out[table] = await self.execute(
+                f"DELETE FROM {table} WHERE ts < now() - make_interval(days => %s)",
+                (days,),
+            )
+        return out
 
     # ------------------------------------------------------------- queue
 

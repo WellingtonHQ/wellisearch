@@ -64,6 +64,16 @@
   <h1>wellisearch</h1>
   <span id="health" class="pill">…</span>
   <span class="muted" id="updated"></span>
+  <label class="muted" style="display:flex;gap:6px;align-items:center">window
+    <select id="window-secs" onchange="setWindow(this.value)">
+      <option value="600">10m</option>
+      <option value="1800">30m</option>
+      <option value="3600">1h</option>
+      <option value="21600">6h</option>
+      <option value="43200">12h</option>
+      <option value="86400">24h</option>
+    </select>
+  </label>
   <span style="flex:1"></span>
   <span id="authbox" class="row" style="display:none">
     <input id="apikey" type="password" placeholder="API key" style="width:160px">
@@ -103,7 +113,7 @@
 </section>
 
 <section>
-  <h2>Search trends (by source)</h2>
+  <h2 id="searches-title">Searches (window)</h2>
   <div class="grid c4" id="trends"></div>
 </section>
 
@@ -113,7 +123,7 @@
     <div class="card"><div class="sub">pages / chunks</div><div class="big" id="idx-size">—</div></div>
     <div class="card"><div class="sub">crawl queue</div><div class="big" id="queue-depth">—</div><div class="sub" id="queue-oldest"></div></div>
     <div class="card"><div class="sub">freshness</div><div class="row" id="fresh" style="gap:12px;margin-top:6px"></div></div>
-    <div class="card"><div class="sub">crawls 30d</div><div class="row" id="crawls30" style="gap:12px;margin-top:6px"></div></div>
+    <div class="card"><div class="sub">crawls (window)</div><div class="row" id="crawls30" style="gap:12px;margin-top:6px"></div></div>
   </div>
 </section>
 
@@ -134,16 +144,9 @@
 </section>
 
 <section>
-  <h2>Recent crawls</h2>
-  <div class="card"><table id="recent-crawls"><thead><tr>
-    <th>time</th><th>url</th><th>trigger</th><th>status</th><th class="num">ms</th><th class="num">chunks</th><th>detail</th>
-  </tr></thead><tbody></tbody></table></div>
-</section>
-
-<section>
-  <h2>Recent searches</h2>
-  <div class="card"><table id="recent-searches"><thead><tr>
-    <th>time</th><th>query</th><th>source</th><th class="num">local hits</th><th>results</th>
+  <h2 id="log-title">Log (window)</h2>
+  <div class="card"><table id="log-table"><thead><tr>
+    <th style="width:150px">time</th><th>message</th><th style="width:34%">info</th>
   </tr></thead><tbody></tbody></table></div>
 </section>
 
@@ -172,6 +175,7 @@ async function api(path, opts = {}) {
     opts.body = JSON.stringify(opts.body);
   }
   if (key) headers["Authorization"] = "Bearer " + key;
+  opts.headers = headers;
   const r = await fetch(path, opts);
   if (r.status === 401) {
     localStorage.removeItem("wkey");
@@ -193,6 +197,19 @@ function toast(msg, ok = true) {
 function saveKey() {
   localStorage.setItem("wkey", $("#apikey").value.trim());
   toast("key saved");
+  refresh();
+}
+
+// ------------------------------------------------------------- window (10m..24h)
+const WIN_LABELS = { 600: "10m", 1800: "30m", 3600: "1h", 21600: "6h", 43200: "12h", 86400: "24h" };
+let winSecs = parseInt(localStorage.getItem("wsec") || "86400", 10);
+if (!(winSecs in WIN_LABELS)) winSecs = 86400;
+const winLabel = () => WIN_LABELS[winSecs] || "24h";
+function setWindow(v) {
+  const s = parseInt(v, 10);
+  if (!(s in WIN_LABELS)) return;
+  winSecs = s;
+  localStorage.setItem("wsec", String(s));
   refresh();
 }
 
@@ -304,20 +321,33 @@ function renderProviders(provs) {
   $("#providers tbody").innerHTML = rows;
 }
 
-function renderTrends(st) {
-  const t = st.search_trends || {};
-  $("#trends").innerHTML = ["24h", "7d", "30d"].map(label => {
-    const d = t[label] || { total: 0, by_source: {}, hit_rate: {} };
-    const entries = Object.entries(d.by_source || {});
-    const srcs = entries.length
-      ? entries.map(([k, v]) => `<span class="tag ${k === "local" ? "local" : "provider"}">${esc(k)} ${v} (${Math.round((d.hit_rate?.[k] ?? 0) * 100)}%)</span>`).join(" ")
-      : `<span class="muted">no searches</span>`;
-    return `<div class="card"><div class="sub">${label}</div><div class="big">${d.total ?? 0}</div>
-            <div class="row" style="gap:6px;margin-top:4px">${srcs}</div></div>`;
-  }).join("");
+function renderActivity(w) {
+  const s = w.searches || { total: 0, by_source: {}, local_rate: 0 };
+  const c = w.crawls || { total: 0, by_status: {} };
+  const entries = Object.entries(s.by_source || {});
+  const srcs = entries.length
+    ? entries.map(([k, v]) => `<span class="tag ${k === "local" ? "local" : "provider"}">${esc(k)} ${v}</span>`).join(" ")
+    : `<span class="muted">no searches</span>`;
+  const local = s.by_source?.local ?? 0;
+  const provider = Math.max(0, (s.total ?? 0) - local);
+  const errs = Object.entries(c.by_status || {})
+    .filter(([k]) => k !== "ok" && k !== "unchanged")
+    .reduce((a, [, v]) => a + v, 0);
+  $("#searches-title").textContent = "Searches (last " + winLabel() + ")";
+  $("#trends").innerHTML = `
+    <div class="card"><div class="sub">searches (${winLabel()})</div><div class="big">${s.total ?? 0}</div>
+      <div class="row" style="gap:6px;margin-top:4px">${srcs}</div></div>
+    <div class="card"><div class="sub">local hit rate</div><div class="big">${Math.round((s.local_rate ?? 0) * 100)}%</div>
+      <div class="sub">${local} local / ${provider} provider</div></div>
+    <div class="card"><div class="sub">crawls (${winLabel()})</div><div class="big">${c.total ?? 0}</div>
+      <div class="row" style="gap:10px;margin-top:4px">
+        <span class="ok">ok: ${c.by_status?.ok ?? 0}</span>
+        <span class="muted">unchanged: ${c.by_status?.unchanged ?? 0}</span>
+        <span class="err">errors: ${errs}</span>
+      </div></div>`;
 }
 
-function renderIndex(st, pagesData) {
+function renderIndex(st, pagesData, win) {
   const idx = st.index || {};
   $("#idx-size").textContent = `${idx.pages ?? 0} / ${idx.chunks ?? 0}`;
   const q = st.crawl_queue || {};
@@ -334,11 +364,12 @@ function renderIndex(st, pagesData) {
     (f["7-30d"] ? `<span class="muted">7–30d: ${f["7-30d"]}</span>` : "") +
     (f[">30d"] ? `<span class="muted">&gt;30d: ${f[">30d"]}</span>` : "") +
     (f["never"] ? `<span class="muted">never: ${f["never"]}</span>` : "") || `<span class="muted">empty index</span>`;
-  const c = st.crawls_30d || {};
+  const bs = (win?.crawls && win.crawls.by_status) || {};
+  const errs = Object.entries(bs).filter(([k]) => k !== "ok" && k !== "unchanged").reduce((a, [, v]) => a + v, 0);
   $("#crawls30").innerHTML =
-    `<span class="ok">ok: ${c.ok ?? 0}</span>` +
-    `<span class="muted">unchanged: ${c.unchanged ?? 0}</span>` +
-    `<span class="err">errors: ${(c.http_404 ?? 0) + (c.error ?? 0) + Object.entries(c).filter(([k, v]) => k.startsWith("http_") && k !== "http_404" && v > 0).reduce((a, [, v]) => a + v, 0)}</span>`;
+    `<span class="ok">ok: ${bs.ok ?? 0}</span>` +
+    `<span class="muted">unchanged: ${bs.unchanged ?? 0}</span>` +
+    `<span class="err">errors: ${errs}</span>`;
 }
 
 function pageRows(pages, showHitsFirst) {
@@ -358,20 +389,42 @@ function pageRows(pages, showHitsFirst) {
   </tr>`).join("");
 }
 
-function renderLogs() {
-  // rendered by refresh() from /api/logs/*
+function infoStr(info) {
+  if (!info || typeof info !== "object") return "";
+  return Object.entries(info)
+    .map(([k, v]) => {
+      if (v === null || v === undefined || v === "") return null;
+      let sv = typeof v === "object" ? JSON.stringify(v) : String(v);
+      if (sv.length > 48) sv = sv.slice(0, 47) + "…";
+      return `${k}=${sv}`;
+    })
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function renderLog(logs) {
+  const rows = (logs || []).map(l => {
+    const info = infoStr(l.info);
+    return `<tr>
+      <td style="white-space:nowrap">${ts(l.ts)} <span class="muted">(${age(l.ts)})</span></td>
+      <td style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(l.message)}">${esc(l.message)}</td>
+      <td class="muted" style="max-width:340px;overflow:hidden;text-overflow:ellipsis" title="${esc(info)}">${esc(info) || "—"}</td>
+    </tr>`;
+  }).join("");
+  $("#log-title").textContent = "Log (last " + winLabel() + ")";
+  $("#log-table tbody").innerHTML = rows || `<tr><td colspan="3" class="muted">no activity in the last ${winLabel()}</td></tr>`;
 }
 
 // ------------------------------------------------------------------ refresh
 async function refresh() {
   try {
-    const [st, prov, pagesF, pagesH, crawls, searches, health] = await Promise.all([
+    const [st, prov, pagesF, pagesH, win, logsData, health] = await Promise.all([
       api("/api/stats"),
       api("/api/providers"),
       api("/api/pages?sort=fetch_count&limit=20"),
       api("/api/pages?sort=search_hit_count&limit=20"),
-      api("/api/logs/crawls?limit=30"),
-      api("/api/logs/searches?limit=30"),
+      api("/api/window?secs=" + winSecs),
+      api("/api/logs?secs=" + winSecs + "&limit=200"),
       api("/health").catch(() => null),
     ]);
     if (health) {
@@ -383,27 +436,13 @@ async function refresh() {
     }
     renderNow(st);
     renderProviders(prov.providers || []);
-    renderTrends(st);
-    renderIndex(st, pagesF);
+    renderActivity(win);
+    renderIndex(st, pagesF, win);
     $("#top-fetch tbody").innerHTML = pageRows(pagesF.pages, false);
     $("#top-hits tbody").innerHTML = pageRows(pagesH.pages, true);
-    $("#recent-crawls tbody").innerHTML = (crawls.crawls || []).map(c => `<tr>
-      <td>${ts(c.ts)} <span class="muted">(${age(c.ts)})</span></td>
-      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${esc(c.url)}">${esc(c.url)}</td>
-      <td>${esc(c.trigger)}</td>
-      <td class="${c.status === "ok" ? "ok" : c.status === "unchanged" ? "muted" : "err"}">${esc(c.status)}</td>
-      <td class="num">${c.ms ?? ""}</td>
-      <td class="num">${c.chunks_written ?? ""}</td>
-      <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(c.detail)}">${esc(c.detail) || ""}</td>
-    </tr>`).join("") || `<tr><td colspan="7" class="muted">no crawls yet</td></tr>`;
-    $("#recent-searches tbody").innerHTML = (searches.searches || []).map(s => `<tr>
-      <td>${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></td>
-      <td title="${esc(s.query)}">${esc(s.query)}</td>
-      <td><span class="tag ${s.source === "local" ? "local" : "provider"}">${esc(s.source)}</span></td>
-      <td class="num">${s.local_hits ?? 0}</td>
-      <td class="muted">${(s.results || []).length} results</td>
-    </tr>`).join("") || `<tr><td colspan="5" class="muted">no searches yet</td></tr>`;
+    renderLog(logsData.logs);
     $("#updated").textContent = "updated " + new Date().toLocaleTimeString();
+    if (localStorage.getItem("wkey")) $("#authbox").style.display = "none";
   } catch (e) {
     if (String(e.message).includes("401")) return; // auth box is showing
     $("#health").textContent = "error: " + e.message;
@@ -411,7 +450,7 @@ async function refresh() {
   }
 }
 
-if (localStorage.getItem("wkey")) { /* keep hidden auth box hidden */ }
+$("#window-secs").value = String(winSecs);
 setInterval(refresh, 5000);
 refresh();
 </script>

@@ -139,6 +139,26 @@ async def _refresh_watchlist(deadline: float) -> dict:
     return {"refreshed": len(results), "unchanged": unchanged}
 
 
+async def _log_event(message: str, info: dict | None = None) -> None:
+    """Best-effort: event logging must never break the worker."""
+    try:
+        await db.log_event(message, info)
+    except Exception as e:
+        log.warning("event logging failed: %s", e)
+
+
+async def _retention_sweep() -> None:
+    try:
+        s = get_settings()
+        pruned = await db.prune_logs(s.LOG_RETENTION_DAYS)
+        total = sum(pruned.values())
+        if total:
+            await _log_event("log retention sweep", {"retention_days": s.LOG_RETENTION_DAYS, **pruned})
+            log.info("pruned %d old log rows", total)
+    except Exception as e:
+        log.warning("retention sweep failed: %s", e)
+
+
 async def tick() -> dict:
     """One worker tick: drain queue + budgeted refresh, wall-clock bounded."""
     s = get_settings()
@@ -154,6 +174,8 @@ async def tick() -> dict:
     STATE["last_tick_at"] = dt.datetime.now(dt.timezone.utc)
     STATE["last_tick_stats"] = stats
     log.info("tick done: %s", stats)
+    await _log_event("worker tick", stats)
+    await _retention_sweep()
     return stats
 
 
@@ -172,8 +194,9 @@ async def run_forever() -> None:
         await asyncio.sleep(s.WORKER_INTERVAL_MIN * 60)
         try:
             await tick()
-        except Exception:
+        except Exception as e:
             log.exception("worker tick crashed")
+            await _log_event("worker tick crashed", {"error": repr(e)[:500]})
 
 
 async def run_once() -> dict:
