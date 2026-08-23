@@ -7,6 +7,11 @@ When seeding a URL, wellisearch should use crawl4ai to do a breadth/depth crawl 
 - Certain pages need to be refreshed daily, or hourly, for example news sites. When seeding a site we should be able to specify this parameter.
 - When seeding a URL via the dashboard, it should also allow you to do that.
 
+
+## Explorer fastembed options
+See if we could use a higher-quality embedding model. It could potentially take more time but it would result in better results.
+
+
 ## Optional TTL
 Pages that haven't been fetched in a specified time (let's say, 1 year) get dropped from the index.
 This is optional and is used to save space.
@@ -89,11 +94,8 @@ It is no longer needed or useful.
 
 ---
 
+# Dashboard
 
-## Explorer fastembed options
-See if we could use a higher-quality embedding model. It could potentially take more time but it would result in better results.
-
-## Dashboard
 - Ability to move/reorder the provider list
 - Drop the "Top pages by search_hit_count"
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
