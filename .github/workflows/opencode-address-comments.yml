@@ -1,0 +1,97 @@
+name: opencode-address-comments
+
+on:
+  issue_comment:
+    types: [created, edited]
+  pull_request_review_comment:
+    types: [created, edited]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  opencode:
+    if: |
+      startsWith(github.event.comment.body, '/oc') ||
+      startsWith(github.event.comment.body, '/opencode')
+    runs-on: self-hosted
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Verify comment author is authorized
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+          COMMENTER_TYPE: ${{ github.event.comment.user.type }}
+        run: |
+          if [ "$COMMENTER_TYPE" = "Bot" ]; then
+            echo "::notice::Commenter '$COMMENTER' is a bot account. Exiting."
+            exit 0
+          fi
+          PERM=$(gh api "repos/$REPO/collaborators/$COMMENTER/permission" --jq '.permission' 2>/dev/null) || PERM="none"
+          echo "Commenter '$COMMENTER' permission: ${PERM}"
+          case "$PERM" in
+            admin|maintain|write)
+              echo "Authorized commenter. Continuing."
+              ;;
+            *)
+              echo "::notice::Commenter '$COMMENTER' is not authorized (permission: ${PERM}; requires write, maintain, or admin). Exiting."
+              exit 0
+              ;;
+          esac
+
+      - name: Early exit if another run is active
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          ACTIVE=$(gh api repos/${{ github.repository }}/actions/workflows/${{ github.workflow }}.yml/runs \
+            --jq '[.workflow_runs[] | select(.id != '"${RUN_ID}"') | select(.status == "in_progress" or .status == "queued")] | length')
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "::notice::Another run is already processing PR #$PR_NUMBER. Exiting early."
+            exit 0
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+
+      - name: Configure Git user
+        run: |
+          git config --global user.name "opencode-bot"
+          git config --global user.email "opencode@github-actions[bot]"
+
+      - name: Install opencode (if needed)
+        run: |
+          if [ ! -f "$HOME/.opencode/bin/opencode" ]; then
+            curl -fsSL https://opencode.ai/install | bash
+          fi
+
+      - name: Run opencode
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODEL: lmstudio/qwen3.6-27b-uncensored-mtp
+          USE_GITHUB_TOKEN: "true"
+          PROMPT: |
+            Before pushing any changes, fetch and rebase from origin just before pushing to avoid diverged history conflicts.
+            Read this pull request comment and implement the suggestion in the codebase.
+            Test and verify changes to make sure they compile and work as expected.
+            If no changes are currently pending, do not post a new comment.
+            If the comment is not a suggestion, respond with an emoji reaction acknowledging the comment.
+        run: ~/.opencode/bin/opencode github run
+
+      - name: Cleanup Comments
+        uses: ./.github/actions/cleanup-comments
+        with:
+          token: ${{ github.token }}
+          mode: outdated
+          pr-number: ${{ github.event.pull_request.number || github.event.issue.number }}
+          body-pattern: 'All changes compile|All .* suggestion|Changes Summary|PR Review|Bug fixes implemented|## |No action needed'

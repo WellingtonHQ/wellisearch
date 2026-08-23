@@ -1,0 +1,58 @@
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    if: |
+      !github.event.pull_request.draft &&
+      github.event.pull_request.user.type != 'Bot' &&
+      (
+        github.event.pull_request.permissions.admin ||
+        github.event.pull_request.permissions.maintain ||
+        github.event.pull_request.permissions.push
+      )
+    runs-on: self-hosted
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - name: Configure Git user
+        run: |
+          git config --global user.name "opencode-bot"
+          git config --global user.email "opencode@github-actions[bot]"
+
+      - name: Install opencode (if needed)
+        run: |
+          if [ ! -f "$HOME/.opencode/bin/opencode" ]; then
+            curl -fsSL https://opencode.ai/install | bash
+          fi
+
+      - name: Run opencode
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODEL: lmstudio/qwen3.6-27b-uncensored-mtp
+          USE_GITHUB_TOKEN: "true"
+          PROMPT: |
+            Review this pull request:
+            - Check for code quality issues
+            - Look for potential bugs or vulnerabilities
+            - Focus only on the code changes in this pull request
+            - Suggest improvements for readability, performance, and maintainability
+        run: ~/.opencode/bin/opencode github run
+
+      - name: Cleanup Comments
+        uses: ./.github/actions/cleanup-comments
+        with:
+          token: ${{ github.token }}
+          pr-number: ${{ github.event.pull_request.number }}
+          body-pattern: 'All changes compile|All .* suggestion|Changes Summary|PR Review|Bug fixes implemented|## |No action needed'
