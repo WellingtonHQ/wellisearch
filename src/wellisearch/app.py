@@ -175,10 +175,11 @@ class PagePatch(BaseModel):
 async def api_search(
     query: str,
     k: int = 5,
+    num_results: int | None = None,  # alias for k (MCP tool + OWUI tool surface name)
     max_crawl: int | None = None,
     max_age_days: float | None = None,
 ) -> Any:
-    out = await search_web_pipeline(query, num_results=k, max_crawl=max_crawl, max_age_days=max_age_days)
+    out = await search_web_pipeline(query, num_results=num_results or k, max_crawl=max_crawl, max_age_days=max_age_days)
     if out.get("source") == "error":
         return JSONResponse({**out, "ok": False}, status_code=502)
     return out
