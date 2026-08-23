@@ -41,8 +41,12 @@ The search pipeline.
 | `max_crawl` | int | `SEARCH_MAX_CRAWL` (5) | how many gateway result URLs to index in the background |
 | `max_age_days` | float | unset | drop local rows crawled older than this (never-crawled kept) |
 
-Returns the search envelope (see [search-pipeline.md](search-pipeline.md)).
-`source=error` maps to **HTTP 502**.
+Returns the Markdown search document (`Content-Type: text/markdown`, no JSON
+envelope — see [search-pipeline.md](search-pipeline.md)): a `Source:` /
+`Degraded:` header (+ `Provider Errors:` when providers failed), then
+`Title:` / `URL:` / `Snippet:` blocks separated by `---` lines; local hits
+carry a `Last Crawled:` line per result. `Source: error` maps to **HTTP 502**
+(body is the Markdown header).
 
 ### `POST /api/fetch`
 Read one URL as fit markdown (stored-first, else crawl+store).
@@ -166,26 +170,28 @@ All six tools call the same code as their REST counterparts.
 
 | Tool | Purpose | Params |
 |---|---|---|
-| `search_web` | Search the web (local-first). Returns the Markdown block + `source`, `degraded`, `count`, `last_crawled`. | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None` |
+| `search_web` | Search the web (local-first). Returns a Markdown document: `Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks (`Last Crawled` per local result). | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None` |
 | `fetch_page` | Read one URL as fit markdown (stored-first, else crawl+store). Bumps `fetch_count`. | `url: str`, `max_chars=None` |
 | `fetch_pages` | Bulk read under a shared char budget. | `urls: list[str]`, `max_chars=None`, `per_page_chars=None`, `strategy="smart"` |
 | `index_stats` | Snapshot of index + gateway (counts, freshness, hit-rate, queue, quota). | — |
 | `seed_url` | Queue a URL for background indexing. Returns queue position. | `url: str` |
 | `refresh_page` | Force an immediate re-crawl of one page. | `url: str` |
 
-The `search_web` description tells the LLM the contract explicitly: results
-come as `Title`/`URL`/`Snippet` blocks separated by `---` lines, local hits
-cost zero provider credits, and a miss triggers background indexing — so the
-model doesn't need to wait or re-call.
+The `search_web` description tells the LLM the contract explicitly: the body
+is a Markdown document — `Source`/`Degraded` header, then `Title`/`URL`/
+`Snippet` blocks separated by `---` lines — local hits cost zero provider
+credits, and a miss triggers background indexing — so the model doesn't need
+to wait or re-call.
 
 ## Error model
 
 - `400` — invalid/missing body (bad URL, missing `urls`).
 - `401` — missing/invalid API key.
 - `404` — page/provider not found.
-- `502` — search `source=error` (all providers failed, no local rows) or a
-  failed `POST /api/refresh`.
+- `502` — search `Source: error` (all providers failed, no local rows) or a
+  failed `POST /api/refresh`. The 502 search body is the Markdown header
+  (`Source: error` + `Provider Errors:`).
 
 Provider-level failures on `search_web` are *not* HTTP errors — they're
-reported in-band via `degraded` / `provider_errors` so the LLM still gets an
-answer (degraded local) when possible.
+reported in-band via the `Degraded: true` / `Provider Errors:` header lines
+so the LLM still gets an answer (degraded local) when possible.

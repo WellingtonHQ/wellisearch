@@ -35,7 +35,8 @@ How it works:
 - SearXNG with `format=json` enabled (optional last-resort provider)
 - Optional: provider keys (Tavily / Brave) — without them the gateway falls
   back to SearXNG; with none of the three, `search_web` returns
-  `degraded: true` local-only results (or a structured error on an empty index)
+  `Degraded: true` local-only results (or `Source: error` with `Provider
+  Errors` on an empty index)
 
 ## Setup
 
@@ -82,8 +83,9 @@ http://wellisearch:8780/mcp/sse
 host). Tools:
 
 - `search_web(query, num_results=5, max_crawl=5, max_age_days=null)` →
-  `results` (Markdown block: `Title:`/`URL:`/`Snippet:` separated by `---`)
-  + `source`, `degraded`, `count`, `last_crawled` (local hits)
+  a Markdown document: `Source:`/`Degraded:` header (+ `Provider Errors:`
+  when providers failed), then `Title:`/`URL:`/`Snippet:` blocks separated
+  by `---`; local hits carry a `Last Crawled:` line per result
 - `fetch_page(url, max_chars=null)` → clean markdown of one page
 - `fetch_pages(urls, max_chars=null, per_page_chars=null, strategy="smart")`
   → combined markdown under a shared char budget. Strategies: `smart`

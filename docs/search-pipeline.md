@@ -121,12 +121,18 @@ degraded mode), so the dashboard can compute local-hit rate over time.
 
 ## Response contract
 
-The hard contract is the `results` string — Markdown blocks the LLM can
-parse reliably:
+The response is a **plain Markdown document** (no JSON envelope) — REST
+serves it as `text/markdown`, the MCP tool returns it as a text block. Both
+surfaces render the same internal envelope via
+`search_web.render_search_markdown()`.
 
 ```
+Source: local
+Degraded: false
+
 Title: PostgreSQL 18 Documentation
 URL: https://www.postgresql.org/docs/current/
+Last Crawled: 2026-08-20T14:03:11Z
 Snippet: The PostgreSQL documentation ...
 ---
 Title: FastAPI MCP server
@@ -134,16 +140,24 @@ URL: https://...
 Snippet: ...
 ```
 
-JSON envelope:
+Header lines (response-level):
 
-| Field | Type | Notes |
-|---|---|---|
-| `results` | string | the Markdown block(s) above |
-| `source` | string | `local` \| `tavily` \| `brave` \| `searxng` \| `error` |
-| `degraded` | bool | true only in §6 degraded mode |
-| `count` | int | number of result blocks |
-| `last_crawled` | string[] | ISO timestamps; present only when `source = local` |
-| `provider_errors` | object[] | present only when providers failed |
+| Line | Notes |
+|---|---|
+| `Source:` | `local` \| `tavily` \| `brave` \| `searxng` \| `error` |
+| `Degraded:` | `true` \| `false` — true only in §6 degraded mode |
+| `Provider Errors:` | `{provider}: {error}` pairs joined by `;` — present only when providers failed |
+
+Result blocks:
+
+| Line | Notes |
+|---|---|
+| `Title:` | page title (falls back to the URL) |
+| `URL:` | result URL |
+| `Last Crawled:` | ISO timestamp; local hits only, omitted when the page was never crawled |
+| `Snippet:` | ~400-char chunk text |
+
+`source = error` (nothing to serve): header only, no blocks.
 
 ## Behavioral guarantees
 

@@ -15,7 +15,7 @@ You are building **wellisearch** — a self-hosted search gateway + web-index se
 2.  **§3 "Stack decisions (locked)" are fixed** — Python 3.12 + FastAPI + MCP SDK; Postgres 18 + pgvector in a **shared container at** `infra/postgres/` **(outside the app repo)**; fastembed `all-MiniLM-L6-v2` (384-dim, one `EMBED_MODEL` constant everywhere); Crawl4AI as the **only** crawling path; provider gateway `tavily → brave → searxng (optional)` with failover + monthly quota ledger; **async indexing** (search returns immediately, a debounced worker tick drains the crawl queue, read tools crawl on demand); 2 containers total. Do not re-litigate or substitute any of these.
     
 3.  **The MCP tool surface is exactly §7** — `search_web`, `fetch_page`, `fetch_pages`, `index_stats`, `seed_url`, `refresh_page`, nothing more.
-    *   `search_web`'s `results` field is the **hard Markdown contract**: `Title:` / `URL:` / `Snippet:` blocks separated by `---` lines, plus metadata (`source`, `degraded`, `count`, `last_crawled` for local hits).
+    *   `search_web` returns a **plain Markdown document (no JSON envelope)**: a `Source:` / `Degraded:` header (plus `Provider Errors:` when providers failed), then `Title:` / `URL:` / `Snippet:` blocks separated by `---` lines; local hits carry a `Last Crawled:` line per result.
         
     *   `fetch_pages` is the bulk read tool: `urls` + `max_chars` (total budget) + `per_page_chars` + swappable `strategy` (`smart` default, `head`, `tail`, `even`, `priority`). All strategies must be **boundary-safe** (cut on whitespace/newline, never mid-word or mid-tag) and must emit a `[truncated — N chars omitted, strategy=X]` marker per trimmed page.
         

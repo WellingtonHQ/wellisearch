@@ -20,6 +20,7 @@ from .config import get_settings
 from .db import db
 from .fetch import fetch_page as _fetch_page
 from .fetch import fetch_pages as _fetch_pages
+from .search_web import render_search_markdown
 from .search_web import search_web as _search_web
 from .truncation import STRATEGIES
 from .worker import crawl_url
@@ -106,12 +107,15 @@ def register_tools(server: MCPServer) -> None:
     @server.tool(
         name="search_web",
         description=(
-            "Search the web. Returns a formatted Markdown block of results "
-            "(Title/URL/Snippet separated by --- lines) plus metadata: "
-            "source (local|tavily|brave|searxng), degraded (bool), count, "
-            "and last_crawled for local hits. Local hits cost zero provider "
-            "credits; on a miss, top result URLs are indexed in the "
-            "background — no need to wait."
+            "Search the web (local index first, provider gateway on a miss). "
+            "Returns a Markdown document: a header with Source "
+            "(local|tavily|brave|searxng|error) and Degraded (true|false), "
+            "then result blocks of Title/URL/Snippet separated by --- lines. "
+            "Local hits include a Last Crawled line per result and cost zero "
+            "provider credits; on a miss, top result URLs are indexed in the "
+            "background — no need to wait. If Degraded is true, all providers "
+            "failed and only local results are shown (see the Provider Errors "
+            "header line)."
         ),
     )
     async def search_web(
@@ -119,14 +123,14 @@ def register_tools(server: MCPServer) -> None:
         num_results: int = 5,
         max_crawl: int = 5,
         max_age_days: float | None = None,
-    ) -> dict:
+    ) -> str:
         out = await _search_web(
             query,
             num_results=num_results,
             max_crawl=max_crawl,
             max_age_days=max_age_days,
         )
-        return _clean(out)
+        return render_search_markdown(out)
 
     @server.tool(
         name="fetch_page",

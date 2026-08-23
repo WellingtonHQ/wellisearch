@@ -20,47 +20,7 @@ This is optional and is used to save space.
 
 # Search
 
-## Search web provides markdown, like fetch_page
-Currently, search_web returns a JSON string with this envelope:
-JSON envelope:
 
-| Field | Type | Notes |
-|---|---|---|
-| `results` | string | the Markdown block(s) above |
-| `source` | string | `local` \| `tavily` \| `brave` \| `searxng` \| `error` |
-| `degraded` | bool | true only in §6 degraded mode |
-| `count` | int | number of result blocks |
-| `last_crawled` | string[] | ISO timestamps; present only when `source = local` |
-| `provider_errors` | object[] | present only when providers failed |
-
-The results string looks like this:
-```
-Title: PostgreSQL 18 Documentation
-URL: https://www.postgresql.org/docs/current/
-Snippet: The PostgreSQL documentation ...
----
-Title: FastAPI MCP server
-URL: https://...
-Snippet: ...
-```
-
-Rather than JSON, the API should just return the markdown like this:
-```md
-Title: PostgreSQL 18 Documentation
-URL: https://www.postgresql.org/docs/current/
-Source: Local
-Degraded: False
-Last Crawled: ISO Timestamp
-Provider Errors: present only when providers fail
-Snippet: The PostgreSQL documentation ...
----
-Title: FastAPI MCP server
-URL: https://...
-Source: Brave
-Degraded: False
-Last Crawled: ISO Timestamp
-Snippet: ...
-```
 
 
 ## Tiered providers

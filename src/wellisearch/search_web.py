@@ -19,17 +19,33 @@ from .providers import GatewayExhausted, get_gateway
 log = logging.getLogger("wellisearch.search_web")
 
 
-def build_results_markdown(results: list[dict]) -> str:
-    """The hard Markdown contract (plan §7): Title/URL/Snippet blocks,
-    separated by `---` lines."""
-    blocks = []
-    for r in results:
-        blocks.append(
-            f"Title: {r.get('title') or r['url']}\n"
-            f"URL: {r['url']}\n"
-            f"Snippet: {r.get('snippet') or ''}"
+def render_search_markdown(out: dict) -> str:
+    """The search response as plain Markdown (no JSON envelope): a
+    response-level header (Source / Degraded / Provider Errors) followed by
+    Title/URL/Snippet blocks separated by `---` lines. Local hits carry a
+    Last Crawled line per result."""
+    lines = [
+        f"Source: {out['source']}",
+        f"Degraded: {'true' if out.get('degraded') else 'false'}",
+    ]
+    errors = out.get("provider_errors") or []
+    if errors:
+        lines.append(
+            "Provider Errors: " + "; ".join(f"{e.get('provider')}: {e.get('error')}" for e in errors)
         )
-    return "\n---\n".join(blocks)
+
+    blocks = []
+    for r in out.get("results") or []:
+        block = [f"Title: {r.get('title') or r['url']}", f"URL: {r['url']}"]
+        ts = r.get("last_crawled")
+        if ts is not None:
+            block.append(f"Last Crawled: {ts.isoformat() if hasattr(ts, 'isoformat') else ts}")
+        block.append(f"Snippet: {r.get('snippet') or ''}")
+        blocks.append("\n".join(block))
+
+    if not blocks:
+        return "\n".join(lines)
+    return "\n\n".join(["\n".join(lines), "\n---\n".join(blocks)])
 
 
 async def search_web(
@@ -123,16 +139,14 @@ async def search_web(
 
     await db.log_search(query, source, len(good_local) if not degraded else len(local_rows), results)
 
+    # Envelope: structured data only. The Markdown body is rendered at the
+    # surfaces (tools.py for MCP, app.py for REST) via render_search_markdown.
     out: dict = {
-        "results": build_results_markdown(results),
+        "results": results,
         "source": source,
         "degraded": degraded,
         "count": len(results),
     }
-    if source == "local":
-        out["last_crawled"] = [
-            r["last_crawled"].isoformat() if r.get("last_crawled") else None for r in results
-        ]
     if errors:
         out["provider_errors"] = errors
     return out

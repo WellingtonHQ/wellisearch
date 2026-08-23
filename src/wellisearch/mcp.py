@@ -16,13 +16,16 @@ INSTRUCTIONS = """
 wellisearch — self-hosted web search + page reading for the LLM.
 
 Workflow:
-1. search_web(query) → results Markdown block + metadata (source, degraded, count).
+1. search_web(query) → a Markdown document: a Source/Degraded header, then
+   Title/URL/Snippet result blocks separated by --- lines. Local hits carry a
+   Last Crawled line per result and cost zero provider credits.
 2. Read pages: fetch_page(url) for one, fetch_pages(urls, max_chars, strategy)
    for several under a shared char budget.
 3. If the answer is thin, rephrase and search_web again (≤2 reformulations).
 
 Rules: never invent page content; if a fetch fails, say which URL failed and
-re-search. If a search response carries degraded:true, results are local-only.
+re-search. If the header carries Degraded: true, results are local-only
+(all providers failed — see the Provider Errors line).
 """
 
 

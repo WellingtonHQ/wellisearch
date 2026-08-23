@@ -31,7 +31,7 @@ import logging
 import pathlib
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -42,6 +42,7 @@ from .db import db
 from .fetch import _OMITTED, _valid_url, fetch_page, fetch_pages
 from .mcp import mcp_asgi
 from .providers import get_gateway
+from .search_web import render_search_markdown
 from .search_web import search_web as search_web_pipeline
 from .tools import _index_stats_data
 from .worker import STATE as WORKER_STATE
@@ -181,9 +182,10 @@ async def api_search(
     max_age_days: float | None = None,
 ) -> Any:
     out = await search_web_pipeline(query, num_results=num_results or k, max_crawl=max_crawl, max_age_days=max_age_days)
+    md = render_search_markdown(out)
     if out.get("source") == "error":
-        return JSONResponse({**out, "ok": False}, status_code=502)
-    return out
+        return Response(md, media_type="text/markdown", status_code=502)
+    return Response(md, media_type="text/markdown")
 
 
 @app.post("/api/fetch")
@@ -513,8 +515,12 @@ OWUI_SPEC: dict[str, Any] = {
                 "description": (
                     "Searches the wellisearch local index first (fast, cached), then falls back "
                     "to the live provider gateway (Tavily, Brave, SearXNG) in order. "
-                    "Returns {source, count, degraded, results: [{title, url, snippet, last_crawled?}]}. "
-                    "After a non-local hit, result URLs are queued for background indexing."
+                    "Returns a Markdown document (text/markdown): a header with Source "
+                    "(local|tavily|brave|searxng|error) and Degraded (true|false), then "
+                    "result blocks of Title/URL/Snippet separated by --- lines. Local hits "
+                    "carry a Last Crawled line per result. After a non-local hit, result "
+                    "URLs are queued for background indexing. Treat the response as "
+                    "Markdown text, not JSON."
                 ),
                 "parameters": [
                     {"name": "query", "in": "query", "required": True,
@@ -530,6 +536,16 @@ OWUI_SPEC: dict[str, Any] = {
                      "description": "Ignore locally indexed pages crawled more than N days ago (e.g. 7 forces a live lookup for stale pages).",
                      "schema": {"type": "number"}},
                 ],
+                "responses": {
+                    "200": {
+                        "description": "Markdown search results: Source/Degraded header + Title/URL/Snippet blocks.",
+                        "content": {"text/markdown": {"schema": {"type": "string"}}},
+                    },
+                    "502": {
+                        "description": "All providers failed and no local results exist. Body is the Markdown header with Provider Errors.",
+                        "content": {"text/markdown": {"schema": {"type": "string"}}},
+                    },
+                },
             }
         },
         "/api/fetch": {

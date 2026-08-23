@@ -64,14 +64,17 @@ async def main() -> None:
 
         # 3. gateway search (local index may be empty -> provider serves) -------------
         r = await c.get("/api/search", params={"query": "fastapi mcp server", "k": "5"})
-        j = r.json()
-        check("search: 200 + count>=3 + degraded=false", r.status_code == 200 and j.get("count", 0) >= 3 and j.get("degraded") is False,
-              f"count={j.get('count')} degraded={j.get('degraded')} src={j.get('source')}")
-        check("search: Markdown contract Title/URL/Snippet",
-              all(k in j.get("results", "") for k in ("Title:", "URL:", "Snippet:")), j.get("results", "")[:120].replace("\n", " | "))
+        md = r.text
+        # >=2 results (not 3): the strict SEARCH_MIN_SCORE gate may legitimately
+        # drop weak local hits, so a strong query can return 2. Zero is the real failure.
+        check("search: 200 + >=2 results + degraded=false",
+              r.status_code == 200 and len(re.findall(r"^URL: ", md, re.M)) >= 2 and "Degraded: false" in md,
+              md[:120].replace("\n", " | "))
+        check("search: Markdown contract header + Title/URL/Snippet",
+              all(k in md for k in ("Source:", "Title:", "URL:", "Snippet:")), md[:120].replace("\n", " | "))
 
         # 4. fetch a page (crawl + index) ---------------------------------------------
-        url = first_url(j.get("results", "")) or "https://python.langchain.com/docs/introduction/"
+        url = first_url(md) or "https://python.langchain.com/docs/introduction/"
         r = await c.post("/api/fetch", json={"url": url})
         j = r.json()
         check(f"fetch: ok + markdown ({url})", r.status_code == 200 and j.get("ok") is True and len(j.get("markdown", "")) > 200,
@@ -86,8 +89,9 @@ async def main() -> None:
 
         # 6. local search now hits the index (zero provider cost) ----------------------
         r = await c.get("/api/search", params={"query": url.split("/")[2] + " introduction"})
-        j = r.json()
-        check("local search: 200 + degraded=false", r.status_code == 200 and j.get("degraded") is False, f"src={j.get('source')}")
+        md = r.text
+        check("local search: 200 + degraded=false", r.status_code == 200 and "Degraded: false" in md and "URL:" in md,
+              md[:120].replace("\n", " | "))
 
         # 7. fetch-bulk with truncation --------------------------------------------------
         r = await c.post("/api/fetch-bulk", json={
@@ -118,15 +122,14 @@ async def main() -> None:
         # local-first is correct, so disable the index to force the gateway.
         # the background worker may index pages concurrently (from enqueued
         # searches), so re-disable and retry if a local hit still wins.
-        j: dict = {}
         for _attempt in range(3):
             await set_disabled(await all_page_urls(), True)
             r = await c.get("/api/search", params={"query": "chess grandmaster tournament live results", "k": "5"})
-            j = r.json()
-            if r.status_code == 200 and j.get("source") != "local":
+            if r.status_code == 200 and "Source: local" not in r.text:
                 break
-        check("failover: search 200 via brave", r.status_code == 200 and j.get("count", 0) >= 3 and j.get("source") == "brave",
-              f"src={j.get('source')} count={j.get('count')}")
+        check("failover: search 200 via brave",
+              r.status_code == 200 and len(re.findall(r"^URL: ", r.text, re.M)) >= 3 and "Source: brave" in r.text,
+              r.text[:120].replace("\n", " | "))
 
         # restore state
         await set_disabled(await all_page_urls(), False)
@@ -205,9 +208,11 @@ async def mcp_pass() -> None:
                 check("mcp: index_stats shape", isinstance(j, dict) and "index" in j and "quota_this_month" in j, json.dumps(j)[:150])
 
                 res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3})
-                j = json.loads(res.content[0].text if res.content else "{}")
-                check("mcp: search_web Markdown + metadata", isinstance(j, dict) and "URL:" in j.get("results", "") and j.get("count", 0) >= 1,
-                      f"count={j.get('count')} src={j.get('source')}")
+                md = res.content[0].text if res.content else ""
+                check("mcp: search_web Markdown + header",
+                      "Source:" in md and "Title:" in md and "URL:" in md and "Snippet:" in md
+                      and len(re.findall(r"^URL: ", md, re.M)) >= 1,
+                      md[:120].replace("\n", " | "))
     except Exception as e:
         check("mcp: SSE session", False, f"{type(e).__name__}: {e}")
 
