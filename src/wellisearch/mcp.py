@@ -7,6 +7,7 @@ two surfaces).
 from __future__ import annotations
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from .tools import register_tools
@@ -35,8 +36,22 @@ def mcp_asgi() -> Starlette:
     """ASGI app exposing the MCP SSE endpoint.
 
     Mount at "/mcp" → endpoints become /mcp/sse and /mcp/messages/ (§7).
+
+    Explicit transport security: the default auto-allowlist only covers
+    loopback, which 421-rejects in-network clients (e.g. openwebui connecting via
+    the ``wellisearch`` docker hostname).
     """
     return build_server().sse_app(
         sse_path="/sse",
         message_path="/messages/",
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", "wellisearch:*"],
+            allowed_origins=[
+                "http://127.0.0.1:*",
+                "http://localhost:*",
+                "http://[::1]:*",
+                "http://wellisearch:*",
+            ],
+        ),
     )
