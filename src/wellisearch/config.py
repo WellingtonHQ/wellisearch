@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     # --- worker / queue (async indexing) ---
     WORKER_INTERVAL_MIN: int = 30
     WORKER_BUDGET_PER_RUN: int = 25
+    REFRESH_MIN_AGE_HOURS: int = 72  # refresh pass skips pages crawled less than this long ago
     WORKER_TICK_BUDGET_MIN: int = 15
     KICK_DEBOUNCE_S: int = 5
     QUEUE_MAX_ATTEMPTS: int = 3

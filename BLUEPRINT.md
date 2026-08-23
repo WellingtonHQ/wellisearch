@@ -296,7 +296,7 @@ Forces an immediate re-crawl of a single page (bypassing refresh-order priority)
 ## 8. Background worker (asyncio task in the app)
 Two jobs per **tick**:
 1. **Drain `crawl_queue`** (search-enqueued / manual urls): process up to the per-tick budget, `CRAWL_MAX_PARALLEL` at a time → Crawl4AI `md` → `store_page()` → mark queue row `done`/`failed` (with `attempts`/`last_error`). Re-enqueue on transient error up to `QUEUE_MAX_ATTEMPTS` (default 3), else `failed`.
-2. **Refresh watchlist**: `SELECT url FROM pages WHERE NOT disabled ORDER BY fetch_count DESC, last_crawled ASC LIMIT WORKER_BUDGET_PER_RUN` → Crawl4AI `md` → hash → **unchanged? skip embed/update** (log `unchanged`) → else re-chunk + re-embed + replace chunks. Update `last_crawled`, `crawl_count`, `last_status`. Log to `crawl_log` (`trigger='refresh'`).
+2. **Refresh watchlist**: `SELECT url FROM pages WHERE NOT disabled AND (last_crawled IS NULL OR last_crawled < now() - REFRESH_MIN_AGE_HOURS) ORDER BY fetch_count DESC, last_crawled ASC LIMIT WORKER_BUDGET_PER_RUN` → Crawl4AI `md` → hash → **unchanged? skip embed/update** (log `unchanged`) → else re-chunk + re-embed + replace chunks. Update `last_crawled`, `crawl_count`, `last_status`. Log to `crawl_log` (`trigger='refresh'`). Freshness gate (`REFRESH_MIN_AGE_HOURS`, default 72): pages crawled more recently are skipped, so a `seed_url`/search kick only crawls the enqueued URL and genuinely stale pages — never the whole watchlist.
 
 Tick triggers:
 - Every `WORKER_INTERVAL_MIN` (default 30) unconditionally.

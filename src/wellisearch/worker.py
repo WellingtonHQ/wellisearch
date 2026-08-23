@@ -4,7 +4,8 @@ Two jobs per tick:
   1. drain crawl_queue (search/manual enqueues) — up to the per-tick budget,
      CRAWL_MAX_PARALLEL at a time → Crawl4AI /md → store_page → done/failed
      (transient errors re-enqueued up to QUEUE_MAX_ATTEMPTS).
-  2. refresh watchlist — ORDER BY fetch_count DESC, last_crawled ASC
+  2. refresh watchlist — only pages crawled > REFRESH_MIN_AGE_HOURS ago
+     (or never), ORDER BY fetch_count DESC, last_crawled ASC
      LIMIT WORKER_BUDGET_PER_RUN → crawl → unchanged? skip re-embed.
 
 Tick triggers:
@@ -112,10 +113,12 @@ async def _drain_queue(deadline: float) -> dict:
 
 async def _refresh_watchlist(deadline: float) -> dict:
     s = get_settings()
+    min_age = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=s.REFRESH_MIN_AGE_HOURS)
     rows = await db.fetch_all(
         "SELECT url, fetch_count FROM pages WHERE disabled = false "
+        "AND (last_crawled IS NULL OR last_crawled < %s) "
         "ORDER BY fetch_count DESC, last_crawled ASC LIMIT %s",
-        (s.WORKER_BUDGET_PER_RUN,),
+        (min_age, s.WORKER_BUDGET_PER_RUN),
     )
     if not rows:
         return {"refreshed": 0}
