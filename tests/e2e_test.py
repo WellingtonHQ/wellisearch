@@ -6,13 +6,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import sys
+from pathlib import Path
 
 import httpx
 
 BASE = "http://127.0.0.1:8780"
-KEY = "BSAm40FgxtTrX_hDRzpJ0cDg7Oki4Qy"
+
+
+def _load_api_key() -> str:
+    key = os.environ.get("WELLISEARCH_API_KEY")
+    if key:
+        return key
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        if line.startswith("WELLISEARCH_API_KEY="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    raise SystemExit("WELLISEARCH_API_KEY not found in environment or .env")
+
+
+KEY = _load_api_key()
 H = {"X-API-Key": KEY}
 PASS, FAIL = 0, 0
 
