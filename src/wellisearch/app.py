@@ -15,6 +15,7 @@ REST (one implementation shared with the MCP tools):
   GET  /api/logs/searches?limit=
   GET  /api/window?secs=           (windowed stats, clamped 10m..24h)
   GET  /api/logs?secs=&limit=      (merged ts/message/info stream)
+  GET  /owui/openapi.json          (curated 3-tool spec for OWUI tool servers)
   GET  /health
   GET  /                            (static/index.html)
 
@@ -488,6 +489,112 @@ async def api_logs(secs: int = 86400, limit: int = 200) -> Any:
         })
     logs.sort(key=lambda r: r["ts"], reverse=True)
     return {"logs": logs[:limit], "total": len(logs), "secs": secs}
+
+
+# ---------------------------------------------------------------------- OWUI
+# Curated OpenAPI spec for OWUI's OpenAPI tool server: exposes only the three
+# user-facing tools (search_web, fetch_page, fetch_pages) with clean
+# operationIds, so OWUI never sees the admin endpoints (seed/refresh/providers/
+# pages/logs). Served unauthenticated — it is a public API contract; OWUI
+# still sends the bearer token, and the endpoints themselves stay auth-gated.
+
+OWUI_SPEC: dict[str, Any] = {
+    "openapi": "3.0.0",
+    "info": {
+        "title": "wellisearch",
+        "version": "1.0.0",
+        "description": "Web search backed by a local crawl index with live provider fallback, plus clean Markdown page fetching.",
+    },
+    "paths": {
+        "/api/search": {
+            "get": {
+                "operationId": "search_web",
+                "summary": "Search the web",
+                "description": (
+                    "Searches the wellisearch local index first (fast, cached), then falls back "
+                    "to the live provider gateway (Tavily, Brave, SearXNG) in order. "
+                    "Returns {source, count, degraded, results: [{title, url, snippet, last_crawled?}]}. "
+                    "After a non-local hit, result URLs are queued for background indexing."
+                ),
+                "parameters": [
+                    {"name": "query", "in": "query", "required": True,
+                     "description": "The search query (natural language).",
+                     "schema": {"type": "string"}},
+                    {"name": "num_results", "in": "query", "required": False,
+                     "description": "Number of results to return (default 5, max 20).",
+                     "schema": {"type": "integer", "default": 5}},
+                    {"name": "max_crawl", "in": "query", "required": False,
+                     "description": "How many result URLs to queue for background indexing on a non-local hit (default 5).",
+                     "schema": {"type": "integer"}},
+                    {"name": "max_age_days", "in": "query", "required": False,
+                     "description": "Ignore locally indexed pages crawled more than N days ago (e.g. 7 forces a live lookup for stale pages).",
+                     "schema": {"type": "number"}},
+                ],
+            }
+        },
+        "/api/fetch": {
+            "post": {
+                "operationId": "fetch_page",
+                "summary": "Fetch one URL as clean Markdown",
+                "description": (
+                    "Reads a single URL and returns clean, readable Markdown. "
+                    "Indexed pages are served instantly from the local index; unknown URLs are "
+                    "crawled on demand and stored. Returns {ok, url, title, markdown}."
+                ),
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["url"],
+                                "properties": {
+                                    "url": {"type": "string", "description": "Absolute http(s) URL to fetch."},
+                                    "max_chars": {"type": "integer", "description": "Optional cap on returned characters (omit for the server default)."},
+                                },
+                            }
+                        }
+                    },
+                },
+            }
+        },
+        "/api/fetch-bulk": {
+            "post": {
+                "operationId": "fetch_pages",
+                "summary": "Fetch several URLs in one call under a shared char budget",
+                "description": (
+                    "Reads multiple URLs and returns one combined Markdown document (one section per page), "
+                    "allocating a shared character budget across pages using the given strategy. "
+                    "Returns {ok, markdown}. Prefer this over many fetch_page calls when you have several URLs."
+                ),
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["urls"],
+                                "properties": {
+                                    "urls": {"type": "array", "items": {"type": "string"},
+                                             "description": "List of absolute http(s) URLs."},
+                                    "max_chars": {"type": "integer", "description": "Total character budget across all pages (omit for the server default)."},
+                                    "per_page_chars": {"type": "integer", "description": "Per-page character cap."},
+                                    "strategy": {"type": "string", "description": "Budget allocation strategy.",
+                                                 "enum": ["smart", "head", "tail", "even", "priority"]},
+                                },
+                            }
+                        }
+                    },
+                },
+            }
+        },
+    },
+}
+
+
+@app.get("/owui/openapi.json")
+async def owui_openapi() -> Any:
+    return OWUI_SPEC
 
 
 # ------------------------------------------------------------------------ MCP
