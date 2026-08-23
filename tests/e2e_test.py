@@ -76,9 +76,12 @@ async def main() -> None:
         # 4. fetch a page (crawl + index) ---------------------------------------------
         url = first_url(md) or "https://python.langchain.com/docs/introduction/"
         r = await c.post("/api/fetch", json={"url": url})
-        j = r.json()
-        check(f"fetch: ok + markdown ({url})", r.status_code == 200 and j.get("ok") is True and len(j.get("markdown", "")) > 200,
-              f"chars={j.get('chars')} from_index={j.get('from_index')}")
+        md2 = r.text
+        check(f"fetch: 200 + Markdown header + body ({url})",
+              r.status_code == 200
+              and all(k in md2 for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
+              and len(md2) > 200,
+              md2[:120].replace("\n", " | "))
 
         # 5. page indexed --------------------------------------------------------------
         r = await c.get("/api/pages")
@@ -98,11 +101,19 @@ async def main() -> None:
             "urls": ["https://python.langchain.com/docs/introduction/",
                      "https://python.langchain.com/docs/get_started/quickstart/"],
             "max_chars": 3000, "strategy": "even"})
-        j = r.json()
-        check("fetch-bulk: ok + 2 pages fetched", r.status_code == 200 and j.get("ok") is True and j.get("pages_fetched") == 2,
-              f"pages_fetched={j.get('pages_fetched')}")
-        check("fetch-bulk: shared budget respected", (j.get("total_chars") or 0) <= 3400, f"total_chars={j.get('total_chars')}")
-        check("fetch-bulk: truncation marker present", j.get("truncated") is True and "[truncated" in j.get("markdown", ""), "marker" if "[truncated" in j.get("markdown", "") else "no marker")
+        md2 = r.text
+        # global header present, one section per page, budget respected
+        total_m = re.search(r"Total Chars:\s*(\d+)", md2)
+        total = int(total_m.group(1)) if total_m else -1
+        check("fetch-bulk: 200 + Markdown header + 2 sections",
+              r.status_code == 200
+              and all(k in md2 for k in ("Strategy:", "Pages Fetched:", "Total Chars:", "Truncated:"))
+              and "Pages Fetched: 2" in md2
+              and len(re.findall(r"^Title: ", md2, re.M)) == 2,
+              md2[:120].replace("\n", " | "))
+        check("fetch-bulk: shared budget respected", total >= 0 and total <= 3400, f"total_chars={total}")
+        check("fetch-bulk: truncation marker present", "Truncated: true" in md2 and "[truncated" in md2,
+              "marker" if "[truncated" in md2 else "no marker")
 
         # 8. provider failover: disable tavily + local index -> brave serves ------------
         # (local-first is correct behavior, so the index is disabled to force the gateway)
@@ -212,6 +223,14 @@ async def mcp_pass() -> None:
                 check("mcp: search_web Markdown + header",
                       "Source:" in md and "Title:" in md and "URL:" in md and "Snippet:" in md
                       and len(re.findall(r"^URL: ", md, re.M)) >= 1,
+                      md[:120].replace("\n", " | "))
+
+                res = await session.call_tool(
+                    "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"})
+                md = res.content[0].text if res.content else ""
+                check("mcp: fetch_page Markdown + header",
+                      all(k in md for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
+                      and len(md) > 200,
                       md[:120].replace("\n", " | "))
     except Exception as e:
         check("mcp: SSE session", False, f"{type(e).__name__}: {e}")

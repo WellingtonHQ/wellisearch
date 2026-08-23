@@ -212,30 +212,30 @@ CREATE TABLE crawl_log (
 
 ## 7. MCP Tool Surface
 
-The MCP server (SSE at `/mcp/sse`) exposes the tools below. `search_web` is the core search tool; `fetch_page` (single) and `fetch_pages` (bulk, budgeted) are the read tools; `index_stats`, `seed_url`, and `refresh_page` are operational conveniences. All tools return structured JSON; `search_web.results` is always the Markdown block defined below. The normalization layer (`providers/base.py`) converts every provider's raw shape into this contract — LLMs never see a raw provider payload.
+The MCP server (SSE at `/mcp/sse`) exposes the tools below. `search_web` is the core search tool; `fetch_page` (single) and `fetch_pages` (bulk, budgeted) are the read tools; `index_stats`, `seed_url`, and `refresh_page` are operational conveniences. `search_web`, `fetch_page`, and `fetch_pages` all return a **plain Markdown document** (no JSON envelope) defined below; the operational tools return structured JSON. The normalization layer (`providers/base.py`) converts every provider's raw shape into this contract — LLMs never see a raw provider payload.
 
 ### `search_web(query, num_results=5, max_crawl=5, max_age_days=null)`
-The primary search tool. Takes a web-search query and returns results as a **formatted Markdown block** (the `results` field) plus a small set of metadata.
+The primary search tool. Takes a web-search query and returns a **Markdown document**: a response-level header, then one block per result.
 
-**Return — `results` Markdown format (hard contract):**
+**Return — Markdown format (hard contract):**
 ```
+Source: local
+Degraded: false
+
 Title: Web Research Title
 URL: https://example.com
+Last Crawled: 2026-08-20T14:03:11Z
 Snippet: This is what the result is about.
 ---
 Title: Next Title
 URL: https://example2.com
 Snippet: Another snippet.
 ```
+- Header: `Source:` (`local` | `tavily` | `brave` | `searxng` | `error`) and `Degraded:` (`true` | `false` — all providers failed, local-only results served). When providers failed, a `Provider Errors:` line follows (e.g. `tavily: 429; brave: timeout`).
 - One block per result; blocks separated by a `---` line.
-- Each block has, in order: `Title:`, `URL:`, `Snippet:`.
+- Each block has, in order: `Title:`, `URL:`, optional `Last Crawled:` (local hits only, ISO timestamp), `Snippet:`.
 - `Snippet` trimmed to ~400 chars.
-
-**Return — metadata fields (alongside `results`):**
-- `source`: `local` | `tavily` | `brave` | `searxng` (which layer served it).
-- `degraded`: bool — true if all providers failed and local-only results were returned.
-- `count`: number of results returned.
-- For local hits: `last_crawled` per result (freshness).
+- `source = error` (nothing to serve): header only, no blocks.
 
 **Parameters:**
 - `query` (required): natural-language / web search query.
@@ -251,26 +251,56 @@ Loads the content of a **single** URL as **clean/fit Markdown** for the LLM to r
 - **Bumps `fetch_count`** — fetched pages are (a) prioritized in the background crawl/refresh loop and (b) boosted in search prominence.
 - `max_chars` (optional): cap on returned content length (default = full content). Boundary-safe cut.
 
+**Return — Markdown format (hard contract):**
+```
+Title: How to Deploy Docker Compose Stacks to Remote Hosts
+URL: https://example.com/blog/post/docker-compose-remote
+From Index: true
+Chars: 12875
+Truncated: false
+
+# How to Deploy Docker Compose Stacks to Remote Hosts
+...page body (the fit Markdown)...
+```
+- Header (in order): `Title:`, `URL:`, `From Index:` (`true` | `false` — served from the index vs crawled on demand), `Chars:` (body length), `Truncated:` (`true` | `false`).
+- A trimmed body ends with its `[truncated — N chars omitted, strategy=head]` marker.
+- Failed fetch: `URL:` / `Status: failed` / `Error:` header only (HTTP 200).
+
 ### `fetch_pages(urls, max_chars=null, per_page_chars=null, strategy="smart")`
 Bulk read of **multiple pages in one call**, under a **shared total character budget**, with **swappable truncation strategies**. Use when the LLM wants to read several `search_web` results at once instead of making N round-trips.
 - `urls` (required): list of URLs to fetch in bulk.
 - `max_chars` (optional): **total character budget across all pages combined** — the "maximum amount of chars you want." If null, return full content.
 - `per_page_chars` (optional): per-page cap (bounds a single page so one long page can't eat the whole budget).
 - `strategy` (optional, default `"smart"`): how the budget is allocated and where content is trimmed — **swappable** per call (see strategies below).
-- Returns **combined Markdown**, one clearly-delimited section per page:
-```
-URL: https://...
-Title: ...
----
-<content, trimmed to fit the budget>
-
-URL: https://...
-Title: ...
----
-<content, trimmed to fit the budget>
-```
 - **Bumps `fetch_count` for every page fetched** (same priority/prominence effect as `fetch_page`); pages not yet indexed are crawled on demand (parallelized, in-flight-deduped).
-- Metadata: `total_chars`, `pages_fetched`, `truncated` (bool), `strategy`, per-page `chars_used` + `url`.
+
+**Return — Markdown format (hard contract):**
+```
+Strategy: even
+Budget: 3000
+Pages Fetched: 2
+Total Chars: 3322
+Truncated: true
+
+Title: ...
+URL: https://...
+From Index: true
+Chars: 1500
+Truncated: true
+---
+<content, trimmed to fit the budget, ending with its [truncated — N chars omitted, strategy=X] marker>
+
+Title: ...
+URL: https://...
+From Index: false
+Chars: 1822
+Truncated: false
+---
+<content>
+```
+- Global header (in order): `Strategy:`, `Budget:` (only when a budget is set — omitted = unlimited), `Pages Fetched:`, `Total Chars:`, `Truncated:`.
+- One section per page (in order): `Title:`, `URL:`, `From Index:`, `Chars:` (content chars after trimming), `Truncated:`, then a `---` line and the body.
+- Failed/invalid URLs get a `URL:` / `Status: failed` / `Error:` section instead; nothing fetched → the global header carries `Pages Fetched: 0` / `Status: failed` / `Error:` plus one error section per URL (HTTP 200).
 
 **Truncation strategies (swappable):**
 - `smart` (default): allocate the budget by page relevance/prominence (`fetch_count`, then search score), and within a page keep the highest-scoring chunks first (from the local index if present; else a heading/lead heuristic). Best signal-per-char.
@@ -459,7 +489,7 @@ networks:
 
 ## 12. OWUI skill rewrite (`search_the_web.md`)
 New workflow (replaces the old SearXNG→md steps):
-1. **Search** — call wellisearch `search_web(query, num_results: 5)`. Returns immediately with the `results` Markdown block plus `source` (`local`|`tavily`|`brave`|`searxng`). (On a miss, the result urls are being indexed in the background — no need to wait. If the response carries `degraded: true`, results are local-only; retry with a rephrased query or note the limitation.)
+1. **Search** — call wellisearch `search_web(query, num_results: 5)`. Returns immediately a Markdown document: a `Source` (`local`|`tavily`|`brave`|`searxng`) / `Degraded` header, then `Title`/`URL`/`Snippet` blocks (local hits carry a `Last Crawled` line). (On a miss, the result urls are being indexed in the background — no need to wait. If the header carries `Degraded: true`, results are local-only; retry with a rephrased query or note the limitation.)
 2. **Read** — for a single page call `fetch_page(url)`; for several at once call `fetch_pages(urls, max_chars)` with a char budget and a `strategy` (default `smart`) (these are the only "read a page" tools; never call Crawl4AI `md` directly anymore).
 3. **Evaluate** — if the answer is thin, reformulate (≤2 tries) and `search_web` again.
 4. **Synthesize** — answer from `fetch_page`/`fetch_pages` content, cite URLs; note source dates from `last_crawled` for time-sensitive topics.
@@ -484,7 +514,7 @@ The old SearXNG MCP in OWUI may be retired once wellisearch is in service (its p
 ## 14. Acceptance criteria (test pass)
 1. `infra/postgres` up + healthy; `\l` shows `shared` + the existing service's DB; existing service talks to it; old Postgres retired.
 2. wellisearch `docker compose up` → `/health` ok (pg + crawl4ai reachable, provider keys present), including the startup-retry path when the app boots before pg.
-3. MCP `search_web("what is pgvector")` first call → `source: tavily` (primary), returns **immediately** (no crawl latency); `results` is a well-formed Markdown block (Title/URL/Snippet + `---` separators); `search_log` row written with provider; `crawl_queue` has ≤5 `pending` rows.
+3. MCP `search_web("what is pgvector")` first call → `Source: tavily` (primary), returns **immediately** (no crawl latency); body is a well-formed Markdown document (`Source`/`Degraded` header + Title/URL/Snippet blocks + `---` separators); `search_log` row written with provider; `crawl_queue` has ≤5 `pending` rows.
 4. Within a few seconds (kicked tick), `crawl_log` shows `trigger=search` `ok` rows and `pages`/`chunks` are populated.
 5. Same query again → `source: local`, returns in <1 s, snippets from stored chunks, `provider_quota` NOT incremented for local hits.
 6. `fetch_page` on a URL not in index → returns clean markdown; `fetch_count=1`; page in `pages`.

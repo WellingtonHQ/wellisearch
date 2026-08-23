@@ -7,6 +7,9 @@ on-demand read path (plan §7).
 - Never crawls a URL twice concurrently (shared in-flight set).
 - fetch_pages allocates a shared char budget with swappable, boundary-safe
   truncation strategies (truncation.py).
+- The pipelines return structured dicts; render_fetch_page_markdown /
+  render_fetch_pages_markdown turn them into the plain-Markdown responses
+  served by the MCP + REST surfaces (no JSON envelope).
 """
 from __future__ import annotations
 
@@ -30,6 +33,80 @@ from .worker import crawl_url
 log = logging.getLogger("wellisearch.fetch")
 
 _OMITTED = object()  # sentinel: "parameter not provided"
+
+
+def render_fetch_page_markdown(out: dict) -> str:
+    """The fetch_page response as plain Markdown (no JSON envelope): a
+    Title/URL/From Index/Chars/Truncated header followed by the page body.
+    A failed fetch is a URL/Status/Error header only."""
+    if not out.get("ok"):
+        return "\n".join([
+            f"URL: {out.get('url') or ''}",
+            "Status: failed",
+            f"Error: {out.get('error') or 'unknown error'}",
+        ])
+    lines = [
+        f"Title: {out.get('title') or out.get('url') or ''}",
+        f"URL: {out.get('url') or ''}",
+        f"From Index: {'true' if out.get('from_index') else 'false'}",
+        f"Chars: {out.get('chars') or 0}",
+        f"Truncated: {'true' if out.get('truncated') else 'false'}",
+    ]
+    return "\n\n".join(["\n".join(lines), out.get("markdown") or ""])
+
+
+def render_fetch_pages_markdown(out: dict) -> str:
+    """The fetch_pages response as plain Markdown (no JSON envelope): a
+    global Strategy/Budget/Pages Fetched/Total Chars/Truncated header
+    followed by one Title/URL/From Index/Chars/Truncated section per page
+    (body after a `---` line). Failed URLs get a URL/Status/Error section."""
+    if not out.get("ok"):
+        lines = [
+            "Pages Fetched: 0",
+            "Status: failed",
+            f"Error: {out.get('error') or 'unknown error'}",
+        ]
+        sections = [
+            "\n".join([
+                f"URL: {p.get('url') or ''}",
+                "Status: failed",
+                f"Error: {p.get('error') or ''}",
+            ])
+            for p in out.get("pages") or []
+        ]
+        if not sections:
+            return "\n".join(lines)
+        return "\n\n".join(["\n".join(lines), "\n\n".join(sections)])
+
+    lines = [f"Strategy: {out.get('strategy') or 'unknown'}"]
+    if out.get("budget"):
+        lines.append(f"Budget: {out['budget']}")
+    lines += [
+        f"Pages Fetched: {out.get('pages_fetched') or 0}",
+        f"Total Chars: {out.get('total_chars') or 0}",
+        f"Truncated: {'true' if out.get('truncated') else 'false'}",
+    ]
+    sections = []
+    for p in out.get("pages") or []:
+        if p.get("error"):
+            sections.append("\n".join([
+                f"URL: {p['url']}",
+                "Status: failed",
+                f"Error: {p['error']}",
+            ]))
+            continue
+        sections.append("\n".join([
+            f"Title: {p.get('title') or p['url']}",
+            f"URL: {p['url']}",
+            f"From Index: {'true' if p.get('from_index') else 'false'}",
+            f"Chars: {p.get('chars') or len(p.get('content') or '')}",
+            f"Truncated: {'true' if p.get('truncated') else 'false'}",
+            "---",
+            p.get("content") or "",
+        ]))
+    if not sections:
+        return "\n".join(lines)
+    return "\n\n".join(["\n".join(lines), "\n\n".join(sections)])
 
 
 def _valid_url(url: str) -> bool:
@@ -187,8 +264,7 @@ async def fetch_pages(
     weights = [p["fetch_count"] for p in resolved]
     budgets = allocate_budgets(strat, lens, weights, budget, per_page)
 
-    sections: list[str] = []
-    page_meta: list[dict] = []
+    pages_out: list[dict] = []
     total_chars = 0
     any_truncated = False
 
@@ -198,17 +274,12 @@ async def fetch_pages(
         if truncated:
             text = text + "\n" + truncation_marker(omitted, strat)
             any_truncated = True
-        section = (
-            f"URL: {p['url']}\n"
-            f"Title: {p['title']}\n"
-            f"---\n"
-            f"{text}"
-        )
-        sections.append(section)
-        total_chars += len(section)
-        page_meta.append({
+        total_chars += len(text)
+        pages_out.append({
             "url": p["url"],
-            "chars_used": len(text),
+            "title": p["title"],
+            "content": text,
+            "chars": len(text),
             "truncated": truncated,
             "omitted": omitted if truncated else 0,
             "from_index": p["from_index"],
@@ -216,11 +287,10 @@ async def fetch_pages(
 
     return {
         "ok": True,
-        "markdown": "\n\n".join(sections),
-        "total_chars": total_chars,
         "pages_fetched": len(resolved),
         "truncated": any_truncated,
+        "total_chars": total_chars,
         "strategy": strat,
         "budget": budget,
-        "pages": page_meta + failed + bad,
+        "pages": pages_out + failed + bad,
     }

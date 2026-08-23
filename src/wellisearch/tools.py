@@ -20,6 +20,8 @@ from .config import get_settings
 from .db import db
 from .fetch import fetch_page as _fetch_page
 from .fetch import fetch_pages as _fetch_pages
+from .fetch import render_fetch_page_markdown
+from .fetch import render_fetch_pages_markdown
 from .search_web import render_search_markdown
 from .search_web import search_web as _search_web
 from .truncation import STRATEGIES
@@ -135,22 +137,27 @@ def register_tools(server: MCPServer) -> None:
     @server.tool(
         name="fetch_page",
         description=(
-            "Load one URL as clean/fit Markdown for reading. Returns stored "
-            "content if indexed, else crawls on demand (and stores it). "
-            "Bumps the page's fetch_count (priority + prominence)."
+            "Load one URL as clean/fit Markdown for reading. Returns a "
+            "Markdown document: a Title/URL/From Index/Chars/Truncated "
+            "header, then the page body. Indexed pages are served instantly "
+            "from the local index; unknown URLs are crawled on demand and "
+            "stored. Bumps the page's fetch_count (priority + prominence). "
+            "A failed fetch returns a URL/Status/Error header."
         ),
     )
-    async def fetch_page(url: str, max_chars: int | None = None) -> dict:
+    async def fetch_page(url: str, max_chars: int | None = None) -> str:
         out = await _fetch_page(url, max_chars=max_chars)
-        return _clean(out)
+        return render_fetch_page_markdown(out)
 
     @server.tool(
         name="fetch_pages",
         description=(
             "Bulk-read multiple URLs in one call under a shared total "
-            "character budget. Returns combined Markdown, one clearly "
-            "delimited section per page (URL/Title/---/content). "
-            f"strategy: {list(STRATEGIES)} (default 'smart'). "
+            "character budget. Returns a Markdown document: a "
+            "Strategy/Budget/Pages Fetched/Total Chars/Truncated header, "
+            "then one Title/URL/From Index/Chars/Truncated section per page "
+            "(body after a --- line). Failed URLs get a URL/Status/Error "
+            f"section. strategy: {list(STRATEGIES)} (default 'smart'). "
             "Each trimmed page carries a [truncated — N chars omitted, "
             "strategy=X] marker."
         ),
@@ -160,11 +167,11 @@ def register_tools(server: MCPServer) -> None:
         max_chars: int | None = None,  # null = full content (spec §7)
         per_page_chars: int | None = None,
         strategy: str = "smart",
-    ) -> dict:
+    ) -> str:
         out = await _fetch_pages(
             urls, max_chars=max_chars, per_page_chars=per_page_chars, strategy=strategy
         )
-        return _clean(out)
+        return render_fetch_pages_markdown(out)
 
     @server.tool(
         name="index_stats",

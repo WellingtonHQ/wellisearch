@@ -53,8 +53,11 @@ Read one URL as fit markdown (stored-first, else crawl+store).
 
 Body: `{ "url": "...", "max_chars": 12000 }` (`max_chars` optional).
 
-Returns: `{ ok, url, title, markdown, chars, truncated, from_index }`.
-Bumps the page's `fetch_count`.
+Returns the Markdown page document (`Content-Type: text/markdown`, no JSON
+envelope): a `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:`
+header, then the page body. A failed fetch returns a `URL:` /
+`Status: failed` / `Error:` header (HTTP 200). Bumps the page's
+`fetch_count`.
 
 ### `POST /api/fetch-bulk`
 Bulk read under a shared character budget.
@@ -71,8 +74,15 @@ Body:
 `max_chars`/`per_page_chars` omitted → server defaults; explicit `0`/`null` →
 unlimited. `strategy` ∈ `smart | head | tail | even | priority`.
 
-Returns: `{ ok, markdown, total_chars, pages_fetched, truncated, strategy,
-budget, pages:[{url, chars_used, truncated, omitted, from_index}] }`.
+Returns the combined Markdown document (`Content-Type: text/markdown`, no
+JSON envelope): a `Strategy:` / `Budget:` / `Pages Fetched:` /
+`Total Chars:` / `Truncated:` header (`Budget:` only when a budget is set),
+then one `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:` section
+per page (body after a `---` line, trimmed pages keep their
+`[truncated — N chars omitted, strategy=X]` marker); failed URLs get a
+`URL:` / `Status: failed` / `Error:` section. Nothing fetched → the header
+carries `Pages Fetched: 0` / `Status: failed` / `Error:` plus one error
+section per URL (HTTP 200).
 
 ### `GET /api/stats`
 Dashboard payload: index counts, freshness buckets, queue depth, provider
@@ -171,17 +181,18 @@ All six tools call the same code as their REST counterparts.
 | Tool | Purpose | Params |
 |---|---|---|
 | `search_web` | Search the web (local-first). Returns a Markdown document: `Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks (`Last Crawled` per local result). | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None` |
-| `fetch_page` | Read one URL as fit markdown (stored-first, else crawl+store). Bumps `fetch_count`. | `url: str`, `max_chars=None` |
-| `fetch_pages` | Bulk read under a shared char budget. | `urls: list[str]`, `max_chars=None`, `per_page_chars=None`, `strategy="smart"` |
+| `fetch_page` | Read one URL as fit markdown (stored-first, else crawl+store). Returns a Markdown document: `Title`/`URL`/`From Index`/`Chars`/`Truncated` header + page body. Bumps `fetch_count`. | `url: str`, `max_chars=None` |
+| `fetch_pages` | Bulk read under a shared char budget. Returns a Markdown document: `Strategy`/`Budget`/`Pages Fetched`/`Total Chars`/`Truncated` header + one section per page. | `urls: list[str]`, `max_chars=None`, `per_page_chars=None`, `strategy="smart"` |
 | `index_stats` | Snapshot of index + gateway (counts, freshness, hit-rate, queue, quota). | — |
 | `seed_url` | Queue a URL for background indexing. Returns queue position. | `url: str` |
 | `refresh_page` | Force an immediate re-crawl of one page. | `url: str` |
 
-The `search_web` description tells the LLM the contract explicitly: the body
-is a Markdown document — `Source`/`Degraded` header, then `Title`/`URL`/
-`Snippet` blocks separated by `---` lines — local hits cost zero provider
-credits, and a miss triggers background indexing — so the model doesn't need
-to wait or re-call.
+The tool descriptions tell the LLM the contract explicitly: each of
+`search_web`, `fetch_page`, and `fetch_pages` returns a Markdown document
+(`Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks for search;
+`Title`/`URL`/`From Index`/`Chars`/`Truncated` header for fetch) — not JSON —
+local search hits cost zero provider credits, and a miss triggers background
+indexing, so the model doesn't need to wait or re-call.
 
 ## Error model
 

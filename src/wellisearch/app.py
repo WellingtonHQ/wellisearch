@@ -40,6 +40,7 @@ from . import crawler, queue
 from .config import get_settings
 from .db import db
 from .fetch import _OMITTED, _valid_url, fetch_page, fetch_pages
+from .fetch import render_fetch_page_markdown, render_fetch_pages_markdown
 from .mcp import mcp_asgi
 from .providers import get_gateway
 from .search_web import render_search_markdown
@@ -192,7 +193,8 @@ async def api_search(
 async def api_fetch(body: FetchBody) -> Any:
     if not _valid_url(body.url):
         raise HTTPException(400, "invalid or non-http(s) url")
-    return await fetch_page(body.url, max_chars=body.max_chars)
+    out = await fetch_page(body.url, max_chars=body.max_chars)
+    return Response(render_fetch_page_markdown(out), media_type="text/markdown")
 
 
 @app.post("/api/fetch-bulk")
@@ -202,12 +204,13 @@ async def api_fetch_bulk(request: Request) -> Any:
     raw = await request.json()
     if not isinstance(raw, dict) or not isinstance(raw.get("urls"), list):
         raise HTTPException(400, "body must be JSON: {urls: [...], max_chars?, per_page_chars?, strategy?}")
-    return await fetch_pages(
+    out = await fetch_pages(
         raw.get("urls", []),
         max_chars=raw["max_chars"] if "max_chars" in raw else _OMITTED,
         per_page_chars=raw["per_page_chars"] if "per_page_chars" in raw else _OMITTED,
         strategy=raw.get("strategy"),
     )
+    return Response(render_fetch_pages_markdown(out), media_type="text/markdown")
 
 
 @app.get("/api/stats")
@@ -555,7 +558,10 @@ OWUI_SPEC: dict[str, Any] = {
                 "description": (
                     "Reads a single URL and returns clean, readable Markdown. "
                     "Indexed pages are served instantly from the local index; unknown URLs are "
-                    "crawled on demand and stored. Returns {ok, url, title, markdown}."
+                    "crawled on demand and stored. Returns a Markdown document (text/markdown): "
+                    "a Title/URL/From Index/Chars/Truncated header, then the page body. A failed "
+                    "fetch returns a URL/Status/Error header. Treat the response as Markdown "
+                    "text, not JSON."
                 ),
                 "requestBody": {
                     "required": True,
@@ -572,6 +578,12 @@ OWUI_SPEC: dict[str, Any] = {
                         }
                     },
                 },
+                "responses": {
+                    "200": {
+                        "description": "Markdown page: Title/URL/From Index/Chars/Truncated header + page body.",
+                        "content": {"text/markdown": {"schema": {"type": "string"}}},
+                    },
+                },
             }
         },
         "/api/fetch-bulk": {
@@ -581,7 +593,11 @@ OWUI_SPEC: dict[str, Any] = {
                 "description": (
                     "Reads multiple URLs and returns one combined Markdown document (one section per page), "
                     "allocating a shared character budget across pages using the given strategy. "
-                    "Returns {ok, markdown}. Prefer this over many fetch_page calls when you have several URLs."
+                    "Returns a Markdown document (text/markdown): a Strategy/Budget/Pages Fetched/Total "
+                    "Chars/Truncated header, then one Title/URL/From Index/Chars/Truncated section per "
+                    "page (body after a --- line); failed URLs get a URL/Status/Error section. "
+                    "Prefer this over many fetch_page calls when you have several URLs. Treat the "
+                    "response as Markdown text, not JSON."
                 ),
                 "requestBody": {
                     "required": True,
@@ -595,11 +611,17 @@ OWUI_SPEC: dict[str, Any] = {
                                              "description": "List of absolute http(s) URLs."},
                                     "max_chars": {"type": "integer", "description": "Total character budget across all pages (omit for the server default)."},
                                     "per_page_chars": {"type": "integer", "description": "Per-page character cap."},
-                                    "strategy": {"type": "string", "description": "Budget allocation strategy.",
-                                                 "enum": ["smart", "head", "tail", "even", "priority"]},
+                                     "strategy": {"type": "string", "description": "Budget allocation strategy.",
+                                                  "enum": ["smart", "head", "tail", "even", "priority"]},
                                 },
                             }
                         }
+                    },
+                },
+                "responses": {
+                    "200": {
+                        "description": "Combined Markdown: Strategy/Budget/Pages Fetched/Total Chars/Truncated header + one section per page.",
+                        "content": {"text/markdown": {"schema": {"type": "string"}}},
                     },
                 },
             }

@@ -157,7 +157,9 @@ one request per URL per moment, and the result is consistent.
   (`FETCH_MAX_CHARS` default 40000 total, `FETCH_PER_PAGE_CHARS` 12000
   per-page) with a swappable strategy (`smart` default; also `head`, `tail`,
   `even`, `priority`). Each page is a clearly delimited
-  `URL / Title / --- / content` section; trimmed pages carry a
+  `Title / URL / From Index / Chars / Truncated / --- / content` section
+  (the response opens with a `Strategy / Budget / Pages Fetched / Total
+  Chars / Truncated` header); trimmed pages carry a
   `[truncated — N chars omitted, strategy=X]` marker.
 
 The strategy allocates per-page budgets from the shared total, then

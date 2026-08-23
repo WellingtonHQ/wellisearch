@@ -86,12 +86,16 @@ host). Tools:
   a Markdown document: `Source:`/`Degraded:` header (+ `Provider Errors:`
   when providers failed), then `Title:`/`URL:`/`Snippet:` blocks separated
   by `---`; local hits carry a `Last Crawled:` line per result
-- `fetch_page(url, max_chars=null)` → clean markdown of one page
+- `fetch_page(url, max_chars=null)` → a Markdown document:
+  `Title:`/`URL:`/`From Index:`/`Chars:`/`Truncated:` header, then the page
+  body (a failed fetch returns a `URL:`/`Status:`/`Error:` header)
 - `fetch_pages(urls, max_chars=null, per_page_chars=null, strategy="smart")`
-  → combined markdown under a shared char budget. Strategies: `smart`
-  (prominence-weighted, default), `head`, `tail`, `even`, `priority`.
-  Trims are boundary-safe; each trimmed page carries a
-  `[truncated — N chars omitted, strategy=X]` marker.
+  → a Markdown document: `Strategy:`/`Budget:`/`Pages Fetched:`/`Total
+  Chars:`/`Truncated:` header, then one `Title:`/`URL:`/`From Index:`/
+  `Chars:`/`Truncated:` section per page (body after a `---` line) under a
+  shared char budget. Strategies: `smart` (prominence-weighted, default),
+  `head`, `tail`, `even`, `priority`. Trims are boundary-safe; each trimmed
+  page carries a `[truncated — N chars omitted, strategy=X]` marker.
 - `index_stats()` → index + gateway snapshot
 - `seed_url(url)` → queue a crawl + kick the worker
 - `refresh_page(url)` → immediate re-crawl of one page
