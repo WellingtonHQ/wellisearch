@@ -12,7 +12,8 @@ jobs:
       (
         github.event.pull_request.permissions.admin ||
         github.event.pull_request.permissions.maintain ||
-        github.event.pull_request.permissions.push
+        github.event.pull_request.permissions.push ||
+        contains('OWNER MEMBER COLLABORATOR', github.event.pull_request.author_association)
       )
     runs-on: self-hosted
     permissions:
