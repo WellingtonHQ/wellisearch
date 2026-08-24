@@ -41,7 +41,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          MODEL: qwen/qwen3.8-27b
+          MODEL: lmstudio/qwen/qwen3.8-27b
           USE_GITHUB_TOKEN: "true"
           PROMPT: |
             Review this pull request:
