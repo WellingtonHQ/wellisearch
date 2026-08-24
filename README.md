@@ -10,6 +10,8 @@ wellisearch gives your AI agent a **self-hosted way to search the web and read w
 
 Think of it as a personal, always-learning search box for your LLM. Ask a question, it answers from its own library if it can; otherwise it goes out to the search providers (Tavily, Brave, SearXNG) — and quietly files the results away so next time it's free.
 
+![wellisearch dashboard — live index, hit-rate, provider quotas, and recent activity](docs/images/dashboard.png)
+
 ## Why wellisearch?
 
 - **Free repeat searches.** Pages your agent reads get stored locally. The next search on the same topic is answered by your own index — no provider credits burned.
@@ -76,6 +78,25 @@ That's it — your agent gets six tools:
 | `index_stats()` | How big and fresh is the library? |
 | `seed_url(url)` | Save a specific page for later |
 | `refresh_page(url)` | Re-fetch a page that may have changed |
+
+Here's what `search_web` hands back — a clean Markdown document your LLM reads directly, no JSON to parse:
+
+```
+Source: local
+Degraded: false
+
+Title: pgvector — Vector Search in Postgres
+URL: https://github.com/pgvector/pgvector
+Last Crawled: 2026-08-20T14:03:11Z
+Snippet: pgvector is an extension for adding approximate and exact similarity
+search directly to PostgreSQL.
+---
+Title: PostgreSQL 18 Documentation
+URL: https://www.postgresql.org/docs/current/
+Snippet: ...
+```
+
+The header tells the story: `Source: local` means it came from the library (free); `Source: tavily` (or `brave` / `searxng`) means a provider answered and the pages are being filed away for next time.
 
 **Example — Open WebUI:** add a new MCP server, transport **SSE**, URL `http://wellisearch:8780/mcp/sse` (or `http://127.0.0.1:8780/mcp/sse` from the host).
 
