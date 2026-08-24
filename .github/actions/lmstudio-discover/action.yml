@@ -10,10 +10,10 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # LMSTUDIO_URL and LMSTUDIO_API_KEY arrive via the runner's own environment;
+    # do NOT re-declare them here (declaring them masks the inherited values).
     - name: Discover models and update opencode config
       shell: bash
       env:
-        LMSTUDIO_URL: ${{ env.LMSTUDIO_URL }}
-        LMSTUDIO_API_KEY: ${{ env.LMSTUDIO_API_KEY }}
         LMSTUDIO_PREFERRED_MODEL: ${{ inputs.preferred-model }}
       run: python3 "$GITHUB_ACTION_PATH/discover.py"
