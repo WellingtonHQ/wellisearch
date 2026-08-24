@@ -7,12 +7,21 @@ inputs:
     required: false
     default: ""
 
+outputs:
+  model:
+    description: "The selected model id (provider/model)."
+    value: ${{ steps.discover.outputs.model }}
+  models:
+    description: "Comma-separated list of loaded models."
+    value: ${{ steps.discover.outputs.models }}
+
 runs:
   using: "composite"
   steps:
     # LMSTUDIO_URL and LMSTUDIO_API_KEY arrive via the runner's own environment;
     # do NOT re-declare them here (declaring them masks the inherited values).
-    - name: Discover models and update opencode config
+    - id: discover
+      name: Discover models and update opencode config
       shell: bash
       env:
         LMSTUDIO_PREFERRED_MODEL: ${{ inputs.preferred-model }}
