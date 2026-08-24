@@ -1,14 +1,20 @@
-# wellisearch — app container.
+# wellisearch — app + crawl4ai containers (one project, one network pair).
 #
-# Networks (both external, created by their owning projects):
-#   - wellington_default : OWUI stack network — reach crawl4ai + searxng by
-#                          service name, and be reachable as `wellisearch:8780`
-#                          from OWUI / mcpo for the MCP SSE endpoint.
+# Networks:
+#   - wellisearch_default : OWUI stack network (external, created by the
+#                          open-webui/wellisearch project). crawl4ai joins it
+#                          so OpenWebUI keeps reaching `crawl4ai:11235` for
+#                          its external web loader; wellisearch stays
+#                          reachable as `wellisearch:8780` from OWUI.
 #   - postgres-net       : infra project network — reach the shared Postgres
 #                          container by the `postgres` alias.
 #
 # No depends_on on postgres: cross-project ordering is handled by the app's
 # startup DB retry (~10 x 3 s) + self-creating the `wellisearch` DB.
+#
+# Crawl4AI version-pinned patches live in ./tools (moved here from
+# open-webui/wellington/tools): bumping the image tag requires re-diffing
+# /app/monitor.py and /app/supervisord.conf against the new image.
 name: wellisearch
 
 services:
@@ -26,12 +32,58 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    depends_on:
+      - crawl4ai
     networks:
-      - wellington_default
+      - wellisearch_default
       - postgres-net
 
+  # Crawl4AI Web Crawler Service (moved here from open-webui/wellington).
+  # Stays on wellisearch_default so OpenWebUI resolves it by service name.
+  crawl4ai:
+    # Pinned: the mounted monitor.py patch (tools/c4ai-monitor-patch) is a
+    # snapshot of this exact version (digest sha256:bd36741e...). Bumping the
+    # tag requires re-diffing /app/monitor.py and re-applying the patch.
+    image: unclecode/crawl4ai:0.9.2
+    container_name: crawl4ai
+    restart: always
+    # 8G (was 4G): gunicorn now runs 3 workers (see supervisord.conf mount below);
+    # each owns a chrome pool, so the single-worker 4G cap OOMs at 3x concurrency.
+    mem_limit: 8G
+    environment:
+      - GUNICORN_BIND=0.0.0.0:11235
+      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_KEY}
+      # LLM content filter (md f:llm) -> local LM Studio on the Docker host
+      - LLM_PROVIDER=openai/qwen/qwen3.8-27b
+      - OPENAI_BASE_URL=http://host.docker.internal:1234/v1
+      - OPENAI_API_KEY=lm-studio
+      - LLM_TEMPERATURE=0.1
+      # Qwen3.8 thinking control, injected by the c4ai_llm_thinking.py hook (low = faster f:llm; none = off)
+      - LLM_REASONING_EFFORT=low
+    volumes:
+      # Additive runtime hook: feeds LLM_REASONING_EFFORT into the LLM filter's extra_args (see tools/c4ai-llm-patch)
+      - ./tools/c4ai-llm-patch/c4ai_llm_thinking.py:/usr/local/lib/python3.12/site-packages/c4ai_llm_thinking.py:ro
+      - ./tools/c4ai-llm-patch/zz_c4ai_llm.pth:/usr/local/lib/python3.12/site-packages/zz_c4ai_llm.pth:ro
+      # Monitor retention patch: request/error/janitor history kept 24h instead of 5min
+      # (snapshot of 0.9.2 /app/monitor.py, 2-line change; see tools/c4ai-monitor-patch)
+      - ./tools/c4ai-monitor-patch/monitor.py:/app/monitor.py:ro
+      # Concurrency patch: gunicorn --workers 3 (was 1) for ~3x crawl throughput.
+      # Snapshot of 0.9.2 /app/supervisord.conf (see tools/c4ai-supervisor-patch).
+      # Requires mem_limit 8G above (3 chrome pools, not 1).
+      - ./tools/c4ai-supervisor-patch/supervisord.conf:/app/supervisord.conf:ro
+    ports:
+      - "11235:11235"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:11235/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+    networks:
+      - wellisearch_default
+
 networks:
-  wellington_default:
+  wellisearch_default:
     external: true
   postgres-net:
     external: true
