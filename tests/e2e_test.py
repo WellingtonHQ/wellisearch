@@ -192,6 +192,61 @@ async def main() -> None:
         r = await c.get("/")
         check("dashboard: 200 + html", r.status_code == 200 and "<html" in r.text.lower(), f"len={len(r.text)}")
 
+        # 10.5 format=json (REST) -----------------------------------------------------------
+        # search: explicit format=json -> JSON envelope
+        r = await c.get("/api/search", params={"query": "fastapi mcp server", "num_results": 5, "format": "json"})
+        j = r.json()
+        check("search json: 200 + content-type json",
+              r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json"),
+              r.headers.get("content-type", ""))
+        check("search json: envelope keys",
+              isinstance(j, dict) and all(k in j for k in ("source", "degraded", "count", "results")),
+              str(sorted(j.keys())) if isinstance(j, dict) else type(j).__name__)
+        check("search json: results list with url/title/snippet",
+              isinstance(j.get("results"), list) and len(j["results"]) >= 1
+              and all(k in j["results"][0] for k in ("url", "title", "snippet")),
+              json.dumps((j.get("results") or [{}])[0])[:120])
+
+        # search: Accept header only (no format param) -> JSON
+        r = await c.get("/api/search", params={"query": "fastapi mcp server"}, headers={"Accept": "application/json"})
+        check("search json via Accept header",
+              r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
+              and "results" in r.json(), r.headers.get("content-type", ""))
+
+        # precedence: format=markdown + Accept: application/json -> param wins
+        r = await c.get("/api/search", params={"query": "fastapi mcp server", "format": "markdown"},
+                        headers={"Accept": "application/json"})
+        check("search precedence: format param wins over Accept",
+              r.status_code == 200 and r.headers.get("content-type", "").startswith("text/markdown") and "Source:" in r.text,
+              r.headers.get("content-type", ""))
+
+        # invalid format -> 400
+        r = await c.get("/api/search", params={"query": "fastapi", "format": "yaml"})
+        check("search invalid format -> 400", r.status_code == 400, r.text[:120])
+
+        # fetch: format=json -> JSON envelope
+        r = await c.post("/api/fetch", json={"url": url, "format": "json"})
+        j = r.json()
+        check("fetch json: 200 + content-type json + envelope keys",
+              r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
+              and all(k in j for k in ("ok", "url", "title", "markdown", "chars", "truncated", "from_index")),
+              r.headers.get("content-type", "") + " " + json.dumps(j)[:100])
+
+        # fetch-bulk: format=json -> JSON envelope
+        r = await c.post("/api/fetch-bulk", json={
+            "urls": ["https://python.langchain.com/docs/introduction/",
+                     "https://python.langchain.com/docs/get_started/quickstart/"],
+            "max_chars": 3000, "strategy": "even", "format": "json"})
+        j = r.json()
+        check("fetch-bulk json: 200 + content-type json + envelope keys",
+              r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
+              and all(k in j for k in ("ok", "pages_fetched", "total_chars", "strategy", "pages")),
+              r.headers.get("content-type", "") + " " + json.dumps(j)[:100])
+        check("fetch-bulk json: pages list with content/chars",
+              isinstance(j.get("pages"), list) and len(j["pages"]) >= 1
+              and all(k in j["pages"][0] for k in ("url", "title", "content", "chars", "truncated")),
+              json.dumps((j.get("pages") or [{}])[0])[:120])
+
         # 11. MCP over SSE --------------------------------------------------------------------
         await mcp_pass()
 
@@ -232,6 +287,29 @@ async def mcp_pass() -> None:
                       all(k in md for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
                       and len(md) > 200,
                       md[:120].replace("\n", " | "))
+
+                # ---- format=json over MCP ---------------------------------------------
+                res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3, "format": "json"})
+                txt = res.content[0].text if res.content else ""
+                try:
+                    j = json.loads(txt)
+                    check("mcp: search_web format=json envelope",
+                          isinstance(j, dict) and all(k in j for k in ("source", "degraded", "count", "results"))
+                          and isinstance(j["results"], list),
+                          txt[:120].replace("\n", " | "))
+                except Exception as e:
+                    check("mcp: search_web format=json envelope", False, f"not JSON: {type(e).__name__} {txt[:80]!r}")
+
+                res = await session.call_tool("fetch_page", {
+                    "url": "https://python.langchain.com/docs/introduction/", "format": "json"})
+                txt = res.content[0].text if res.content else ""
+                try:
+                    j = json.loads(txt)
+                    check("mcp: fetch_page format=json envelope",
+                          isinstance(j, dict) and all(k in j for k in ("ok", "url", "title", "markdown", "chars", "truncated", "from_index")),
+                          txt[:120].replace("\n", " | "))
+                except Exception as e:
+                    check("mcp: fetch_page format=json envelope", False, f"not JSON: {type(e).__name__} {txt[:80]!r}")
     except Exception as e:
         check("mcp: SSE session", False, f"{type(e).__name__}: {e}")
 

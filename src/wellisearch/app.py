@@ -1,9 +1,10 @@
 """FastAPI app: REST routes + MCP (SSE) + static dashboard + worker (§2/§7/§9).
 
 REST (one implementation shared with the MCP tools):
-  GET  /api/search?query=&k=&max_crawl=&max_age_days=
-  POST /api/fetch        {url, max_chars?}
-  POST /api/fetch-bulk   {urls, max_chars?, per_page_chars?, strategy?}
+  GET  /api/search?query=&k=&max_crawl=&max_age_days=&format=markdown|json
+  POST /api/fetch        {url, max_chars?, format?}
+  POST /api/fetch-bulk   {urls, max_chars?, per_page_chars?, strategy?, format?}
+  (format=markdown default; format=json or Accept: application/json -> JSON envelope)
   GET  /api/stats                      (dashboard payload)
   GET  /api/providers                  (state + quota)
   PATCH /api/providers/{name}          {enabled?, limit?}
@@ -45,6 +46,7 @@ from .mcp import mcp_asgi
 from .providers import get_gateway
 from .search_web import render_search_markdown
 from .search_web import search_web as search_web_pipeline
+from .serialize import resolve_format, to_json
 from .tools import _index_stats_data
 from .worker import STATE as WORKER_STATE
 from .worker import crawl_url, run_forever
@@ -155,6 +157,7 @@ async def health() -> dict[str, Any]:
 class FetchBody(BaseModel):
     url: str
     max_chars: int | None = None
+    format: str | None = None  # "json" | "markdown" (default markdown)
 
 
 class SeedBody(BaseModel):
@@ -174,27 +177,43 @@ class PagePatch(BaseModel):
     disabled: bool = Field(default=False)
 
 
+def _negotiate(format_param: str | None, request: Request) -> str:
+    """Resolve the response format from the explicit `format` param and the
+    Accept header. An invalid explicit format is a client error (400)."""
+    try:
+        return resolve_format(format_param, request.headers.get("accept"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _respond(out: dict, fmt: str, render_md, status: int = 200) -> Response:
+    """The pipeline dict as the negotiated wire format (json | markdown)."""
+    if fmt == "json":
+        return Response(to_json(out), media_type="application/json", status_code=status)
+    return Response(render_md(out), media_type="text/markdown", status_code=status)
+
+
 @app.get("/api/search")
 async def api_search(
+    request: Request,
     query: str,
     k: int = 5,
     num_results: int | None = None,  # alias for k (MCP tool + OWUI tool surface name)
     max_crawl: int | None = None,
     max_age_days: float | None = None,
+    format: str | None = None,  # "json" | "markdown" (default markdown)
 ) -> Any:
     out = await search_web_pipeline(query, num_results=num_results or k, max_crawl=max_crawl, max_age_days=max_age_days)
-    md = render_search_markdown(out)
-    if out.get("source") == "error":
-        return Response(md, media_type="text/markdown", status_code=502)
-    return Response(md, media_type="text/markdown")
+    status = 502 if out.get("source") == "error" else 200
+    return _respond(out, _negotiate(format, request), render_search_markdown, status)
 
 
 @app.post("/api/fetch")
-async def api_fetch(body: FetchBody) -> Any:
+async def api_fetch(body: FetchBody, request: Request) -> Any:
     if not _valid_url(body.url):
         raise HTTPException(400, "invalid or non-http(s) url")
     out = await fetch_page(body.url, max_chars=body.max_chars)
-    return Response(render_fetch_page_markdown(out), media_type="text/markdown")
+    return _respond(out, _negotiate(body.format, request), render_fetch_page_markdown)
 
 
 @app.post("/api/fetch-bulk")
@@ -203,14 +222,14 @@ async def api_fetch_bulk(request: Request) -> Any:
     # budget) from explicit null/0 (→ unlimited), per BLUEPRINT §7/§10
     raw = await request.json()
     if not isinstance(raw, dict) or not isinstance(raw.get("urls"), list):
-        raise HTTPException(400, "body must be JSON: {urls: [...], max_chars?, per_page_chars?, strategy?}")
+        raise HTTPException(400, "body must be JSON: {urls: [...], max_chars?, per_page_chars?, strategy?, format?}")
     out = await fetch_pages(
         raw.get("urls", []),
         max_chars=raw["max_chars"] if "max_chars" in raw else _OMITTED,
         per_page_chars=raw["per_page_chars"] if "per_page_chars" in raw else _OMITTED,
         strategy=raw.get("strategy"),
     )
-    return Response(render_fetch_pages_markdown(out), media_type="text/markdown")
+    return _respond(out, _negotiate(raw.get("format"), request), render_fetch_pages_markdown)
 
 
 @app.get("/api/stats")
@@ -518,12 +537,13 @@ OWUI_SPEC: dict[str, Any] = {
                 "description": (
                     "Searches the wellisearch local index first (fast, cached), then falls back "
                     "to the live provider gateway (Tavily, Brave, SearXNG) in order. "
-                    "Returns a Markdown document (text/markdown): a header with Source "
+                    "By default returns a Markdown document (text/markdown): a header with Source "
                     "(local|tavily|brave|searxng|error) and Degraded (true|false), then "
                     "result blocks of Title/URL/Snippet separated by --- lines. Local hits "
                     "carry a Last Crawled line per result. After a non-local hit, result "
-                    "URLs are queued for background indexing. Treat the response as "
-                    "Markdown text, not JSON."
+                    "URLs are queued for background indexing. Set format=json (or send "
+                    "Accept: application/json) for the structured JSON envelope instead — "
+                    "the format param wins over the Accept header."
                 ),
                 "parameters": [
                     {"name": "query", "in": "query", "required": True,
@@ -535,20 +555,31 @@ OWUI_SPEC: dict[str, Any] = {
                     {"name": "max_crawl", "in": "query", "required": False,
                      "description": "How many result URLs to queue for background indexing on a non-local hit (default 5).",
                      "schema": {"type": "integer"}},
-                    {"name": "max_age_days", "in": "query", "required": False,
-                     "description": "Ignore locally indexed pages crawled more than N days ago (e.g. 7 forces a live lookup for stale pages).",
-                     "schema": {"type": "number"}},
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Markdown search results: Source/Degraded header + Title/URL/Snippet blocks.",
-                        "content": {"text/markdown": {"schema": {"type": "string"}}},
-                    },
-                    "502": {
-                        "description": "All providers failed and no local results exist. Body is the Markdown header with Provider Errors.",
-                        "content": {"text/markdown": {"schema": {"type": "string"}}},
-                    },
-                },
+                     {"name": "max_age_days", "in": "query", "required": False,
+                      "description": "Ignore locally indexed pages crawled more than N days ago (e.g. 7 forces a live lookup for stale pages).",
+                      "schema": {"type": "number"}},
+                     {"name": "format", "in": "query", "required": False,
+                      "description": "Response format: markdown (default) or json. Wins over the Accept header.",
+                      "schema": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}},
+                 ],
+                 "responses": {
+                     "200": {
+                         "description": "Search results — Markdown by default; JSON when format=json or Accept: application/json.",
+                         "content": {
+                             "text/markdown": {"schema": {"type": "string"},
+                                               "description": "Source/Degraded header + Title/URL/Snippet blocks."},
+                             "application/json": {"schema": {"type": "object"},
+                                                  "description": "Structured: source, degraded, count, results[]."},
+                         },
+                     },
+                     "502": {
+                         "description": "All providers failed and no local results exist. Body is the source=error envelope (Markdown or JSON per format).",
+                         "content": {
+                             "text/markdown": {"schema": {"type": "string"}},
+                             "application/json": {"schema": {"type": "object"}},
+                         },
+                     },
+                 },
             }
         },
         "/api/fetch": {
@@ -558,10 +589,11 @@ OWUI_SPEC: dict[str, Any] = {
                 "description": (
                     "Reads a single URL and returns clean, readable Markdown. "
                     "Indexed pages are served instantly from the local index; unknown URLs are "
-                    "crawled on demand and stored. Returns a Markdown document (text/markdown): "
-                    "a Title/URL/From Index/Chars/Truncated header, then the page body. A failed "
-                    "fetch returns a URL/Status/Error header. Treat the response as Markdown "
-                    "text, not JSON."
+                    "crawled on demand and stored. By default returns a Markdown document "
+                    "(text/markdown): a Title/URL/From Index/Chars/Truncated header, then the "
+                    "page body; a failed fetch returns a URL/Status/Error header. Set "
+                    "format=json (or send Accept: application/json) for the structured JSON "
+                    "envelope instead — the format param wins over the Accept header."
                 ),
                 "requestBody": {
                     "required": True,
@@ -573,6 +605,8 @@ OWUI_SPEC: dict[str, Any] = {
                                 "properties": {
                                     "url": {"type": "string", "description": "Absolute http(s) URL to fetch."},
                                     "max_chars": {"type": "integer", "description": "Optional cap on returned characters (omit for the server default)."},
+                                    "format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown",
+                                               "description": "Response format. Wins over the Accept header."},
                                 },
                             }
                         }
@@ -580,8 +614,13 @@ OWUI_SPEC: dict[str, Any] = {
                 },
                 "responses": {
                     "200": {
-                        "description": "Markdown page: Title/URL/From Index/Chars/Truncated header + page body.",
-                        "content": {"text/markdown": {"schema": {"type": "string"}}},
+                        "description": "Fetched page — Markdown by default; JSON when format=json or Accept: application/json.",
+                        "content": {
+                            "text/markdown": {"schema": {"type": "string"},
+                                              "description": "Title/URL/From Index/Chars/Truncated header + page body."},
+                            "application/json": {"schema": {"type": "object"},
+                                                 "description": "Structured: ok, url, title, markdown, chars, truncated, from_index."},
+                        },
                     },
                 },
             }
@@ -593,11 +632,12 @@ OWUI_SPEC: dict[str, Any] = {
                 "description": (
                     "Reads multiple URLs and returns one combined Markdown document (one section per page), "
                     "allocating a shared character budget across pages using the given strategy. "
-                    "Returns a Markdown document (text/markdown): a Strategy/Budget/Pages Fetched/Total "
-                    "Chars/Truncated header, then one Title/URL/From Index/Chars/Truncated section per "
-                    "page (body after a --- line); failed URLs get a URL/Status/Error section. "
-                    "Prefer this over many fetch_page calls when you have several URLs. Treat the "
-                    "response as Markdown text, not JSON."
+                    "By default returns a Markdown document (text/markdown): a Strategy/Budget/Pages "
+                    "Fetched/Total Chars/Truncated header, then one Title/URL/From Index/Chars/Truncated "
+                    "section per page (body after a --- line); failed URLs get a URL/Status/Error section. "
+                    "Prefer this over many fetch_page calls when you have several URLs. Set format=json "
+                    "(or send Accept: application/json) for the structured JSON envelope instead — the "
+                    "format param wins over the Accept header."
                 ),
                 "requestBody": {
                     "required": True,
@@ -610,9 +650,11 @@ OWUI_SPEC: dict[str, Any] = {
                                     "urls": {"type": "array", "items": {"type": "string"},
                                              "description": "List of absolute http(s) URLs."},
                                     "max_chars": {"type": "integer", "description": "Total character budget across all pages (omit for the server default)."},
-                                    "per_page_chars": {"type": "integer", "description": "Per-page character cap."},
-                                     "strategy": {"type": "string", "description": "Budget allocation strategy.",
-                                                  "enum": ["smart", "head", "tail", "even", "priority"]},
+                                     "per_page_chars": {"type": "integer", "description": "Per-page character cap."},
+                                      "strategy": {"type": "string", "description": "Budget allocation strategy.",
+                                                   "enum": ["smart", "head", "tail", "even", "priority"]},
+                                     "format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown",
+                                                "description": "Response format. Wins over the Accept header."},
                                 },
                             }
                         }
@@ -620,8 +662,13 @@ OWUI_SPEC: dict[str, Any] = {
                 },
                 "responses": {
                     "200": {
-                        "description": "Combined Markdown: Strategy/Budget/Pages Fetched/Total Chars/Truncated header + one section per page.",
-                        "content": {"text/markdown": {"schema": {"type": "string"}}},
+                        "description": "Combined fetch — Markdown by default; JSON when format=json or Accept: application/json.",
+                        "content": {
+                            "text/markdown": {"schema": {"type": "string"},
+                                              "description": "Strategy/Budget/Pages Fetched/Total Chars/Truncated header + one section per page."},
+                            "application/json": {"schema": {"type": "object"},
+                                                 "description": "Structured: ok, pages_fetched, total_chars, strategy, budget, pages[]."},
+                        },
                     },
                 },
             }

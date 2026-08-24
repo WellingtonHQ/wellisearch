@@ -24,6 +24,7 @@ from .fetch import render_fetch_page_markdown
 from .fetch import render_fetch_pages_markdown
 from .search_web import render_search_markdown
 from .search_web import search_web as _search_web
+from .serialize import resolve_format, to_json
 from .truncation import STRATEGIES
 from .worker import crawl_url
 
@@ -31,6 +32,20 @@ from .worker import crawl_url
 def _clean(obj: Any) -> Any:
     """JSON-safe: datetimes → ISO strings."""
     return json.loads(json.dumps(obj, default=str))
+
+
+def _fmt(out: dict, format_param: str | None, render_md) -> str:
+    """Render the pipeline dict in the requested format (json | markdown).
+
+    The explicit `format` param decides; markdown is the default. MCP has no
+    HTTP Accept header, so only the param is consulted. An invalid format
+    yields a clear error string (MCP has no HTTP status code to signal it).
+    """
+    try:
+        resolved = resolve_format(format_param)
+    except ValueError as e:
+        return f"Error: {e}"
+    return to_json(out) if resolved == "json" else render_md(out)
 
 
 async def _index_stats_data() -> dict:
@@ -117,7 +132,8 @@ def register_tools(server: MCPServer) -> None:
             "provider credits; on a miss, top result URLs are indexed in the "
             "background — no need to wait. If Degraded is true, all providers "
             "failed and only local results are shown (see the Provider Errors "
-            "header line)."
+            "header line). Set format=\"json\" for the structured JSON envelope "
+            "instead of Markdown."
         ),
     )
     async def search_web(
@@ -125,6 +141,7 @@ def register_tools(server: MCPServer) -> None:
         num_results: int = 5,
         max_crawl: int = 5,
         max_age_days: float | None = None,
+        format: str = "markdown",  # "json" | "markdown"
     ) -> str:
         out = await _search_web(
             query,
@@ -132,7 +149,7 @@ def register_tools(server: MCPServer) -> None:
             max_crawl=max_crawl,
             max_age_days=max_age_days,
         )
-        return render_search_markdown(out)
+        return _fmt(out, format, render_search_markdown)
 
     @server.tool(
         name="fetch_page",
@@ -142,12 +159,13 @@ def register_tools(server: MCPServer) -> None:
             "header, then the page body. Indexed pages are served instantly "
             "from the local index; unknown URLs are crawled on demand and "
             "stored. Bumps the page's fetch_count (priority + prominence). "
-            "A failed fetch returns a URL/Status/Error header."
+            "A failed fetch returns a URL/Status/Error header. Set "
+            "format=\"json\" for the structured JSON envelope instead of Markdown."
         ),
     )
-    async def fetch_page(url: str, max_chars: int | None = None) -> str:
+    async def fetch_page(url: str, max_chars: int | None = None, format: str = "markdown") -> str:
         out = await _fetch_page(url, max_chars=max_chars)
-        return render_fetch_page_markdown(out)
+        return _fmt(out, format, render_fetch_page_markdown)
 
     @server.tool(
         name="fetch_pages",
@@ -159,7 +177,8 @@ def register_tools(server: MCPServer) -> None:
             "(body after a --- line). Failed URLs get a URL/Status/Error "
             f"section. strategy: {list(STRATEGIES)} (default 'smart'). "
             "Each trimmed page carries a [truncated — N chars omitted, "
-            "strategy=X] marker."
+            "strategy=X] marker. Set format=\"json\" for the structured JSON "
+            "envelope instead of Markdown."
         ),
     )
     async def fetch_pages(
@@ -167,11 +186,12 @@ def register_tools(server: MCPServer) -> None:
         max_chars: int | None = None,  # null = full content (spec §7)
         per_page_chars: int | None = None,
         strategy: str = "smart",
+        format: str = "markdown",  # "json" | "markdown"
     ) -> str:
         out = await _fetch_pages(
             urls, max_chars=max_chars, per_page_chars=per_page_chars, strategy=strategy
         )
-        return render_fetch_pages_markdown(out)
+        return _fmt(out, format, render_fetch_pages_markdown)
 
     @server.tool(
         name="index_stats",

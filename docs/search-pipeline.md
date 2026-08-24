@@ -121,10 +121,12 @@ degraded mode), so the dashboard can compute local-hit rate over time.
 
 ## Response contract
 
-The response is a **plain Markdown document** (no JSON envelope) — REST
-serves it as `text/markdown`, the MCP tool returns it as a text block. Both
-surfaces render the same internal envelope via
-`search_web.render_search_markdown()`.
+By default the response is a **plain Markdown document** (no JSON envelope) —
+REST serves it as `text/markdown`, the MCP tool returns it as a text block.
+Both surfaces render the same internal envelope via
+`search_web.render_search_markdown()`. Set `format=json` (REST) or
+`format="json"` (MCP) — or send `Accept: application/json` over REST — to get
+the structured JSON envelope instead (the internal dict, not this Markdown).
 
 ```
 Source: local

@@ -27,9 +27,9 @@ A single self-hosted, self-maintaining **search gateway + web-index service**:
 |---|---|
 | `GET /health` | liveness + pg reachable + crawl4ai reachable + provider key presence (per provider, no key values) |
 | `GET /api/stats` | index size, page/chunk counts, queue depth, hit-rate 24h/7d/30d **by provider**, quota usage vs limit, worker state, last tick |
-| `GET /api/search?query=&k=` | same pipeline as MCP `search_web` |
-| `POST /api/fetch` `{url}` | same as MCP `fetch_page` |
-| `POST /api/fetch-bulk` `{urls, max_chars?, per_page_chars?, strategy?}` | same as MCP `fetch_pages` (bulk, budgeted truncation) |
+| `GET /api/search?query=&k=&format=markdown\|json` | same pipeline as MCP `search_web` (Markdown default; `format=json` or `Accept: application/json` → JSON) |
+| `POST /api/fetch` `{url, format?}` | same as MCP `fetch_page` |
+| `POST /api/fetch-bulk` `{urls, max_chars?, per_page_chars?, strategy?, format?}` | same as MCP `fetch_pages` (bulk, budgeted truncation) |
 | `GET /api/queue` | crawl_queue state (pending/in_flight/done/failed, counts, last few) |
 | `GET /api/providers` | gateway state: order, enabled, quota used/limit, last-served, last error per provider |
 | `PATCH /api/providers/{name}` | `{enabled: bool, limit: int?}` (runtime toggle, persists to env-backed store) |
@@ -212,10 +212,10 @@ CREATE TABLE crawl_log (
 
 ## 7. MCP Tool Surface
 
-The MCP server (SSE at `/mcp/sse`) exposes the tools below. `search_web` is the core search tool; `fetch_page` (single) and `fetch_pages` (bulk, budgeted) are the read tools; `index_stats`, `seed_url`, and `refresh_page` are operational conveniences. `search_web`, `fetch_page`, and `fetch_pages` all return a **plain Markdown document** (no JSON envelope) defined below; the operational tools return structured JSON. The normalization layer (`providers/base.py`) converts every provider's raw shape into this contract — LLMs never see a raw provider payload.
+The MCP server (SSE at `/mcp/sse`) exposes the tools below. `search_web` is the core search tool; `fetch_page` (single) and `fetch_pages` (bulk, budgeted) are the read tools; `index_stats`, `seed_url`, and `refresh_page` are operational conveniences. `search_web`, `fetch_page`, and `fetch_pages` all return a **plain Markdown document by default** (no JSON envelope) defined below; pass `format="json"` (MCP) or `format=json` / `Accept: application/json` (REST) to get the **structured JSON envelope** instead — the `format` param wins over the `Accept` header. The operational tools return structured JSON. The normalization layer (`providers/base.py`) converts every provider's raw shape into this contract — LLMs never see a raw provider payload.
 
-### `search_web(query, num_results=5, max_crawl=5, max_age_days=null)`
-The primary search tool. Takes a web-search query and returns a **Markdown document**: a response-level header, then one block per result.
+### `search_web(query, num_results=5, max_crawl=5, max_age_days=null, format="markdown")`
+The primary search tool. Takes a web-search query and returns a **Markdown document by default**: a response-level header, then one block per result.
 
 **Return — Markdown format (hard contract):**
 ```
@@ -242,14 +242,16 @@ Snippet: Another snippet.
 - `num_results` (default 5): how many results to return.
 - `max_crawl` (default 5): how many top result URLs to enqueue for background indexing (0 = pure read, no enqueue).
 - `max_age_days` (optional): freshness filter on local hits (only return local pages crawled within N days).
+- `format` (default `"markdown"`): `"markdown"` or `"json"` — the wire format. `"json"` returns the structured envelope `{ source, degraded, count, results:[{url,title,snippet,score,last_crawled?,fetch_count?}], provider_errors? }`.
 
 **Pipeline (no crawl in the response path):** local index → (miss) provider gateway → log → enqueue top `max_crawl` → **return immediately**. Local hits cost zero provider credits.
 
-### `fetch_page(url, max_chars=null)`
+### `fetch_page(url, max_chars=null, format="markdown")`
 Loads the content of a **single** URL as **clean/fit Markdown** for the LLM to read.
 - Returns the stored `fit_markdown` if present, else crawls on demand via Crawl4AI, stores it, and returns the Markdown.
 - **Bumps `fetch_count`** — fetched pages are (a) prioritized in the background crawl/refresh loop and (b) boosted in search prominence.
 - `max_chars` (optional): cap on returned content length (default = full content). Boundary-safe cut.
+- `format` (default `"markdown"`): `"markdown"` or `"json"` — the wire format. `"json"` returns the structured envelope `{ ok, url, title, markdown, chars, truncated, from_index }` (failed: `{ ok:false, url, error }`).
 
 **Return — Markdown format (hard contract):**
 ```
@@ -266,12 +268,13 @@ Truncated: false
 - A trimmed body ends with its `[truncated — N chars omitted, strategy=head]` marker.
 - Failed fetch: `URL:` / `Status: failed` / `Error:` header only (HTTP 200).
 
-### `fetch_pages(urls, max_chars=null, per_page_chars=null, strategy="smart")`
+### `fetch_pages(urls, max_chars=null, per_page_chars=null, strategy="smart", format="markdown")`
 Bulk read of **multiple pages in one call**, under a **shared total character budget**, with **swappable truncation strategies**. Use when the LLM wants to read several `search_web` results at once instead of making N round-trips.
 - `urls` (required): list of URLs to fetch in bulk.
 - `max_chars` (optional): **total character budget across all pages combined** — the "maximum amount of chars you want." If null, return full content.
 - `per_page_chars` (optional): per-page cap (bounds a single page so one long page can't eat the whole budget).
 - `strategy` (optional, default `"smart"`): how the budget is allocated and where content is trimmed — **swappable** per call (see strategies below).
+- `format` (default `"markdown"`): `"markdown"` or `"json"` — the wire format. `"json"` returns the structured envelope `{ ok, pages_fetched, truncated, total_chars, strategy, budget?, pages:[{url,title,content,chars,truncated,omitted,from_index}] }`.
 - **Bumps `fetch_count` for every page fetched** (same priority/prominence effect as `fetch_page`); pages not yet indexed are crawled on demand (parallelized, in-flight-deduped).
 
 **Return — Markdown format (hard contract):**

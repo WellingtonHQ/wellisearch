@@ -40,24 +40,33 @@ The search pipeline.
 | `k` | int | `SEARCH_K` (5) | max results |
 | `max_crawl` | int | `SEARCH_MAX_CRAWL` (5) | how many gateway result URLs to index in the background |
 | `max_age_days` | float | unset | drop local rows crawled older than this (never-crawled kept) |
+| `format` | string | `markdown` | `markdown` or `json`; wins over the `Accept` header |
 
-Returns the Markdown search document (`Content-Type: text/markdown`, no JSON
-envelope — see [search-pipeline.md](search-pipeline.md)): a `Source:` /
-`Degraded:` header (+ `Provider Errors:` when providers failed), then
-`Title:` / `URL:` / `Snippet:` blocks separated by `---` lines; local hits
-carry a `Last Crawled:` line per result. `Source: error` maps to **HTTP 502**
-(body is the Markdown header).
+By default returns the Markdown search document (`Content-Type:
+text/markdown`, no JSON envelope — see [search-pipeline.md](search-pipeline.md)):
+a `Source:` / `Degraded:` header (+ `Provider Errors:` when providers failed),
+then `Title:` / `URL:` / `Snippet:` blocks separated by `---` lines; local hits
+carry a `Last Crawled:` line per result. `Source: error` maps to **HTTP 502**.
+Set `format=json` (or send `Accept: application/json`) for the structured JSON
+envelope instead (`Content-Type: application/json`):
+`{ source, degraded, count, results: [{ url, title, snippet, score,
+last_crawled?, fetch_count? }], provider_errors? }`. An invalid `format` is a
+**400**.
 
 ### `POST /api/fetch`
 Read one URL as fit markdown (stored-first, else crawl+store).
 
-Body: `{ "url": "...", "max_chars": 12000 }` (`max_chars` optional).
+Body: `{ "url": "...", "max_chars": 12000, "format": "markdown" }`
+(`max_chars` and `format` optional).
 
-Returns the Markdown page document (`Content-Type: text/markdown`, no JSON
-envelope): a `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:`
+By default returns the Markdown page document (`Content-Type: text/markdown`,
+no JSON envelope): a `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:`
 header, then the page body. A failed fetch returns a `URL:` /
-`Status: failed` / `Error:` header (HTTP 200). Bumps the page's
-`fetch_count`.
+`Status: failed` / `Error:` header (HTTP 200). Bumps the page's `fetch_count`.
+Set `format=json` (or send `Accept: application/json`) for the structured JSON
+envelope instead (`Content-Type: application/json`):
+`{ ok, url, title, markdown, chars, truncated, from_index }` (a failed fetch
+is `{ ok: false, url, error }`). An invalid `format` is a **400**.
 
 ### `POST /api/fetch-bulk`
 Bulk read under a shared character budget.
@@ -68,21 +77,27 @@ Body:
   "urls": ["https://…", "https://…"],
   "max_chars": 40000,
   "per_page_chars": 12000,
-  "strategy": "smart"
+  "strategy": "smart",
+  "format": "markdown"
 }
 ```
 `max_chars`/`per_page_chars` omitted → server defaults; explicit `0`/`null` →
-unlimited. `strategy` ∈ `smart | head | tail | even | priority`.
+unlimited. `strategy` ∈ `smart | head | tail | even | priority`. `format`
+(`markdown` default) wins over the `Accept` header.
 
-Returns the combined Markdown document (`Content-Type: text/markdown`, no
-JSON envelope): a `Strategy:` / `Budget:` / `Pages Fetched:` /
+By default returns the combined Markdown document (`Content-Type:
+text/markdown`, no JSON envelope): a `Strategy:` / `Budget:` / `Pages Fetched:` /
 `Total Chars:` / `Truncated:` header (`Budget:` only when a budget is set),
 then one `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:` section
 per page (body after a `---` line, trimmed pages keep their
 `[truncated — N chars omitted, strategy=X]` marker); failed URLs get a
 `URL:` / `Status: failed` / `Error:` section. Nothing fetched → the header
 carries `Pages Fetched: 0` / `Status: failed` / `Error:` plus one error
-section per URL (HTTP 200).
+section per URL (HTTP 200). Set `format=json` (or send `Accept: application/json`)
+for the structured JSON envelope instead (`Content-Type: application/json`):
+`{ ok, pages_fetched, truncated, total_chars, strategy, budget?, pages: [{ url,
+title, content, chars, truncated, omitted, from_index }] }` (failed/bad URLs in
+`pages` carry `{ url, error }`). An invalid `format` is a **400**.
 
 ### `GET /api/stats`
 Dashboard payload: index counts, freshness buckets, queue depth, provider
@@ -180,28 +195,31 @@ All six tools call the same code as their REST counterparts.
 
 | Tool | Purpose | Params |
 |---|---|---|
-| `search_web` | Search the web (local-first). Returns a Markdown document: `Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks (`Last Crawled` per local result). | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None` |
-| `fetch_page` | Read one URL as fit markdown (stored-first, else crawl+store). Returns a Markdown document: `Title`/`URL`/`From Index`/`Chars`/`Truncated` header + page body. Bumps `fetch_count`. | `url: str`, `max_chars=None` |
-| `fetch_pages` | Bulk read under a shared char budget. Returns a Markdown document: `Strategy`/`Budget`/`Pages Fetched`/`Total Chars`/`Truncated` header + one section per page. | `urls: list[str]`, `max_chars=None`, `per_page_chars=None`, `strategy="smart"` |
+| `search_web` | Search the web (local-first). Returns a Markdown document by default: `Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks (`Last Crawled` per local result). `format="json"` returns the JSON envelope. | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None`, `format="markdown"` |
+| `fetch_page` | Read one URL as fit markdown (stored-first, else crawl+store). Returns a Markdown document by default: `Title`/`URL`/`From Index`/`Chars`/`Truncated` header + page body. `format="json"` returns the JSON envelope. Bumps `fetch_count`. | `url: str`, `max_chars=None`, `format="markdown"` |
+| `fetch_pages` | Bulk read under a shared char budget. Returns a Markdown document by default: `Strategy`/`Budget`/`Pages Fetched`/`Total Chars`/`Truncated` header + one section per page. `format="json"` returns the JSON envelope. | `urls: list[str]`, `max_chars=None`, `per_page_chars=None`, `strategy="smart"`, `format="markdown"` |
 | `index_stats` | Snapshot of index + gateway (counts, freshness, hit-rate, queue, quota). | — |
 | `seed_url` | Queue a URL for background indexing. Returns queue position. | `url: str` |
 | `refresh_page` | Force an immediate re-crawl of one page. | `url: str` |
 
 The tool descriptions tell the LLM the contract explicitly: each of
-`search_web`, `fetch_page`, and `fetch_pages` returns a Markdown document
-(`Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks for search;
-`Title`/`URL`/`From Index`/`Chars`/`Truncated` header for fetch) — not JSON —
-local search hits cost zero provider credits, and a miss triggers background
-indexing, so the model doesn't need to wait or re-call.
+`search_web`, `fetch_page`, and `fetch_pages` returns a Markdown document by
+default (`Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks for
+search; `Title`/`URL`/`From Index`/`Chars`/`Truncated` header for fetch), or
+the structured JSON envelope when `format="json"` — local search hits cost zero
+provider credits, and a miss triggers background indexing, so the model doesn't
+need to wait or re-call.
 
 ## Error model
 
-- `400` — invalid/missing body (bad URL, missing `urls`).
+- `400` — invalid/missing body (bad URL, missing `urls`, or an invalid
+  `format` value).
 - `401` — missing/invalid API key.
 - `404` — page/provider not found.
 - `502` — search `Source: error` (all providers failed, no local rows) or a
-  failed `POST /api/refresh`. The 502 search body is the Markdown header
-  (`Source: error` + `Provider Errors:`).
+  failed `POST /api/refresh`. The 502 search body is the `source: error`
+  envelope (Markdown header with `Provider Errors:` by default, or the JSON
+  envelope when `format=json`).
 
 Provider-level failures on `search_web` are *not* HTTP errors — they're
 reported in-band via the `Degraded: true` / `Provider Errors:` header lines

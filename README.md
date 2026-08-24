@@ -27,6 +27,13 @@ How it works:
    debounced) and refreshes the watchlist (`fetch_count DESC`, oldest crawl
    first), bounded by a per-tick budget and parallelism cap.
 
+Response format: `search_web` / `fetch_page` / `fetch_pages` return a **clean
+Markdown document by default** (the LLM reads it directly). Pass `format=json`
+(REST param/body field, or the MCP `format` argument) — or send
+`Accept: application/json` over REST — to get the **structured JSON envelope**
+instead. The `format` param wins over the `Accept` header; an invalid value is
+a `400`. Both surfaces produce byte-identical JSON for the same request.
+
 ## Requirements
 
 - Docker (app container)
@@ -82,15 +89,17 @@ http://wellisearch:8780/mcp/sse
 (from the OWUI container network; `http://127.0.0.1:8780/mcp/sse` from the
 host). Tools:
 
-- `search_web(query, num_results=5, max_crawl=5, max_age_days=null)` →
-  a Markdown document: `Source:`/`Degraded:` header (+ `Provider Errors:`
+- `search_web(query, num_results=5, max_crawl=5, max_age_days=null, format="markdown")` →
+  a Markdown document by default: `Source:`/`Degraded:` header (+ `Provider Errors:`
   when providers failed), then `Title:`/`URL:`/`Snippet:` blocks separated
-  by `---`; local hits carry a `Last Crawled:` line per result
-- `fetch_page(url, max_chars=null)` → a Markdown document:
+  by `---`; local hits carry a `Last Crawled:` line per result. `format="json"`
+  returns the JSON envelope instead.
+- `fetch_page(url, max_chars=null, format="markdown")` → a Markdown document by default:
   `Title:`/`URL:`/`From Index:`/`Chars:`/`Truncated:` header, then the page
-  body (a failed fetch returns a `URL:`/`Status:`/`Error:` header)
-- `fetch_pages(urls, max_chars=null, per_page_chars=null, strategy="smart")`
-  → a Markdown document: `Strategy:`/`Budget:`/`Pages Fetched:`/`Total
+  body (a failed fetch returns a `URL:`/`Status:`/`Error:` header). `format="json"`
+  returns the JSON envelope instead.
+- `fetch_pages(urls, max_chars=null, per_page_chars=null, strategy="smart", format="markdown")`
+  → a Markdown document by default: `Strategy:`/`Budget:`/`Pages Fetched:`/`Total
   Chars:`/`Truncated:` header, then one `Title:`/`URL:`/`From Index:`/
   `Chars:`/`Truncated:` section per page (body after a `---` line) under a
   shared char budget. Strategies: `smart` (prominence-weighted, default),
@@ -104,9 +113,9 @@ host). Tools:
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/search?query=&k=5` | same pipeline as `search_web` |
-| `POST /api/fetch` `{url, max_chars?}` | same as `fetch_page` |
-| `POST /api/fetch-bulk` `{urls, max_chars?, per_page_chars?, strategy?}` | same as `fetch_pages` (omitted `max_chars` = server default budget; `null`/`0` = unlimited) |
+| `GET /api/search?query=&k=5&format=markdown\|json` | same pipeline as `search_web` (Markdown default; `format=json` or `Accept: application/json` → JSON) |
+| `POST /api/fetch` `{url, max_chars?, format?}` | same as `fetch_page` |
+| `POST /api/fetch-bulk` `{urls, max_chars?, per_page_chars?, strategy?, format?}` | same as `fetch_pages` (omitted `max_chars` = server default budget; `null`/`0` = unlimited) |
 | `GET /api/stats` | dashboard payload (runtime, trends, quota, queue) |
 | `GET /api/pages?sort=fetch_count\|search_hit_count\|last_crawled\|first_seen&limit=20` | top pages + freshness distribution |
 | `GET /api/providers` · `PATCH /api/providers/{name}` | gateway state · toggle / set limit |
