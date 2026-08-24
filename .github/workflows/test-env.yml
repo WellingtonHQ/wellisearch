@@ -1,0 +1,15 @@
+name: test-env
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: self-hosted
+    steps:
+      - name: Probe env
+        run: |
+          echo "LMSTUDIO_URL=[$LMSTUDIO_URL]"
+          echo "KEYLEN=[${#LMSTUDIO_API_KEY}]"
+          echo "OPENCODE_CONFIG=[$OPENCODE_CONFIG]"
+          env | grep -E "^(LMSTUDIO|OPENCODE)" | sed "s/\(KEY=\).*/\1SET/" || echo "NO LMSTUDIO/OPENCODE VARS IN PROCESS ENV"
