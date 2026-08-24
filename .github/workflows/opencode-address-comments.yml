@@ -78,7 +78,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          MODEL: lmstudio/qwen3.8-27b
+          MODEL: qwen/qwen3.8-27b
           USE_GITHUB_TOKEN: "true"
           PROMPT: |
             Before pushing any changes, fetch and rebase from origin just before pushing to avoid diverged history conflicts.
