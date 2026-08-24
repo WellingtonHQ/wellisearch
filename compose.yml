@@ -1,13 +1,16 @@
 # wellisearch — app + crawl4ai containers (one project, one network pair).
 #
 # Networks:
-#   - wellisearch_default : OWUI stack network (external, created by the
-#                          open-webui/wellisearch project). crawl4ai joins it
-#                          so OpenWebUI keeps reaching `crawl4ai:11235` for
-#                          its external web loader; wellisearch stays
-#                          reachable as `wellisearch:8780` from OWUI.
-#   - postgres-net       : infra project network — reach the shared Postgres
-#                          container by the `postgres` alias.
+#   - wellisearch_default : managed by THIS project — `docker compose up -d`
+#                          creates it (project name "wellisearch" + _default).
+#                          OpenWebUI (if present) joins it by name so it keeps
+#                          reaching `crawl4ai:11235` for its external web
+#                          loader; wellisearch stays reachable as
+#                          `wellisearch:8780` from OWUI.
+#   - postgres-net       : infra project network (external — the only way to
+#                          reach the shared Postgres container by the
+#                          `postgres` alias). Requires the infra stack to be
+#                          up: `cd ../infra && docker compose up -d`.
 #
 # No depends_on on postgres: cross-project ordering is handled by the app's
 # startup DB retry (~10 x 3 s) + self-creating the `wellisearch` DB.
@@ -22,7 +25,7 @@ services:
     build: .
     container_name: wellisearch
     restart: unless-stopped
-    mem_limit: 8G
+    mem_limit: 16G
     env_file: .env
     ports:
       - "8780:8780"
@@ -49,7 +52,7 @@ services:
     restart: always
     # 8G (was 4G): gunicorn now runs 3 workers (see supervisord.conf mount below);
     # each owns a chrome pool, so the single-worker 4G cap OOMs at 3x concurrency.
-    mem_limit: 8G
+    mem_limit: 12G
     environment:
       - GUNICORN_BIND=0.0.0.0:11235
       - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_KEY}
@@ -83,7 +86,8 @@ services:
       - wellisearch_default
 
 networks:
-  wellisearch_default:
-    external: true
-  postgres-net:
+  wellisearch_default:   # managed: created/removed by this project
+    name: wellisearch_default  # pin the real name (OWUI stack joins by name)
+  postgres-net:          # created by the infra project; must stay external
+    name: postgres-net
     external: true
