@@ -74,11 +74,17 @@ jobs:
             curl -fsSL https://opencode.ai/install | bash
           fi
 
+      - name: Discover LM Studio model
+        id: lmstudio
+        uses: ./.github/actions/lmstudio-discover
+        with:
+          preferred-model: qwen/qwen3.8-27b
+
       - name: Run opencode
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          MODEL: lmstudio/qwen/qwen3.8-27b
+          MODEL: ${{ steps.lmstudio.outputs.model }}
           USE_GITHUB_TOKEN: "true"
           PROMPT: |
             Before pushing any changes, fetch and rebase from origin just before pushing to avoid diverged history conflicts.
