@@ -1,0 +1,19 @@
+name: "LM Studio model discovery"
+description: "Fetches the models currently loaded on the LM Studio server, refreshes the opencode provider config, and outputs the model id for the opencode step."
+
+inputs:
+  preferred-model:
+    description: "Model id to use if loaded (e.g. qwen/qwen3.8-27b). Falls back to the first loaded model."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Discover models and update opencode config
+      shell: bash
+      env:
+        LMSTUDIO_URL: ${{ env.LMSTUDIO_URL }}
+        LMSTUDIO_API_KEY: ${{ env.LMSTUDIO_API_KEY }}
+        LMSTUDIO_PREFERRED_MODEL: ${{ inputs.preferred-model }}
+      run: python3 "$GITHUB_ACTION_PATH/discover.py"
