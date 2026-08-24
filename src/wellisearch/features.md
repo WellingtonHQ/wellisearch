@@ -21,8 +21,6 @@ This is optional and is used to save space.
 # Search
 
 
-
-
 ## Tiered providers
 Ability to put providers on tiers:
 For example:
@@ -60,3 +58,13 @@ It is no longer needed or useful.
 - Drop the "Top pages by search_hit_count"
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.
+
+
+---
+
+# Indexing
+
+## Pause indexing operations
+- Add ability to pause indexing so worker ticks won't launch re-indexes and will be skipped altogether.
+  Should be a button/toggle on the dashboard.
+  
