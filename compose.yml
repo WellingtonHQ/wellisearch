@@ -16,6 +16,7 @@ services:
     build: .
     container_name: wellisearch
     restart: unless-stopped
+    mem_limit: 4G
     env_file: .env
     ports:
       - "8780:8780"
