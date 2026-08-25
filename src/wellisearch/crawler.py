@@ -8,6 +8,7 @@ Verified live (2026-08) against crawl4ai 0.9.2:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -15,6 +16,20 @@ import httpx
 from .config import get_settings
 
 log = logging.getLogger("wellisearch.crawler")
+
+# Global crawl cap shared by the worker (queue drain + watchlist refresh)
+# AND the fetch/refresh request paths: at most CRAWL_MAX_PARALLEL concurrent
+# Crawl4AI calls in total (matches crawl4ai's 3 gunicorn workers). fetch_pages
+# used to fan out unbounded crawls per request, which could saturate Crawl4AI
+# and hold DB pool connections for the whole burst.
+_crawl_sem: asyncio.Semaphore | None = None
+
+
+def crawl_semaphore() -> asyncio.Semaphore:
+    global _crawl_sem
+    if _crawl_sem is None:
+        _crawl_sem = asyncio.Semaphore(get_settings().CRAWL_MAX_PARALLEL)
+    return _crawl_sem
 
 
 class CrawlError(Exception):

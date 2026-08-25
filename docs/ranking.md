@@ -33,15 +33,32 @@ chunks.
 - Ranking within the leg: `ts_rank_cd(c.tsv, query)` (cover-density
   ranking), `ROW_NUMBER()` ordered by rank desc.
 
-### Leg 2 — Trigram (pg_trgm)
+### Leg 2 — Trigram (pg_trgm), bounded
 
-- For each chunk, the score is
-  `GREATEST(similarity(c.text, query), word_similarity(c.text, query),
-  similarity(p.title, query))` — chunk body **and** page title.
-- Chunks scoring `> 0.05` qualify; ranked by that score desc.
-- GIN-backed: `chunks_trgm_gin` (`gin_trgm_ops`).
-- Purpose: catches typos, fragments, and word-order variations that FTS
-  tokenization misses — the errors LLMs actually emit.
+- **Candidates** (≤100 chunks, all index-backed via the tsv GIN):
+  - top **50** of the FTS-AND set by `ts_rank_cd` — the strong-overlap pool,
+  - plus top **50** of the OR set of the query's **distinctive words** —
+    lexemes appearing in < 1% of the corpus (per-word GIN index counts).
+    Their OR sets stay small even in long queries, so pages that contain the
+    rare word but not every query word (partial matches) stay in the pool
+    without scanning the huge common-word OR set (70k–127k rows, 2.4–6 s).
+- **Score** within the leg:
+  `GREATEST(similarity(cand.text, query), word_similarity(cand.text, query))`
+  over the first 1000 chars of each candidate — computed on that ≤100-row
+  set only; ranked by score desc.
+- Purpose: re-ranks word-overlapping candidates so partial-word and
+  typo-ish matches (e.g. "postgres" vs "postgresql") rank well without
+  paying for a full-corpus similarity scan.
+
+  > **Why it changed (2026-08):** the original leg ran
+  > `GREATEST(similarity(c.text,q), word_similarity(c.text,q),
+  > similarity(p.title,q)) > 0.05` over **every chunk** — a full CPU scan.
+  > At ~1.34M chunks it took 10–27+ min per search, exhausted the 12-connection
+  > pool (30 s `PoolTimeout`s everywhere), and saturated Postgres CPU. The GIN
+  > trigram index could not save it: the `GREATEST()` wrapper is not
+  > indexable, and even plain `text % query` is non-selective at low threshold
+  > on this corpus (one common word's trigrams cover most of the table).
+  > Full write-up: `trigram-rewrite.md`.
 
 ### Leg 3 — Vector (pgvector)
 
@@ -156,29 +173,67 @@ The *relative* ordering — and the fact that X's mass comes from three
 distinct legs at top ranks, not from fifty marginal ones — is what the top-3
 cap enforces.
 
-## Score scale and `SEARCH_MIN_SCORE`
+## Local-hit gate: `coverage`
 
-Because scores are rank-based, the usable band is narrow and **shifts with
-index size**: measured on a working index, the best off-topic page for a
-deliberately off-topic query scored ≈ **0.10**, while the weakest relevant
-page for on-topic queries scored ≈ **0.13+**. `SEARCH_MIN_SCORE` (default
-**0.12**, `config.py`) sits in that gap:
+The score above is **rank-only** (RRF over the legs' ranks). It is an
+arbitrary scale that does not track relevance — off-topic pages can
+outscore on-topic ones — so it must never decide local-vs-gateway. That
+decision is made by `fn_search_local`'s `coverage` column: the fraction of
+the query's content words (the `words` CTE, PG-stemmed, stopwords dropped)
+that the page's title + body contains, computed with `to_tsvector(...) @@
+to_tsquery(...)` per lexeme.
 
-- score ≥ 0.12 → serve local (zero provider cost)
-- score < 0.12 → gateway, with the local rows still available as the
-  degraded-mode fallback
+`search_web` serves local if **any** of the top local results has
+`coverage >= LOCAL_MIN_COVERAGE` (default **0.75**, `config.py`); otherwise
+it falls through to the provider gateway (local rows stay available as the
+degraded-mode fallback).
 
-The old default of 0.2 pre-dated the top-3 cap and effectively disabled the
-local index (nearly every query hit a provider). After the cap, scores
-compress into ~0.10–0.155, so 0.12 is the correct band. If you change the
-index size dramatically or the ranking weights, re-measure:
+Calibrated 2026-08-24 on the ~1.3M-chunk index, top-result coverage per
+query (cosine similarity was measured too and rejected — see below):
+
+| Query | Top result | coverage |
+|---|---|---|
+| "docker mac remote deploy" (on-topic) | oneuptime.com | **0.75** |
+| "postgres connection pool" (on-topic) | stackoverflow.blog | 1.00 |
+| "pgvector semantic search" (on-topic) | red-gate.com | 1.00 |
+| "fastapi background tasks" (on-topic) | github.com | 1.00 |
+| "chocolate cake recipe" (on-topic) | eatsdelightful.com | 1.00 |
+| "flavor of autumn 1847" (off-topic) | webstaurantstore.com | 0.67 |
+| "best pizza nyc" (off-topic) | thefoodcharlatan.com | 0.67 |
+| "how do bees make honey" (off-topic) | en.wikipedia.org/wiki/Mine_clearance | 1.00 |
+| "learn to play guitar" (off-topic) | developer-tech.com (cookie page) | 0.00 |
+| "best running shoes marathon" (defensible) | amazon.com | 0.75 |
+
+Every on-topic query tops out at ≥ 0.75; clear misses at ≤ 0.67. One known
+false positive ("bees make honey" → a mine-clearance article that happens to
+contain all three words) is accepted: over-serving a marginal page beats a
+~50 s gateway round trip for a query the corpus mostly answers.
+
+### Why not gate on score or cosine?
+
+- **Score** (the old `SEARCH_MIN_SCORE` gate): rank-only, so it crosses
+  clusters — measured 2026-08-24: off-topic "flavor of autumn 1847" tops at
+  **0.134** while on-topic "docker mac remote deploy" tops at **0.049**. No
+  threshold separates them. History: 0.2 pre-dated the top-3 cap; 0.12 was
+  calibrated for the old full-corpus trigram leg; 0.06 (post-rewrite) still
+  sat above the on-topic band and silently routed "docker mac remote deploy"
+  to the gateway.
+- **Cosine similarity** (MiniLM, per-page min chunk distance): also crosses
+  clusters — on-topic "fastapi background tasks" measured **0.410**, *below*
+  off-topic "bees make honey" at **0.503**. The embeddings do not separate
+  on-topic from off-topic for this corpus.
+
+### Re-measuring after a big index change
 
 ```sql
-SELECT url, score FROM fn_search_local('your on-topic query', NULL, 10);
-SELECT url, score FROM fn_search_local('chocolate cake espresso recipe', NULL, 10);
+SELECT url, score, coverage
+FROM fn_search_local('your on-topic query', '<query-vec>'::vector, 10)
+ORDER BY score DESC;
 ```
 
-and place the threshold between the two clusters.
+with the query embedded by the same model as the chunks (a page's own stored
+embedding is **not** a query embedding and will corrupt the probe). Place
+`LOCAL_MIN_COVERAGE` between the on-topic and off-topic clusters.
 
 ## Changing the ranking
 

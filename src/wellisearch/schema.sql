@@ -130,8 +130,13 @@ CREATE TABLE IF NOT EXISTS provider_state (
 --                If no chunk contains every lexeme, fall back to the same
 --                lexemes OR-ed (multi-word queries rarely put all their
 --                words into a single chunk).
---   2. Trigram:  similarity / word_similarity against chunk text + page title
---                (covers typos/fragments the LLM emits)
+--   2. Trigram:  BOUNDED (see docs/trigram-rewrite.md): candidates come from
+--                the FTS-AND leg (top 50) + the distinctive-word OR leg
+--                (top 50, tsv GIN — index-backed), re-ranked with
+--                similarity()/word_similarity() so partial-word and typo-ish
+--                matches rank well. The original full-corpus scan (similarity
+--                over every chunk) took 10-27+ min at 1.3M chunks and
+--                exhausted the DB pool.
 --   3. Vector:   embedding <=> qvec (skipped when qvec IS NULL)
 --
 -- RRF fusion (k=60); per page, only the 3 best ranks of each leg count (so
@@ -144,15 +149,20 @@ CREATE TABLE IF NOT EXISTS provider_state (
 --   × exp(-age_days/14)            — freshness decay from last_crawled
 -- Filter: p.disabled = false.
 --
--- Returns: url, title, snippet (top-scoring chunk text, ~400 chars), score,
---          last_crawled, fetch_count.
+-- Returns: url, title, snippet (top-scoring chunk text, ~400 chars),
+--          score (rank-only, see docs/ranking.md), coverage (local-vs-gateway
+--          gate signal, see docs/ranking.md), last_crawled, fetch_count.
 -- ===========================================================================
-CREATE OR REPLACE FUNCTION fn_search_local(query TEXT, qvec VECTOR(384), k INT)
+-- DROP first: CREATE OR REPLACE cannot change the return type (adding a
+-- column), and nothing references this function besides the app at runtime.
+DROP FUNCTION IF EXISTS fn_search_local(TEXT, VECTOR(384), INT);
+CREATE FUNCTION fn_search_local(query TEXT, qvec VECTOR(384), k INT)
 RETURNS TABLE (
   url TEXT,
   title TEXT,
   snippet TEXT,
   score DOUBLE PRECISION,
+  coverage DOUBLE PRECISION,
   last_crawled TIMESTAMPTZ,
   fetch_count INT
 )
@@ -166,81 +176,153 @@ AS $$
         WHEN plainto_tsquery('english', query) = to_tsquery('english', '') THEN NULL
         ELSE to_tsquery('english', replace(
                plainto_tsquery('english', query)::text, ' & ', ' | '))
-      END AS tsq_or
+      END AS tsq_or,
+      (SELECT count(*) FROM chunks) AS nchunks
   ),
+  -- Distinctive query words: those in < 1% of the corpus (per-word GIN index
+  -- counts, a few ms each). Their OR set stays small even inside long
+  -- queries, so it is cheap to scan — unlike the common-word OR set (tens of
+  -- thousands of rows, 2.4-6 s on this corpus). The pool serves pages that
+  -- contain the distinctive word but not every query word.
+  words AS (
+    SELECT DISTINCT unnest(regexp_split_to_array(q.tsq_and::text, ' & ')) AS lexeme
+    FROM q
+    WHERE q.tsq_and IS NOT NULL
+  ),
+  rare AS (
+    SELECT string_agg(lexeme, ' | ') AS words
+    FROM words
+    WHERE (SELECT count(*) FROM chunks c
+           WHERE c.tsv @@ to_tsquery('english', words.lexeme)) * 100
+          < (SELECT nchunks FROM q)
+  ),
+  -- url rides along in every leg so the fusion below never joins back to the
+  -- huge chunks table. (Joining the small leg set to chunks made the planner
+  -- build a hash table over all ~1.4M chunks — a ~16 s scan per search.)
+  -- FTS candidate set: the AND set (chunks containing every lexeme) when it
+  -- is non-empty — for multi-word queries that is the strong overlap set and
+  -- it is small (hundreds, not tens of thousands) — else the OR set (any
+  -- lexeme; the slow path, ~2.4-6 s, for typos and long queries where the
+  -- AND set is empty). Never a full-corpus scan: the original
+  -- similarity()-over-every-chunk leg took 10-27+ min at ~1.3M chunks and
+  -- exhausted the pool (docs/trigram-rewrite.md). Measured: AND-set
+  -- candidates cost ~13 ms vs ~10 s for the OR set on this corpus.
   fts_and AS (
-    SELECT c.id AS cid, ts_rank_cd(c.tsv, q.tsq_and) AS rk
+    SELECT c.id AS cid, c.url AS url, left(c.text, 1000) AS text,
+           ts_rank_cd(c.tsv, q.tsq_and) AS rk
     FROM chunks c, q
     WHERE q.tsq_and IS NOT NULL AND c.tsv @@ q.tsq_and
   ),
   fts AS (
-    SELECT cid, rk FROM fts_and
+    SELECT cid, url, text, rk FROM fts_and
     UNION ALL
-    SELECT c.id, ts_rank_cd(c.tsv, q.tsq_or)
+    SELECT c.id, c.url, left(c.text, 1000), ts_rank_cd(c.tsv, q.tsq_or)
     FROM chunks c, q
     WHERE q.tsq_or IS NOT NULL AND c.tsv @@ q.tsq_or
       AND NOT EXISTS (SELECT 1 FROM fts_and)
   ),
   ftsr AS (
-    SELECT cid, ROW_NUMBER() OVER (ORDER BY rk DESC) AS rnk FROM fts
+    SELECT cid, url, text, ROW_NUMBER() OVER (ORDER BY rk DESC) AS rnk
+    FROM fts
   ),
+  -- Bounded trigram leg: re-ranks a small candidate pool with the fuzzy
+  -- functions. Pool = top 50 of the FTS-AND set (strong overlap) + top 50
+  -- of the distinctive-word OR set (partial matches on rare words). Both
+  -- scans are index-backed and small by construction; the full common-word
+  -- OR set is deliberately not scanned here (too big per search).
+  -- (Earlier versions picked candidates with COALESCE(tsq_and, tsq_or) — a
+  -- tsquery is only NULL when the query has no lexemes, so empty-AND or
+  -- partial-match queries silently lost the trigram leg entirely;
+  -- tests/test_db.py caught it.)
   trg AS (
-    SELECT c.id AS cid,
+    SELECT cand.cid, cand.url,
            ROW_NUMBER() OVER (ORDER BY
-             GREATEST(similarity(c.text, query),
-                      word_similarity(c.text, query),
-                      similarity(p.title, query)) DESC) AS rnk
-    FROM chunks c
-    JOIN pages p ON p.url = c.url
-    WHERE GREATEST(similarity(c.text, query),
-                   word_similarity(c.text, query),
-                   similarity(p.title, query)) > 0.05
+               -- Prefix only: some chunks run to ~1 MB of text and
+               -- similarity() cost scales with it (637 ms over 190 full
+               -- chunks vs 11 ms over the 1000-char head); the head of a
+               -- chunk is the most representative part anyway.
+               GREATEST(similarity(cand.text, query),
+                        word_similarity(cand.text, query)) DESC) AS rnk
+    FROM (
+      SELECT DISTINCT ON (cid) cid, url, text
+      FROM (
+        SELECT cid, url, text FROM ftsr WHERE rnk <= 50
+        UNION ALL
+        (SELECT c.id, c.url, left(c.text, 1000)
+         FROM chunks c
+         WHERE (SELECT words FROM rare) IS NOT NULL
+           AND c.tsv @@ to_tsquery('english', (SELECT words FROM rare))
+         ORDER BY ts_rank_cd(c.tsv, to_tsquery('english', (SELECT words FROM rare))) DESC
+         LIMIT 50)
+      ) u
+      ORDER BY cid
+    ) cand
   ),
+  -- Vector leg: inner top-50 via ORDER BY + LIMIT is the canonical pgvector
+  -- shape — the planner streams from the HNSW index (chunks_vec_hnsw) and
+  -- stops after 50 rows. Without the LIMIT the planner cannot early-stop and
+  -- falls back to a full seq scan + sort over every embedding (~10-30 s at
+  -- 1.4M chunks), which dominated search latency.
   vec AS (
-    SELECT c.id AS cid,
-           ROW_NUMBER() OVER (ORDER BY c.embedding <=> qvec) AS rnk
-    FROM chunks c
-    WHERE c.embedding IS NOT NULL AND qvec IS NOT NULL
+    SELECT t.cid, t.url, ROW_NUMBER() OVER (ORDER BY t.d) AS rnk
+    FROM (
+      SELECT c.id AS cid, c.url AS url, c.embedding <=> qvec AS d
+      FROM chunks c
+      WHERE c.embedding IS NOT NULL AND qvec IS NOT NULL
+      ORDER BY c.embedding <=> qvec
+      LIMIT 50
+    ) t
   ),
   leg AS (
-    SELECT 'fts' AS leg, cid, rnk FROM ftsr WHERE rnk <= 50
+    SELECT 'fts' AS leg, cid, url, rnk FROM ftsr WHERE rnk <= 50
     UNION ALL
-    SELECT 'trg' AS leg, cid, rnk FROM trg WHERE rnk <= 50
+    SELECT 'trg' AS leg, cid, url, rnk FROM trg WHERE rnk <= 50
     UNION ALL
-    SELECT 'vec' AS leg, cid, rnk FROM vec WHERE rnk <= 50
+    SELECT 'vec' AS leg, cid, url, rnk FROM vec WHERE rnk <= 50
   ),
   per AS (
-    SELECT leg, cid, rnk,
-           ROW_NUMBER() OVER (PARTITION BY leg, c.url ORDER BY rnk) AS rn_in_page
+    SELECT leg, cid, url, rnk,
+           ROW_NUMBER() OVER (PARTITION BY leg, url ORDER BY rnk) AS rn_in_page
     FROM leg
-    JOIN chunks c ON c.id = leg.cid
   ),
   perpage AS (
-    SELECT cid, SUM(1.0 / (60.0 + rnk)) AS rrf
+    SELECT cid, url, SUM(1.0 / (60.0 + rnk)) AS rrf
     FROM per
     WHERE rn_in_page <= 3
-    GROUP BY cid
+    GROUP BY cid, url
   ),
   pagescore AS (
-    SELECT c.url AS url, SUM(perpage.rrf) AS score
+    SELECT url, SUM(rrf) AS score
     FROM perpage
-    JOIN chunks c ON c.id = perpage.cid
-    GROUP BY c.url
+    GROUP BY url
+  ),
+  -- Snippet: only the ~k winning pages are joined back to chunks (nested
+  -- loop on the PK) to fetch their best chunk text.
+  best AS (
+    SELECT DISTINCT ON (url) cid, url
+    FROM perpage
+    ORDER BY url, rrf DESC
   ),
   bestchunk AS (
-    SELECT DISTINCT ON (c.url) c.url AS url, c.text AS text
-    FROM perpage
-    JOIN chunks c ON c.id = perpage.cid
-    ORDER BY c.url, perpage.rrf DESC
+    SELECT b.url AS url, left(regexp_replace(c.text, '\s+', ' ', 'g'), 400) AS snippet
+    FROM best b
+    JOIN chunks c ON c.id = b.cid
   )
   SELECT
     p.url AS url,
     p.title AS title,
-    left(regexp_replace(bc.text, '\s+', ' ', 'g'), 400) AS snippet,
+    bc.snippet AS snippet,
     (ps.score
      + 0.005 * ln(1.0 + p.fetch_count))
      * exp(-GREATEST(EXTRACT(EPOCH FROM (now() - p.last_crawled)) / 1209600.0, 0))
      AS score,
+    -- Coverage: fraction of the query's content words in title+body (docs/ranking.md).
+    -- left(...): to_tsvector overfits a 1 MB row type — pages with multi-MB
+    -- fit_markdown (raw JSON blobs) overflowed it and crashed the function.
+    (SELECT count(*) FROM words
+       WHERE to_tsvector('english', COALESCE(p.title, '') || ' ' || left(COALESCE(p.fit_markdown, ''), 100000))
+             @@ to_tsquery('english', words.lexeme)) * 1.0
+    / NULLIF((SELECT count(*) FROM words), 0) AS coverage,
     p.last_crawled AS last_crawled,
     p.fetch_count AS fetch_count
   FROM pagescore ps

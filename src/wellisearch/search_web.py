@@ -66,13 +66,21 @@ async def search_web(
         log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
         qvec = None
 
+    # Fetch a bit more than we'll return so the coverage gate (below) can see
+    # a full-coverage page that ranks just outside the top-k by score. The
+    # extra rows cost nothing — the legs/fusion are the same; only the final
+    # LIMIT differs.
+    gate_k = max(k, 10)
     try:
         local_rows = await db.fetch_all(
             "SELECT * FROM fn_search_local(%s, %s::vector, %s)",
-            (query, qvec if qvec is not None else None, k),
+            (query, qvec if qvec is not None else None, gate_k),
+            timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
         )
     except Exception:
-        log.exception("fn_search_local failed")
+        # includes QueryCanceled (statement timeout) — the gateway below
+        # serves the request instead of stalling on the local index
+        log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
         local_rows = []
 
     if max_age_days is not None:
@@ -82,27 +90,32 @@ async def search_web(
             if r.get("last_crawled") is None or r["last_crawled"] >= cutoff
         ]
 
+    # Gate: does any top local result cover the query enough? `coverage` is
+    # computed in fn_search_local (see docs/ranking.md).
+    serve_local = any(
+        (r.get("coverage") or 0.0) >= s.LOCAL_MIN_COVERAGE for r in local_rows
+    )
+
     def _local_result(r: dict) -> dict:
         return {
             "url": r["url"],
             "title": r.get("title") or r["url"],
             "snippet": (r.get("snippet") or "")[:400],
             "score": r.get("score"),
+            "coverage": r.get("coverage"),
             "last_crawled": r.get("last_crawled"),
             "fetch_count": r.get("fetch_count"),
         }
-
-    good_local = [r for r in local_rows if (r.get("score") or 0) >= s.SEARCH_MIN_SCORE]
 
     source: str
     results: list[dict]
     degraded = False
     errors: list[dict] = []
 
-    if good_local:
+    if serve_local:
         # local hit — zero provider credits (the quota-preservation layer)
         source = "local"
-        results = [_local_result(r) for r in good_local[:k]]
+        results = [_local_result(r) for r in local_rows[:k]]
         for r in results:
             await db.mark_search_hit(r["url"])
     else:
@@ -137,7 +150,7 @@ async def search_web(
                 source = "error"
                 results = []
 
-    await db.log_search(query, source, len(good_local) if not degraded else len(local_rows), results)
+    await db.log_search(query, source, len(results), results)
 
     # Envelope: structured data only. The Markdown body is rendered at the
     # surfaces (tools.py for MCP, app.py for REST) via render_search_markdown.

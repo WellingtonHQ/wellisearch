@@ -269,7 +269,9 @@ function renderNow(st) {
     {
       sub: "in-flight crawls",
       big: inFlight.length ? inFlight.length : "0",
-      html: inFlight.map(u => `<div class="sub" title="${esc(u)}">${esc(u)}</div>`).join(""),
+      html:
+        inFlight.slice(0, 3).map(u => `<div class="sub" title="${esc(u)}">${esc(u)}</div>`).join("") +
+        (inFlight.length > 3 ? `<div class="sub">+ ${inFlight.length - 3} more…</div>` : ""),
     },
     {
       sub: "crawl queue",

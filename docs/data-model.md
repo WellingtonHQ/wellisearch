@@ -66,8 +66,11 @@ document order.
 Indexes:
 
 - `chunks_url_seq_uq` — `UNIQUE (url, seq)`
-- `chunks_tsv_gin` — `GIN (tsv)` for the FTS leg
-- `chunks_trgm_gin` — `GIN (text gin_trgm_ops)` for the trigram leg
+- `chunks_tsv_gin` — `GIN (tsv)` for the FTS leg (and the candidate set of
+  the bounded trigram leg, `trigram-rewrite.md`)
+- `chunks_trgm_gin` — `GIN (text gin_trgm_ops)` — **currently unused** since
+  the trigram rewrite (kept as a rebuild-able fallback; ~1.3 GB, drops
+  write amplification if removed)
 - `chunks_vec_hnsw` — `HNSW (embedding vector_cosine_ops)` for the vector leg
 
 ## crawl_queue
@@ -171,8 +174,8 @@ dashboard survives a redeploy.
 |---|---|---|---|
 | `pages_domain_idx` | pages | B-tree | dashboard/domain lookups |
 | `chunks_url_seq_uq` | chunks | unique B-tree | chunk ordering + dedupe |
-| `chunks_tsv_gin` | chunks | GIN | FTS leg |
-| `chunks_trgm_gin` | chunks | GIN (trgm) | trigram leg |
+| `chunks_tsv_gin` | chunks | GIN | FTS leg + trigram-leg candidates |
+| `chunks_trgm_gin` | chunks | GIN (trgm) | unused since trigram rewrite (fallback) |
 | `chunks_vec_hnsw` | chunks | HNSW | vector leg |
 | `crawl_queue_url_pending_uq` | crawl_queue | partial unique | queue dedupe |
 | `search_log_ts_idx` | search_log | B-tree `DESC` | recent-searches |

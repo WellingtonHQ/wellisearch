@@ -36,6 +36,11 @@ STATE: dict = {
     "started_at": None,
 }
 
+# One tick at a time: the interval timer (run_forever) and debounced kicks
+# (queue.kick_worker) can otherwise run tick() concurrently, doubling crawl
+# load. Claims are atomic either way, so the lock is about load, not races.
+_tick_lock = asyncio.Lock()
+
 
 # ------------------------------------------------------------------ single URL
 
@@ -163,23 +168,28 @@ async def _retention_sweep() -> None:
 
 
 async def tick() -> dict:
-    """One worker tick: drain queue + budgeted refresh, wall-clock bounded."""
-    s = get_settings()
-    t0 = time.monotonic()
-    deadline = t0 + s.WORKER_TICK_BUDGET_MIN * 60
-    log.info("tick start (budget %ss)", int(deadline - t0))
+    """One worker tick: drain queue + budgeted refresh, wall-clock bounded.
+    Skipped (not queued) if a tick is already running."""
+    if _tick_lock.locked():
+        log.info("tick skipped (previous tick still running)")
+        return {"skipped": "tick already running"}
+    async with _tick_lock:
+        s = get_settings()
+        t0 = time.monotonic()
+        deadline = t0 + s.WORKER_TICK_BUDGET_MIN * 60
+        log.info("tick start (budget %ss)", int(deadline - t0))
 
-    stats = {
-        "queue": await _drain_queue(deadline),
-        "refresh": await _refresh_watchlist(deadline),
-        "ms": int((time.monotonic() - t0) * 1000),
-    }
-    STATE["last_tick_at"] = dt.datetime.now(dt.timezone.utc)
-    STATE["last_tick_stats"] = stats
-    log.info("tick done: %s", stats)
-    await _log_event("worker tick", stats)
-    await _retention_sweep()
-    return stats
+        stats = {
+            "queue": await _drain_queue(deadline),
+            "refresh": await _refresh_watchlist(deadline),
+            "ms": int((time.monotonic() - t0) * 1000),
+        }
+        STATE["last_tick_at"] = dt.datetime.now(dt.timezone.utc)
+        STATE["last_tick_stats"] = stats
+        log.info("tick done: %s", stats)
+        await _log_event("worker tick", stats)
+        await _retention_sweep()
+        return stats
 
 
 # -------------------------------------------------------------------- runner

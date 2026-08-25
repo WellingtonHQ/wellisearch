@@ -44,8 +44,13 @@ def _get_model() -> Any:
             from fastembed import TextEmbedding
 
             s = get_settings()
-            log.info("loading embedding model %s (first use may download ~90 MB)…", model_name())
-            _model = TextEmbedding(model_name=model_name(), cache_dir=_cache_dir())
+            log.info("loading embedding model %s (threads=%s, first use may download ~90 MB)…",
+                     model_name(), s.EMBED_THREADS)
+            _model = TextEmbedding(
+                model_name=model_name(),
+                cache_dir=_cache_dir(),
+                threads=s.EMBED_THREADS,
+            )
             dim = _model.embedding_size
             if dim != s.EMBED_DIMS:
                 raise RuntimeError(

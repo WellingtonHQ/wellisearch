@@ -16,6 +16,7 @@ import logging
 
 from . import worker
 from .config import get_settings
+from .crawler import crawl_semaphore
 from .db import db
 
 log = logging.getLogger("wellisearch.queue")
@@ -59,7 +60,10 @@ async def crawl_deduped(url: str, trigger: str, fn) -> object:
     fut = loop.create_future()
     INFLIGHT.register(url, fut)
     try:
-        result = await fn()
+        # global crawl cap: dedup waiters above never hold a slot — only the
+        # coroutine actually running the crawl does
+        async with crawl_semaphore():
+            result = await fn()
         if not fut.done():
             fut.set_result(result)
         return result

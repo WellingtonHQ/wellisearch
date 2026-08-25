@@ -45,8 +45,9 @@ async def store_page(url: str, markdown: str, title: str | None = None) -> tuple
         )
         return "unchanged", 0
 
-    # chunk + embed (CPU-bound → keep off the event loop)
-    chunks = chunk_markdown(markdown, s.MAX_CHUNK_TOKENS)
+    # chunk + embed (CPU-bound → both off the event loop; chunking on the
+    # loop stalls every request handler while a page stores)
+    chunks = await asyncio.to_thread(chunk_markdown, markdown, s.MAX_CHUNK_TOKENS)
     vectors = await asyncio.to_thread(embed, chunks) if chunks else []
     if chunks and len(vectors) != len(chunks):
         raise RuntimeError(f"embed returned {len(vectors)} vectors for {len(chunks)} chunks")

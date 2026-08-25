@@ -52,7 +52,7 @@ services:
     restart: always
     # 8G (was 4G): gunicorn now runs 3 workers (see supervisord.conf mount below);
     # each owns a chrome pool, so the single-worker 4G cap OOMs at 3x concurrency.
-    mem_limit: 12G
+    mem_limit: 8G
     environment:
       - GUNICORN_BIND=0.0.0.0:11235
       - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_KEY}

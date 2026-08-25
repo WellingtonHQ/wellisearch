@@ -128,8 +128,24 @@ class Database:
             cur = await conn.execute(sql, params or ())
             return cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
 
-    async def fetch_all(self, sql: str, params: tuple | list | None = None) -> list[dict[str, Any]]:
+    async def fetch_all(
+        self,
+        sql: str,
+        params: tuple | list | None = None,
+        timeout_ms: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run a SELECT. `timeout_ms` sets a per-statement backstop (SET LOCAL,
+        scoped to one explicit transaction — never leaks into the pool) so a
+        slow query can't hold a pooled connection for minutes. Raises
+        psycopg.errors.QueryCanceled on expiry."""
         async with self.pool.connection() as conn:
+            if timeout_ms is not None:
+                # SET does not accept parameter placeholders — inline the
+                # (int-coerced) value instead.
+                async with conn.transaction():
+                    await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
+                    cur = await conn.execute(sql, params or ())
+                    return list(await cur.fetchall())
             cur = await conn.execute(sql, params or ())
             return list(await cur.fetchall())
 

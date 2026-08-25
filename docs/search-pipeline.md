@@ -33,28 +33,30 @@ skipped — FTS + trigram still rank.
 SELECT * FROM fn_search_local(%s, %s::vector, %s)
 ```
 
-See [ranking.md](ranking.md) for the full algorithm. Returns at most `k`
-rows with `url, title, snippet, score, last_crawled, fetch_count`. If the
-function itself errors, `local_rows = []` and the pipeline continues to the
-gateway.
+See [ranking.md](ranking.md) for the full algorithm. Returns at most
+`max(k, 10)` rows with `url, title, snippet, score, coverage, last_crawled,
+fetch_count` (the extra rows let the gate below see past the top-k by
+score). If the function itself errors, `local_rows = []` and the pipeline
+continues to the gateway.
 
 **Optional freshness filter**: if `max_age_days` is given, rows with
 `last_crawled` older than the cutoff are dropped (rows never crawled are
 kept). This is applied *after* ranking, in Python.
 
-### 4. Threshold: is the local result good enough?
+### 4. Gate: is the local result good enough?
 
 ```python
-good_local = [r for r in local_rows if (r.get("score") or 0) >= SEARCH_MIN_SCORE]
+serve_local = any((r.get("coverage") or 0) >= LOCAL_MIN_COVERAGE for r in local_rows)
 ```
 
-`SEARCH_MIN_SCORE` defaults to **0.12**. Because RRF scores are rank-based,
-the scale is compressed (typical relevant hits land around 0.10–0.155); the
-threshold sits just below the best relevant results and above off-topic
-matches. Raising it makes the gateway more aggressive; lowering it serves
-more local (and potentially weaker) results. See
-[ranking.md § Score scale](ranking.md#score-scale-and-search_min_score) for
-how the value was chosen.
+`LOCAL_MIN_COVERAGE` defaults to **0.75**. `coverage` (computed in
+`fn_search_local`, entirely in Postgres) is the fraction of the query's
+content words the page's title+body contains — the actual "do we have this
+answer?" signal. The RRF `score` is rank-only and does not gate (off-topic
+pages can outscore on-topic ones: 0.134 vs 0.049 on this index), nor does
+cosine similarity (0.410 on-topic vs 0.503 off-topic). See
+[ranking.md § Local-hit gate](ranking.md#local-hit-gate-coverage) for the
+calibration data.
 
 ### 5a. Local hit → serve (zero provider credits)
 

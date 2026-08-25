@@ -42,13 +42,26 @@ class Settings(BaseSettings):
     # --- embeddings (single source of truth; load-bearing) ---
     EMBED_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     EMBED_DIMS: int = 384
+    # ORT intra-op threads per embedding session (fastembed `threads=`).
+    # Each concurrent embed spawns its own ORT thread pool; unbounded (all
+    # cores) × 3-4 concurrent sessions oversubscribes the host and starves
+    # Postgres. MiniLM is small — a couple of threads per session is plenty.
+    EMBED_THREADS: int = 2
 
     # --- search ---
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
-    SEARCH_MIN_SCORE: float = 0.12
+    # Local-hit gate: serve local if any top result's `coverage`
+    # (fn_search_local column, see docs/ranking.md) is >= this.
+    LOCAL_MIN_COVERAGE: float = 0.75
+    # Legacy local-hit cutoff; now only for ranking (see docs/ranking.md).
+    SEARCH_MIN_SCORE: float = 0.06
     STALE_HOURS: int = 72
     MAX_CHUNK_TOKENS: int = 800
+    # Per-statement backstop for the local search SQL (SET LOCAL, search only):
+    # no query may hold a pooled connection for minutes. A timeout falls back
+    # to the provider gateway (search_web.py) instead of stalling the request.
+    SEARCH_STATEMENT_TIMEOUT_MS: int = 15000
 
     # --- fetch_pages truncation (swappable strategies) ---
     FETCH_DEFAULT_STRATEGY: str = "smart"  # smart | head | tail | even | priority

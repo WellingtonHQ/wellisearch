@@ -98,7 +98,8 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 |---|---|---|
 | `SEARCH_K` | `5` | default result count |
 | `SEARCH_MAX_CRAWL` | `5` | gateway result URLs to pre-index per miss |
-| `SEARCH_MIN_SCORE` | `0.12` | local-hit threshold (see ranking.md) |
+| `LOCAL_MIN_COVERAGE` | `0.75` | local-hit gate: min fraction of query words a page must cover (see ranking.md) |
+| `SEARCH_MIN_SCORE` | `0.06` | legacy; now only for ranking (see ranking.md) |
 | `STALE_HOURS` | `72` | staleness hint for stats/dashboard |
 | `MAX_CHUNK_TOKENS` | `800` | chunk budget (~4 chars/token) |
 

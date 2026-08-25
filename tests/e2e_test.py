@@ -65,7 +65,7 @@ async def main() -> None:
         # 3. gateway search (local index may be empty -> provider serves) -------------
         r = await c.get("/api/search", params={"query": "fastapi mcp server", "k": "5"})
         md = r.text
-        # >=2 results (not 3): the strict SEARCH_MIN_SCORE gate may legitimately
+        # >=2 results (not 3): the coverage gate may legitimately
         # drop weak local hits, so a strong query can return 2. Zero is the real failure.
         check("search: 200 + >=2 results + degraded=false",
               r.status_code == 200 and len(re.findall(r"^URL: ", md, re.M)) >= 2 and "Degraded: false" in md,
@@ -130,12 +130,15 @@ async def main() -> None:
             for u in urls:
                 await c.patch(f"/api/pages/{quote(u, safe='')}", json={"disabled": disabled})
 
-        # local-first is correct, so disable the index to force the gateway.
-        # the background worker may index pages concurrently (from enqueued
-        # searches), so re-disable and retry if a local hit still wins.
+        # local-first is correct, so force the gateway two ways: disable the
+        # most-read pages, AND use a query the index cannot cover ("quixotic
+        # zzyzx" tops out at 0.5 coverage < LOCAL_MIN_COVERAGE — verified
+        # 2026-08-25; any 3+ real-word query has a full-coverage page in a
+        # 25k-page corpus). The worker may index concurrently, so retry if a
+        # local hit still wins.
         for _attempt in range(3):
             await set_disabled(await all_page_urls(), True)
-            r = await c.get("/api/search", params={"query": "chess grandmaster tournament live results", "k": "5"})
+            r = await c.get("/api/search", params={"query": "quixotic zzyzx", "k": "5"})
             if r.status_code == 200 and "Source: local" not in r.text:
                 break
         check("failover: search 200 via brave",
