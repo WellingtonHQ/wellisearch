@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # --- crawl4ai (the single crawling path) ---
     CRAWL4AI_URL: str = "http://crawl4ai:11235"
-    CRAWL4AI_API_KEY: str = ""
+    CRAWL4AI_API_KEY: str = "change-me"
 
     # --- search providers (ordered priority; first success serves) ---
     SEARCH_PROVIDERS: str = "tavily,brave,searxng"

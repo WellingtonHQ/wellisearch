@@ -55,7 +55,7 @@ services:
     mem_limit: 8G
     environment:
       - GUNICORN_BIND=0.0.0.0:11235
-      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_KEY}
+      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_KEY:-change-me}
       # LLM content filter (md f:llm) -> local LM Studio on the Docker host
       - LLM_PROVIDER=openai/qwen/qwen3.8-27b
       - OPENAI_BASE_URL=http://host.docker.internal:1234/v1

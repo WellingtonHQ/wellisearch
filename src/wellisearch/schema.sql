@@ -123,35 +123,11 @@ CREATE TABLE IF NOT EXISTS provider_state (
 );
 
 -- ===========================================================================
--- fn_search_local(query, qvec, k) — the hybrid ranking core.
---
--- Three legs, each top-50 chunks:
---   1. FTS:      ts_rank_cd against plainto_tsquery (AND of all lexemes).
---                If no chunk contains every lexeme, fall back to the same
---                lexemes OR-ed (multi-word queries rarely put all their
---                words into a single chunk).
---   2. Trigram:  BOUNDED (see docs/trigram-rewrite.md): candidates come from
---                the FTS-AND leg (top 50) + the distinctive-word OR leg
---                (top 50, tsv GIN — index-backed), re-ranked with
---                similarity()/word_similarity() so partial-word and typo-ish
---                matches rank well. The original full-corpus scan (similarity
---                over every chunk) took 10-27+ min at 1.3M chunks and
---                exhausted the DB pool.
---   3. Vector:   embedding <=> qvec (skipped when qvec IS NULL)
---
--- RRF fusion (k=60); per page, only the 3 best ranks of each leg count (so
--- many marginal matches cannot outrank a few strong ones). Then per-page
--- adjustments:
---   + 0.005 * ln(1 + p.fetch_count) — prominence: a gentle prior for pages
---                                   the LLM actually reads; additive so it
---                                   nudges ties instead of overriding
---                                   topical evidence
---   × exp(-age_days/14)            — freshness decay from last_crawled
--- Filter: p.disabled = false.
---
--- Returns: url, title, snippet (top-scoring chunk text, ~400 chars),
---          score (rank-only, see docs/ranking.md), coverage (local-vs-gateway
---          gate signal, see docs/ranking.md), last_crawled, fetch_count.
+-- fn_search_local(query, qvec, k) — the hybrid ranking core: FTS + trigram +
+-- vector legs (each top-50), RRF fusion with a per-page top-3 cap, then
+-- prominence/freshness adjustments; disabled pages filtered out.
+-- Design, formulas, and calibration: docs/ranking.md (trigram leg:
+-- docs/trigram-rewrite.md).
 -- ===========================================================================
 -- DROP first: CREATE OR REPLACE cannot change the return type (adding a
 -- column), and nothing references this function besides the app at runtime.
@@ -196,17 +172,9 @@ AS $$
            WHERE c.tsv @@ to_tsquery('english', words.lexeme)) * 100
           < (SELECT nchunks FROM q)
   ),
-  -- url rides along in every leg so the fusion below never joins back to the
-  -- huge chunks table. (Joining the small leg set to chunks made the planner
-  -- build a hash table over all ~1.4M chunks — a ~16 s scan per search.)
-  -- FTS candidate set: the AND set (chunks containing every lexeme) when it
-  -- is non-empty — for multi-word queries that is the strong overlap set and
-  -- it is small (hundreds, not tens of thousands) — else the OR set (any
-  -- lexeme; the slow path, ~2.4-6 s, for typos and long queries where the
-  -- AND set is empty). Never a full-corpus scan: the original
-  -- similarity()-over-every-chunk leg took 10-27+ min at ~1.3M chunks and
-  -- exhausted the pool (docs/trigram-rewrite.md). Measured: AND-set
-  -- candidates cost ~13 ms vs ~10 s for the OR set on this corpus.
+  -- url rides along in every leg so the fusion never joins back to chunks.
+  -- FTS candidate set: the AND set (every lexeme) when non-empty, else the
+  -- OR set — both index-backed, never a full-corpus scan (docs/ranking.md).
   fts_and AS (
     SELECT c.id AS cid, c.url AS url, left(c.text, 1000) AS text,
            ts_rank_cd(c.tsv, q.tsq_and) AS rk
@@ -225,15 +193,9 @@ AS $$
     SELECT cid, url, text, ROW_NUMBER() OVER (ORDER BY rk DESC) AS rnk
     FROM fts
   ),
-  -- Bounded trigram leg: re-ranks a small candidate pool with the fuzzy
-  -- functions. Pool = top 50 of the FTS-AND set (strong overlap) + top 50
-  -- of the distinctive-word OR set (partial matches on rare words). Both
-  -- scans are index-backed and small by construction; the full common-word
-  -- OR set is deliberately not scanned here (too big per search).
-  -- (Earlier versions picked candidates with COALESCE(tsq_and, tsq_or) — a
-  -- tsquery is only NULL when the query has no lexemes, so empty-AND or
-  -- partial-match queries silently lost the trigram leg entirely;
-  -- tests/test_db.py caught it.)
+  -- Bounded trigram leg: re-ranks a small index-backed candidate pool
+  -- (FTS-AND top 50 + distinctive-word OR top 50) with similarity()/
+  -- word_similarity(); design history in docs/trigram-rewrite.md.
   trg AS (
     SELECT cand.cid, cand.url,
            ROW_NUMBER() OVER (ORDER BY

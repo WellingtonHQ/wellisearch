@@ -74,7 +74,7 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 | Var | Default | Notes |
 |---|---|---|
 | `CRAWL4AI_URL` | `http://crawl4ai:11235` | the `/md` endpoint base |
-| `CRAWL4AI_API_KEY` | *(empty)* | Bearer key |
+| `CRAWL4AI_API_KEY` | `change-me` | **set this** (must match the crawler's `CRAWL4AI_API_TOKEN`) |
 
 ### Search providers
 | Var | Default | Notes |

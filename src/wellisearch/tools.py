@@ -189,7 +189,10 @@ def register_tools(server: MCPServer) -> None:
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:
         out = await _fetch_pages(
-            urls, max_chars=max_chars, per_page_chars=per_page_chars, strategy=strategy
+            urls,
+            max_chars=max_chars,
+            per_page_chars=per_page_chars,
+            strategy=strategy,
         )
         return _fmt(out, format, render_fetch_pages_markdown)
 

@@ -181,6 +181,13 @@ actions, startup) are written to the `event_log` table by the service itself
 and appear here with `kind: "event"`. Log tables are pruned after
 `LOG_RETENTION_DAYS` (default 30).
 
+### `GET /owui/openapi.json`
+Curated OpenAPI 3.0 spec for OWUI's OpenAPI tool server: only the three
+user-facing tools (`search_web`, `fetch_page`, `fetch_pages`) with clean
+operationIds — OWUI never sees the admin endpoints. Served unauthenticated
+(public API contract; the endpoints themselves stay auth-gated). The spec
+lives in `src/wellisearch/owui/openapi.json`.
+
 ### `GET /`
 Serves `static/index.html` (the dashboard). Mounted last (catch-all) so it
 never shadows `/api/*` or `/mcp/*`.

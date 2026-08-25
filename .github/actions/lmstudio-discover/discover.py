@@ -3,7 +3,7 @@ import os
 import sys
 import urllib.request
 
-DEFAULT_URL = "https://desktop-7n8a289.tailc2fbf4.ts.net:1234/v1"
+DEFAULT_URL = "http://localhost:1234/v1"
 url = (os.environ.get("LMSTUDIO_URL") or DEFAULT_URL).rstrip("/")
 key = os.environ.get("LMSTUDIO_API_KEY", "")
 preferred = os.environ.get("LMSTUDIO_PREFERRED_MODEL", "").strip()
