@@ -1,33 +1,15 @@
 """FastAPI app: REST routes + MCP (SSE) + static dashboard + worker (§2/§7/§9).
 
-REST (one implementation shared with the MCP tools):
-  GET  /api/search?query=&k=&max_crawl=&max_age_days=&format=markdown|json
-  POST /api/fetch        {url, max_chars?, format?}
-  POST /api/fetch-bulk   {urls, max_chars?, per_page_chars?, strategy?, format?}
-  (format=markdown default; format=json or Accept: application/json -> JSON envelope)
-  GET  /api/stats                      (dashboard payload)
-  GET  /api/providers                  (state + quota)
-  PATCH /api/providers/{name}          {enabled?, limit?}
-  POST /api/seed                       {url}
-  POST /api/refresh                    {url}
-  PATCH /api/pages/{url}               {disabled: bool}
-  DELETE /api/pages/{url}
-  GET  /api/logs/crawls?limit=
-  GET  /api/logs/searches?limit=
-  GET  /api/window?secs=           (windowed stats, clamped 10m..24h)
-  GET  /api/logs?secs=&limit=      (merged ts/message/info stream)
-  GET  /owui/openapi.json          (curated 3-tool spec for OWUI tool servers)
-  GET  /health
-  GET  /                            (static/index.html)
-
-Auth: when WELLISEARCH_API_KEY is set, require it (Bearer or X-API-Key) on
-/api/* and /mcp/*.
+The endpoint surface, request/response contracts, and auth rules live in
+docs/api.md — that file is the single source of truth (kept in sync with the
+routes below).
 """
 from __future__ import annotations
 
 import asyncio
 import datetime as dt
 import hmac
+import json
 import logging
 import pathlib
 from typing import Any
@@ -519,167 +501,21 @@ async def api_logs(secs: int = 86400, limit: int = 200) -> Any:
 # Curated OpenAPI spec for OWUI's OpenAPI tool server: exposes only the three
 # user-facing tools (search_web, fetch_page, fetch_pages) with clean
 # operationIds, so OWUI never sees the admin endpoints (seed/refresh/providers/
-# pages/logs). Served unauthenticated — it is a public API contract; OWUI
-# still sends the bearer token, and the endpoints themselves stay auth-gated.
+# pages/logs). The spec lives in owui/openapi.json (ships inside the package)
+# and is served unauthenticated — it is a public API contract; OWUI still
+# sends the bearer token, and the endpoints themselves stay auth-gated.
 
-OWUI_SPEC: dict[str, Any] = {
-    "openapi": "3.0.0",
-    "info": {
-        "title": "wellisearch",
-        "version": "1.0.0",
-        "description": "Web search backed by a local crawl index with live provider fallback, plus clean Markdown page fetching.",
-    },
-    "paths": {
-        "/api/search": {
-            "get": {
-                "operationId": "search_web",
-                "summary": "Search the web",
-                "description": (
-                    "Searches the wellisearch local index first (fast, cached), then falls back "
-                    "to the live provider gateway (Tavily, Brave, SearXNG) in order. "
-                    "By default returns a Markdown document (text/markdown): a header with Source "
-                    "(local|tavily|brave|searxng|error) and Degraded (true|false), then "
-                    "result blocks of Title/URL/Snippet separated by --- lines. Local hits "
-                    "carry a Last Crawled line per result. After a non-local hit, result "
-                    "URLs are queued for background indexing. Set format=json (or send "
-                    "Accept: application/json) for the structured JSON envelope instead — "
-                    "the format param wins over the Accept header."
-                ),
-                "parameters": [
-                    {"name": "query", "in": "query", "required": True,
-                     "description": "The search query (natural language).",
-                     "schema": {"type": "string"}},
-                    {"name": "num_results", "in": "query", "required": False,
-                     "description": "Number of results to return (default 5, max 20).",
-                     "schema": {"type": "integer", "default": 5}},
-                    {"name": "max_crawl", "in": "query", "required": False,
-                     "description": "How many result URLs to queue for background indexing on a non-local hit (default 5).",
-                     "schema": {"type": "integer"}},
-                     {"name": "max_age_days", "in": "query", "required": False,
-                      "description": "Ignore locally indexed pages crawled more than N days ago (e.g. 7 forces a live lookup for stale pages).",
-                      "schema": {"type": "number"}},
-                     {"name": "format", "in": "query", "required": False,
-                      "description": "Response format: markdown (default) or json. Wins over the Accept header.",
-                      "schema": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}},
-                 ],
-                 "responses": {
-                     "200": {
-                         "description": "Search results — Markdown by default; JSON when format=json or Accept: application/json.",
-                         "content": {
-                             "text/markdown": {"schema": {"type": "string"},
-                                               "description": "Source/Degraded header + Title/URL/Snippet blocks."},
-                             "application/json": {"schema": {"type": "object"},
-                                                  "description": "Structured: source, degraded, count, results[]."},
-                         },
-                     },
-                     "502": {
-                         "description": "All providers failed and no local results exist. Body is the source=error envelope (Markdown or JSON per format).",
-                         "content": {
-                             "text/markdown": {"schema": {"type": "string"}},
-                             "application/json": {"schema": {"type": "object"}},
-                         },
-                     },
-                 },
-            }
-        },
-        "/api/fetch": {
-            "post": {
-                "operationId": "fetch_page",
-                "summary": "Fetch one URL as clean Markdown",
-                "description": (
-                    "Reads a single URL and returns clean, readable Markdown. "
-                    "Indexed pages are served instantly from the local index; unknown URLs are "
-                    "crawled on demand and stored. By default returns a Markdown document "
-                    "(text/markdown): a Title/URL/From Index/Chars/Truncated header, then the "
-                    "page body; a failed fetch returns a URL/Status/Error header. Set "
-                    "format=json (or send Accept: application/json) for the structured JSON "
-                    "envelope instead — the format param wins over the Accept header."
-                ),
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "required": ["url"],
-                                "properties": {
-                                    "url": {"type": "string", "description": "Absolute http(s) URL to fetch."},
-                                    "max_chars": {"type": "integer", "description": "Optional cap on returned characters (omit for the server default)."},
-                                    "format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown",
-                                               "description": "Response format. Wins over the Accept header."},
-                                },
-                            }
-                        }
-                    },
-                },
-                "responses": {
-                    "200": {
-                        "description": "Fetched page — Markdown by default; JSON when format=json or Accept: application/json.",
-                        "content": {
-                            "text/markdown": {"schema": {"type": "string"},
-                                              "description": "Title/URL/From Index/Chars/Truncated header + page body."},
-                            "application/json": {"schema": {"type": "object"},
-                                                 "description": "Structured: ok, url, title, markdown, chars, truncated, from_index."},
-                        },
-                    },
-                },
-            }
-        },
-        "/api/fetch-bulk": {
-            "post": {
-                "operationId": "fetch_pages",
-                "summary": "Fetch several URLs in one call under a shared char budget",
-                "description": (
-                    "Reads multiple URLs and returns one combined Markdown document (one section per page), "
-                    "allocating a shared character budget across pages using the given strategy. "
-                    "By default returns a Markdown document (text/markdown): a Strategy/Budget/Pages "
-                    "Fetched/Total Chars/Truncated header, then one Title/URL/From Index/Chars/Truncated "
-                    "section per page (body after a --- line); failed URLs get a URL/Status/Error section. "
-                    "Prefer this over many fetch_page calls when you have several URLs. Set format=json "
-                    "(or send Accept: application/json) for the structured JSON envelope instead — the "
-                    "format param wins over the Accept header."
-                ),
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "required": ["urls"],
-                                "properties": {
-                                    "urls": {"type": "array", "items": {"type": "string"},
-                                             "description": "List of absolute http(s) URLs."},
-                                    "max_chars": {"type": "integer", "description": "Total character budget across all pages (omit for the server default)."},
-                                     "per_page_chars": {"type": "integer", "description": "Per-page character cap."},
-                                      "strategy": {"type": "string", "description": "Budget allocation strategy.",
-                                                   "enum": ["smart", "head", "tail", "even", "priority"]},
-                                     "format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown",
-                                                "description": "Response format. Wins over the Accept header."},
-                                },
-                            }
-                        }
-                    },
-                },
-                "responses": {
-                    "200": {
-                        "description": "Combined fetch — Markdown by default; JSON when format=json or Accept: application/json.",
-                        "content": {
-                            "text/markdown": {"schema": {"type": "string"},
-                                              "description": "Strategy/Budget/Pages Fetched/Total Chars/Truncated header + one section per page."},
-                            "application/json": {"schema": {"type": "object"},
-                                                 "description": "Structured: ok, pages_fetched, total_chars, strategy, budget, pages[]."},
-                        },
-                    },
-                },
-            }
-        },
-    },
-}
+_OWUI_SPEC_PATH = pathlib.Path(__file__).resolve().parent / "owui" / "openapi.json"
+
+
+def _load_owui_spec() -> dict[str, Any]:
+    with _OWUI_SPEC_PATH.open(encoding="utf-8") as f:
+        return json.load(f)
 
 
 @app.get("/owui/openapi.json")
 async def owui_openapi() -> Any:
-    return OWUI_SPEC
+    return _load_owui_spec()
 
 
 # ------------------------------------------------------------------------ MCP

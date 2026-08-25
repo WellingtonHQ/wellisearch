@@ -25,15 +25,19 @@ async def _run(force: bool, dry_run: bool) -> None:
     s = get_settings()
     await db.startup()
     try:
-        pages = await db.fetch_all(
-            "SELECT url, title, fit_markdown, content_hash, embedding_model "
-            "FROM pages WHERE fit_markdown IS NOT NULL ORDER BY fetch_count DESC"
+        total = await db.fetch_one(
+            "SELECT count(*) AS n FROM pages WHERE fit_markdown IS NOT NULL"
         )
-        stale = [
-            p for p in pages
-            if force or p["embedding_model"] != s.EMBED_MODEL
-        ]
-        print(f"index: {len(pages)} pages; to (re)embed: {len(stale)} "
+        # Filter in the DB, not the app: only rows needing (re)embedding are
+        # loaded (IS DISTINCT FROM also picks up rows with NULL embedding_model).
+        stale = await db.fetch_all(
+            "SELECT url, title, fit_markdown, content_hash, embedding_model "
+            "FROM pages WHERE fit_markdown IS NOT NULL "
+            "AND (%s OR embedding_model IS DISTINCT FROM %s) "
+            "ORDER BY fetch_count DESC",
+            (force, s.EMBED_MODEL, s.EMBED_MODEL),
+        )
+        print(f"index: {total['n']} pages; to (re)embed: {len(stale)} "
               f"(model={model_name()}, EMBED_DIMS={s.EMBED_DIMS})")
         if dry_run:
             return
