@@ -1,0 +1,93 @@
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      !github.event.pull_request.draft &&
+      github.event.pull_request.user.type != 'Bot' &&
+      (
+        github.event.pull_request.permissions.admin ||
+        github.event.pull_request.permissions.maintain ||
+        github.event.pull_request.permissions.push ||
+        contains('OWNER MEMBER COLLABORATOR', github.event.pull_request.author_association)
+      )
+    runs-on: self-hosted
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - name: Configure Git user
+        run: |
+          git config --global user.name "opencode-bot"
+          git config --global user.email "opencode@github-actions[bot]"
+
+      - name: Install opencode (if needed)
+        run: |
+          if [ ! -f "$HOME/.opencode/bin/opencode" ]; then
+            curl -fsSL https://opencode.ai/install | bash
+          fi
+
+      - name: Discover LM Studio model
+        id: lmstudio
+        uses: ./.github/actions/lmstudio-discover
+        with:
+          preferred-model: qwen/qwen3.8-27b
+
+      - name: Run opencode
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODEL: ${{ steps.lmstudio.outputs.model }}
+          USE_GITHUB_TOKEN: "true"
+          PROMPT: |
+            Review this pull request:
+            - Check for code quality issues
+            - Look for potential bugs or vulnerabilities
+            - Focus only on the code changes in this pull request
+            - Suggest improvements for readability, performance, and maintainability
+
+            Your final reply is posted to the PR verbatim as a GitHub comment - it IS the deliverable.
+            Never end with a description of your process or intentions (e.g. "I was assembling the review") - output the review itself.
+
+            Format the review exactly like this:
+
+            ## PR Review
+
+            <1-3 sentence summary>
+
+            ### Findings (highest priority first)
+            1. **[Critical]** `file:line` - what is wrong, and a concrete suggested fix
+            2. **[Warning]** `file:line` - ...
+            3. **[Nit]** `file:line` - ...
+
+            ### Previous review issues
+            | Status | Issue | Location |
+            |--------|-------|----------|
+            | ✅ | unclamped limit/k | app.py:110 |
+            | ❌ | dashboard stored XSS | dashboard/app.py:42 |
+
+            Rules:
+            - Number the findings and order them by priority, most severe first (Critical, then Warning, then Nit).
+            - In the "Previous review issues" table, list every issue raised in earlier review comments on this PR (in the conversation above): ✅ if you verified it is now fixed in the code, ❌ if it is still present.
+            - Verify each previous issue against the current code before marking it; do not trust the table from the previous review.
+            - If there was no earlier review on this PR, omit the "Previous review issues" table.
+            - If you find no issues, say so in one line instead of the findings list.
+        run: ~/.opencode/bin/opencode github run
+
+      - name: Cleanup Comments
+        uses: ./.github/actions/cleanup-comments
+        with:
+          token: ${{ github.token }}
+          pr-number: ${{ github.event.pull_request.number }}
+          body-pattern: 'All changes compile|All .* suggestion|Changes Summary|PR Review|Bug fixes implemented|## |No action needed'

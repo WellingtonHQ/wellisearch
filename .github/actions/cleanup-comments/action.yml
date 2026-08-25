@@ -1,0 +1,139 @@
+name: "Cleanup Comments"
+description: >
+  After opencode posts its summary, this action keeps only the latest bot comment
+  on the PR and removes older ones. Optionally pins the result so it stays visible.
+
+inputs:
+  token:
+    description: "GitHub token with pull-requests:write and issues:write scopes"
+    required: true
+  pr-number:
+    description: "PR (issue) number to manage comments on"
+    required: true
+  body-pattern:
+    description: >
+      Regex pattern to match summary-style bot comments.
+      Default covers common opencode markers.
+    default: '## Summary|No action needed|## Changes Made|## Files Changed|## Code Review|## Suggestions'
+  mode:
+    description: >
+      How to handle old matching comments. "delete" removes them entirely,
+      "outdated" minimizes them via GraphQL. Default is outdated.
+    default: 'outdated'
+  pin-latest:
+    description: >
+      Whether to pin the latest matching comment so it stays at top of PR.
+      Default is true.
+    default: 'true'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install jq
+      shell: bash
+      run: |
+        if ! command -v jq &>/dev/null; then
+          case "$(uname)" in
+            Linux)   sudo apt-get update -qq && sudo apt-get install -y -qq jq ;;
+            Darwin)  brew install --quiet jq ;;
+            *)       echo "::warning::Auto-install not supported on $(uname); ensure jq is installed" ;;
+          esac
+        fi
+
+    - name: Cleanup Comments
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        PR_NUM: ${{ inputs.pr-number }}
+        REPO: ${{ github.repository }}
+        PATTERN: ${{ inputs.body-pattern }}
+        MODE: ${{ inputs.mode }}
+        PIN_LATEST: ${{ inputs.pin-latest }}
+      run: |
+        # Brief pause to let GitHub propagate the opencode comment
+        sleep 5
+
+        COMMENTS=$(curl -sf \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/$REPO/issues/$PR_NUM/comments?per_page=100")
+
+        # API returns oldest-first (ascending ID). Reverse so index 0 = newest.
+        MATCHES=$(echo "$COMMENTS" | jq '[ .[]
+            | select(.user.type == "Bot")
+            | select( (.body | test("'"$PATTERN"'"; "i")) )
+          ] | reverse')
+
+        COUNT=$(echo "$MATCHES" | jq 'length')
+        echo "Found $COUNT matching bot comment(s) on PR #$PR_NUM"
+
+        if [ "$COUNT" -eq 0 ]; then
+          echo "No matching comments found — nothing to do."
+          exit 0
+        fi
+
+        # The first match is the newest (latest opencode run)
+        LATEST_ID=$(echo "$MATCHES" | jq '.[0].id')
+        echo "Latest matching comment: #$LATEST_ID"
+
+        # Process older comments (skip index 0 which is latest)
+        if [ "$COUNT" -gt 1 ]; then
+          for i in $(seq 1 $((COUNT - 1))); do
+            CID=$(echo "$MATCHES" | jq ".[$i].id")
+            CBODY=$(echo "$MATCHES" | jq -r ".[$i].body")
+
+            if [ "$MODE" = "delete" ]; then
+              NODE_ID=$(echo "$MATCHES" | jq -r ".[$i].node_id")
+              PAYLOAD="{\"query\": \"mutation { deleteIssueComment(input: {id: \\\"${NODE_ID}\\\"}) { clientMutationId } }\"}"
+
+              RESULT=$(curl -s -X POST \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD" \
+                "https://api.github.com/graphql" 2>&1) || true
+
+              HAS_ERRORS=$(echo "$RESULT" | jq '.errors != null' 2>/dev/null || echo "false")
+              if [ "$HAS_ERRORS" = "true" ]; then
+                ERROR_MSG=$(echo "$RESULT" | jq -r '.errors[0].message // "unknown error"' 2>/dev/null)
+                echo "::error::GraphQL deleteIssueComment failed for #$CID: $ERROR_MSG"
+              else
+                echo "::notice::Deleted old comment #$CID ($((i+1))/$COUNT)"
+              fi
+
+            elif [ "$MODE" = "outdated" ]; then
+              IS_MINIMIZED=$(echo "$MATCHES" | jq ".[$i].minimized")
+              if [ "$IS_MINIMIZED" = "true" ]; then
+                echo "::debug::Comment #$CID already minimized, skipping"
+                continue
+              fi
+
+              NODE_ID=$(echo "$MATCHES" | jq -r ".[$i].node_id")
+              PAYLOAD="{\"query\": \"mutation { minimizeComment(input: {subjectId: \\\"${NODE_ID}\\\", classifier: OUTDATED}) { clientMutationId } }\"}"
+
+              RESULT=$(curl -s -X POST \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD" \
+                "https://api.github.com/graphql" 2>&1) || true
+
+              echo "::notice::Minimizing comment #$CID as outdated ($((i+1))/$COUNT)"
+              echo "GraphQL response for #$CID: $RESULT"
+
+              HAS_ERRORS=$(echo "$RESULT" | jq '.errors != null' 2>/dev/null || echo "false")
+              if [ "$HAS_ERRORS" = "true" ]; then
+                ERROR_MSG=$(echo "$RESULT" | jq -r '.errors[0].message // "unknown error"' 2>/dev/null)
+                echo "::error::GraphQL minimizeComment failed for #$CID: $ERROR_MSG"
+              fi
+            fi
+          done
+        fi
+
+        # Mark the latest comment with an eyes reaction as a visual indicator
+        if [ "$PIN_LATEST" = "true" ]; then
+          echo "::notice::Reacting to latest comment #$LATEST_ID"
+          curl -sf -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"content": "eyes"}' \
+            "https://api.github.com/repos/$REPO/issues/comments/${LATEST_ID}/reactions" > /dev/null 2>&1 || true
+        fi

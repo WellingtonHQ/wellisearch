@@ -1,0 +1,172 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "wellisearch",
+    "version": "1.0.0",
+    "description": "Web search backed by a local crawl index with live provider fallback, plus clean Markdown page fetching."
+  },
+  "paths": {
+    "/api/search": {
+      "get": {
+        "operationId": "search_web",
+        "summary": "Search the web",
+        "description": "Searches the wellisearch local index first (fast, cached), then falls back to the live provider gateway (Tavily, Brave, SearXNG) in order. By default returns a Markdown document (text/markdown): a header with Source (local|tavily|brave|searxng|error) and Degraded (true|false), then result blocks of Title/URL/Snippet separated by --- lines. Local hits carry a Last Crawled line per result. After a non-local hit, result URLs are queued for background indexing. Set format=json (or send Accept: application/json) for the structured JSON envelope instead — the format param wins over the Accept header.",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "description": "The search query (natural language).",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "num_results",
+            "in": "query",
+            "required": false,
+            "description": "Number of results to return (default 5, max 20).",
+            "schema": { "type": "integer", "default": 5 }
+          },
+          {
+            "name": "max_crawl",
+            "in": "query",
+            "required": false,
+            "description": "How many result URLs to queue for background indexing on a non-local hit (default 5).",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "max_age_days",
+            "in": "query",
+            "required": false,
+            "description": "Ignore locally indexed pages crawled more than N days ago (e.g. 7 forces a live lookup for stale pages).",
+            "schema": { "type": "number" }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "description": "Response format: markdown (default) or json. Wins over the Accept header.",
+            "schema": { "type": "string", "enum": ["markdown", "json"], "default": "markdown" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results — Markdown by default; JSON when format=json or Accept: application/json.",
+            "content": {
+              "text/markdown": {
+                "schema": { "type": "string" },
+                "description": "Source/Degraded header + Title/URL/Snippet blocks."
+              },
+              "application/json": {
+                "schema": { "type": "object" },
+                "description": "Structured: source, degraded, count, results[]."
+              }
+            }
+          },
+          "502": {
+            "description": "All providers failed and no local results exist. Body is the source=error envelope (Markdown or JSON per format).",
+            "content": {
+              "text/markdown": { "schema": { "type": "string" } },
+              "application/json": { "schema": { "type": "object" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/fetch": {
+      "post": {
+        "operationId": "fetch_page",
+        "summary": "Fetch one URL as clean Markdown",
+        "description": "Reads a single URL and returns clean, readable Markdown. Indexed pages are served instantly from the local index; unknown URLs are crawled on demand and stored. By default returns a Markdown document (text/markdown): a Title/URL/From Index/Chars/Truncated header, then the page body; a failed fetch returns a URL/Status/Error header. Set format=json (or send Accept: application/json) for the structured JSON envelope instead — the format param wins over the Accept header.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                  "url": { "type": "string", "description": "Absolute http(s) URL to fetch." },
+                  "max_chars": { "type": "integer", "description": "Optional cap on returned characters (omit for the server default)." },
+                  "format": {
+                    "type": "string",
+                    "enum": ["markdown", "json"],
+                    "default": "markdown",
+                    "description": "Response format. Wins over the Accept header."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fetched page — Markdown by default; JSON when format=json or Accept: application/json.",
+            "content": {
+              "text/markdown": {
+                "schema": { "type": "string" },
+                "description": "Title/URL/From Index/Chars/Truncated header + page body."
+              },
+              "application/json": {
+                "schema": { "type": "object" },
+                "description": "Structured: ok, url, title, markdown, chars, truncated, from_index."
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fetch-bulk": {
+      "post": {
+        "operationId": "fetch_pages",
+        "summary": "Fetch several URLs in one call under a shared char budget",
+        "description": "Reads multiple URLs and returns one combined Markdown document (one section per page), allocating a shared character budget across pages using the given strategy. By default returns a Markdown document (text/markdown): a Strategy/Budget/Pages Fetched/Total Chars/Truncated header, then one Title/URL/From Index/Chars/Truncated section per page (body after a --- line); failed URLs get a URL/Status/Error section. Prefer this over many fetch_page calls when you have several URLs. Set format=json (or send Accept: application/json) for the structured JSON envelope instead — the format param wins over the Accept header.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["urls"],
+                "properties": {
+                  "urls": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "List of absolute http(s) URLs."
+                  },
+                  "max_chars": { "type": "integer", "description": "Total character budget across all pages (omit for the server default)." },
+                  "per_page_chars": { "type": "integer", "description": "Per-page character cap." },
+                  "strategy": {
+                    "type": "string",
+                    "description": "Budget allocation strategy.",
+                    "enum": ["smart", "head", "tail", "even", "priority"]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": ["markdown", "json"],
+                    "default": "markdown",
+                    "description": "Response format. Wins over the Accept header."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Combined fetch — Markdown by default; JSON when format=json or Accept: application/json.",
+            "content": {
+              "text/markdown": {
+                "schema": { "type": "string" },
+                "description": "Strategy/Budget/Pages Fetched/Total Chars/Truncated header + one section per page."
+              },
+              "application/json": {
+                "schema": { "type": "object" },
+                "description": "Structured: ok, pages_fetched, total_chars, strategy, budget, pages[]."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
