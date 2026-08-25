@@ -13,8 +13,11 @@ concurrency:
 jobs:
   opencode:
     if: |
-      startsWith(github.event.comment.body, '/oc') ||
-      startsWith(github.event.comment.body, '/opencode')
+      github.actor != 'github-actions[bot]' &&
+      (
+        startsWith(github.event.comment.body, '/oc') ||
+        startsWith(github.event.comment.body, '/opencode')
+      )
     runs-on: self-hosted
     permissions:
       id-token: write
