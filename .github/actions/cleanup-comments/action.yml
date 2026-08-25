@@ -136,3 +136,4 @@ runs:
             -H "Accept: application/vnd.github+json" \
             -d '{"content": "eyes"}' \
             "https://api.github.com/repos/$REPO/issues/comments/${LATEST_ID}/reactions" > /dev/null 2>&1 || true
+        fi
