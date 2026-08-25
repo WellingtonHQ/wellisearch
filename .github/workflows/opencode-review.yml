@@ -56,6 +56,33 @@ jobs:
             - Look for potential bugs or vulnerabilities
             - Focus only on the code changes in this pull request
             - Suggest improvements for readability, performance, and maintainability
+
+            Your final reply is posted to the PR verbatim as a GitHub comment - it IS the deliverable.
+            Never end with a description of your process or intentions (e.g. "I was assembling the review") - output the review itself.
+
+            Format the review exactly like this:
+
+            ## PR Review
+
+            <1-3 sentence summary>
+
+            ### Findings (highest priority first)
+            1. **[Critical]** `file:line` - what is wrong, and a concrete suggested fix
+            2. **[Warning]** `file:line` - ...
+            3. **[Nit]** `file:line` - ...
+
+            ### Previous review issues
+            | Status | Issue | Location |
+            |--------|-------|----------|
+            | ✅ | unclamped limit/k | app.py:110 |
+            | ❌ | dashboard stored XSS | dashboard/app.py:42 |
+
+            Rules:
+            - Number the findings and order them by priority, most severe first (Critical, then Warning, then Nit).
+            - In the "Previous review issues" table, list every issue raised in earlier review comments on this PR (in the conversation above): ✅ if you verified it is now fixed in the code, ❌ if it is still present.
+            - Verify each previous issue against the current code before marking it; do not trust the table from the previous review.
+            - If there was no earlier review on this PR, omit the "Previous review issues" table.
+            - If you find no issues, say so in one line instead of the findings list.
         run: ~/.opencode/bin/opencode github run
 
       - name: Cleanup Comments
