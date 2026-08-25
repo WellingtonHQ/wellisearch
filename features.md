@@ -8,9 +8,12 @@ When seeding a URL, wellisearch should use crawl4ai to do a breadth/depth crawl 
 - When seeding a URL via the dashboard, it should also allow you to do that.
 
 
-## Explorer fastembed options
+## Replace Text-Embedding with qwen
 See if we could use a higher-quality embedding model. It could potentially take more time but it would result in better results.
+qwen3-embedding:4b
 
+## Use LLM to cleanup markdown.
+qwen3:4b
 
 ## Optional TTL
 Pages that haven't been fetched in a specified time (let's say, 1 year) get dropped from the index.
