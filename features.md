@@ -48,6 +48,12 @@ This is done if for example on a search, the LLM was unsatisfied
 with the results from the local index and wants the server to
 search one of the providers.
 
+## New response field capturing time
+Add a field to the response text in the header that indicates
+how long the query took over. It should say how much time was spent
+searching the postgres index and how much time (if used) was spent
+waiting for the provider response.
+
 
 ## Tiered providers
 Ability to put providers on tiers:
