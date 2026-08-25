@@ -21,6 +21,26 @@ This is optional and is used to save space.
 
 ---
 
+## Crawl-failure handling
+
+Crawl4AI returns HTTP 500 for anti-bot blocks (Cloudflare, DataDome, PerimeterX, Akamai,
+403/429) and 400 for its SSRF guard. Neither is a wellisearch bug, but we should handle
+both better so we stop re-crawling URLs that can never succeed.
+
+### 500s — anti-bot negative caching
+- Treat Crawl4AI anti-bot blocks as a distinct `blocked` status rather than `http_500`.
+- Negative-cache known anti-bot hosts (walmart, yelp, nytimes, reuters, medium, web.archive.org, ...)
+  so we stop re-attempting them. Failed URLs are currently retried up to 14× — wasted work.
+
+### 400s — filter junk URLs before they reach the crawl queue
+Crawl4AI's SSRF guard is correctly blocking these, but the real defect is that we seed them.
+Filter at URL-extraction time:
+- placeholder/template URLs from doc code blocks: `127.0.0.1:$Port`, `100.x.x.x:3000`, `YOUR_DOMAIN:8090`
+- non-numeric / backticked ports: `$`, `PORT`, `bash`, `3000\``
+- internal docker service names: `ollama:11434`, `open-terminal:8000`, `sandbox:8080`, `postgres`
+
+---
+
 # Search
 
 ## New param (skip-local: true) to skip the local index entirely. 
