@@ -23,6 +23,11 @@ This is optional and is used to save space.
 
 # Search
 
+## New param (skip-local: true) to skip the local index entirely. 
+This is done if for example on a search, the LLM was unsatisfied 
+with the results from the local index and wants the server to
+search one of the providers.
+
 
 ## Tiered providers
 Ability to put providers on tiers:
