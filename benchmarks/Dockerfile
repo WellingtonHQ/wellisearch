@@ -1,0 +1,38 @@
+# Reproducible CPU-only environment for the embedding benchmark.
+#
+# Build (context = the benchmarks/ directory):
+#   docker build -f benchmarks/Dockerfile -t embedbench benchmarks/
+#
+# Run (models cache + results persisted on the host):
+#   docker run --rm \
+#     -v embedbench-cache:/models \
+#     -v "$PWD/benchmarks/results:/results" \
+#     embedbench
+#
+# The first run downloads the three models into /models (cached for later
+# runs); results are written to /results (mounted to the host).
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    TOKENIZERS_PARALLELISM=false \
+    HF_HOME=/models/hf \
+    FASTEMBED_CACHE_DIR=/models/fastembed
+
+WORKDIR /bench
+
+# CPU-only torch first (avoids the multi-GB CUDA wheel), then the rest.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir sentence-transformers fastembed
+
+# The benchmark + its test data.
+COPY embed_bench.py requirements.txt ./
+COPY data ./data
+
+# Where models are cached and where results are written.
+RUN mkdir -p /models /results
+
+# Default: the full 3-model comparison (MiniLM baseline + nomic + qwen).
+CMD ["python", "embed_bench.py", "--results", "/results"]
