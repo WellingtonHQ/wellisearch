@@ -1,0 +1,13 @@
+# Embedding benchmark dependencies — CPU inference only.
+#
+# The app itself uses FastEmbed; these are benchmark-only and are NOT
+# declared in pyproject.toml on purpose.
+#
+# Tip (Linux): to avoid the multi-GB CUDA torch wheel, install the CPU build
+# first, then the rest:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install sentence-transformers
+#
+# Or just:  pip install -r benchmarks/requirements.txt   (pulls default torch)
+torch>=2.2
+sentence-transformers>=3.0
