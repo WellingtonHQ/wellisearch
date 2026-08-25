@@ -11,3 +11,6 @@
 # Or just:  pip install -r benchmarks/requirements.txt   (pulls default torch)
 torch>=2.2
 sentence-transformers>=3.0
+# Production baseline (all-MiniLM) is benchmarked through FastEmbed/ONNX,
+# matching the app's runtime.
+fastembed>=0.4
