@@ -126,7 +126,7 @@ def run_model(model_id, chunks, queries, truth, args) -> dict:
     from sentence_transformers import SentenceTransformer
 
     t_load0 = time.perf_counter()
-    model = SentenceTransformer(model_id, device="cpu")
+    model = SentenceTransformer(model_id, device="cpu", trust_remote_code=True)
     load_s = time.perf_counter() - t_load0
     tok = model.tokenizer
 
