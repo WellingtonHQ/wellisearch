@@ -194,16 +194,21 @@ def run_model(model_id, chunks, queries, truth, args) -> dict:
     # single-document latency (the real embed_one cost): warm up, then time a few
     latency = None
     if not args.no_latency and doc_texts:
-        model.encode([doc_texts[0]], normalize_embeddings=True, show_progress_bar=False)
-        sample_n = min(args.latency_n, len(doc_texts))
+        # doc_texts is sorted shortest->longest; sample evenly across that range so the
+        # latency is representative of short/medium/long docs (not just the shortest).
+        n = len(doc_texts)
+        sample_n = min(args.latency_n, n)
+        idxs = [min(n - 1, max(0, int(round(n * (i + 0.5) / sample_n)) - 1)) for i in range(sample_n)]
+        model.encode([doc_texts[len(doc_texts) // 2]], normalize_embeddings=True, show_progress_bar=False)  # warmup
         samples = []
-        for j in range(sample_n):
+        for j in idxs:
             ts = time.perf_counter()
             model.encode([doc_texts[j]], normalize_embeddings=True, show_progress_bar=False)
             samples.append(time.perf_counter() - ts)
         samples.sort()
         latency = {
             "n": len(samples),
+            "sampled_lengths": [len(tok(doc_texts[j], add_special_tokens=False)["input_ids"]) for j in idxs],
             "median_ms": round(1000 * percentile(samples, 0.5), 1),
             "p95_ms": round(1000 * percentile(samples, 0.95), 1),
         }
