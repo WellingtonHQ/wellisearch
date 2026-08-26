@@ -101,6 +101,12 @@ async def main() -> None:
         md = r.text
         check("local search: 200 + degraded=false", r.status_code == 200 and "Degraded: false" in md and "URL:" in md,
               md[:120].replace("\n", " | "))
+        # the locally-indexed result must carry a real Title, not the URL —
+        # the original bug had every local `Title:` line equal to its `URL:`
+        title_url = re.findall(r"^Title: (.+)$\n^URL: (.+)$", md, re.M)
+        check("local search: at least one Title != URL",
+              bool(title_url) and any(t.strip() != u.strip() for t, u in title_url),
+              f"pairs={title_url[:2]}")
 
         # 6.5 search_mode=provider: bypass the index, force a live provider --
         # (a query that normally hits local must now come from a provider)

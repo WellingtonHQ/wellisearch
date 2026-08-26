@@ -55,7 +55,7 @@ async def fit_markdown(url: str) -> tuple[str, str | None]:
     """Crawl one URL → (clean fit-markdown, page title). Raises CrawlError on failure.
 
     title is the page's <title>/og:title from Crawl4AI's metadata (our fork's /md
-    returns it); None when the page has none — callers fall back to derive_title().
+    returns it); None when the page has none — callers then store/keep no title.
     """
     s = get_settings()
     base = s.CRAWL4AI_URL.rstrip("/")
