@@ -21,8 +21,23 @@ Three models run by default:
 | `Qwen/Qwen3-Embedding-0.6B` | sentence-transformers / PyTorch | candidate (1024-dim) |
 
 The baseline is measured through FastEmbed/ONNX (production path); the
-candidates run on PyTorch. All models truncate at `min(--max-len, model_max)`
-(= 512 tokens here), so the comparison is fair.
+candidates run on PyTorch. All models truncate at `min(--max-len, model_max)`,
+so the comparison is fair.
+
+## Test sets
+
+Three sets ship under `data/`, each isolating a different question:
+
+| Set | What it is | What it tests | `--max-len` |
+|---|---|---|---|
+| `data/` (default) | 10 real pages → 142 chunks, 10 queries | general quality + speed; all models capped at 512 | `512` (default) |
+| `data/longtail` | 10 real chunks (512+ tokens) whose answer fact sits in the **tail** (past token 512) | retrieval when the answer is in MiniLM's truncated region | `8192` |
+| `data/needle` | 5 same-topic chunks that differ **only** in a tail fact | the controlled long-context test — isolates "full chunk vs. head" | `8192` |
+
+The `longtail` and `needle` sets run with `--max-len 8192` so nomic/Qwen embed
+the **full** chunk while MiniLM stays capped at its native 512 — that difference
+is the variable under test. The default set caps all models at 512 for a fair
+speed/quality comparison.
 
 ## Metrics
 
@@ -37,18 +52,34 @@ candidates run on PyTorch. All models truncate at `min(--max-len, model_max)`
 ### Docker (recommended — reproducible environment)
 
 ```sh
-# build once (context = the benchmarks/ directory)
+# build once (context = the benchmarks/ directory). Rebuild after adding test data.
 docker build -f benchmarks/Dockerfile -t embedbench benchmarks/
 
-# run the full 3-model comparison; models cache + results persist on the host
+# 1) default set (142 chunks) — the general quality + speed comparison
 docker run --rm \
   -v embedbench-cache:/models \
   -v "$PWD/benchmarks/results:/results" \
   embedbench
+
+# 2) longtail set — real long chunks, answer fact in the tail (past token 512)
+docker run --rm \
+  -v embedbench-cache:/models \
+  -v "$PWD/benchmarks/results:/results" \
+  embedbench python embed_bench.py --data /bench/data/longtail --max-len 8192 --results /results
+
+# 3) needle set — controlled long-context test (same topic, different tail fact)
+docker run --rm \
+  -v embedbench-cache:/models \
+  -v "$PWD/benchmarks/results:/results" \
+  embedbench python embed_bench.py --data /bench/data/needle --max-len 8192 --results /results
 ```
 
 First run downloads the three models into the `embedbench-cache` volume
 (~1.7 GB); later runs reuse it. Results land in `benchmarks/results/`.
+
+The `longtail` and `needle` runs pass `--max-len 8192` so nomic/Qwen embed the
+full chunk while MiniLM stays capped at 512 — the variable under test. (The
+image bundles all three sets under `/bench/data/`; rebuild after adding data.)
 
 ### Plain Python
 
@@ -92,10 +123,12 @@ like-for-like speed comparison (the defaults are a reasonable fair CPU setup).
 
 ## Notes & caveats
 
-- **The test set is small (10 queries) and non-discriminating on quality** —
-  every model currently scores 10/10, so it separates models by *speed*, not
-  quality. To differentiate quality, add harder/more diverse queries to
-  `benchmarks/data/queries.json` (each needs a page present in `corpus.jsonl`).
+- **The default set is small (10 queries) and non-discriminating on quality** —
+  every model scores 10/10 there, so it separates models by *speed*, not
+  quality. The `needle` set *is* discriminating: it isolates the long-context
+  effect (MiniLM ~0.20 R@1 vs. nomic ~0.80 / Qwen ~1.00). To add more quality
+  signal, add harder/more diverse queries to a set's `queries.json` (each needs
+  a page present in that set's `corpus.jsonl`).
 - **Backend matters for speed.** The MiniLM baseline runs on ONNX (very
   optimized for a 22M model); the candidates run on PyTorch. A like-for-like
   model comparison would also need the candidates on ONNX.
