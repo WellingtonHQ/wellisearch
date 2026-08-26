@@ -180,7 +180,7 @@ class TorchRunner:
 
         torch.set_num_threads(args.threads)
         t0 = time.perf_counter()
-        self.model = SentenceTransformer(model_id, device="cpu")
+        self.model = SentenceTransformer(model_id, device="cpu", trust_remote_code=True)
         self.load_s = time.perf_counter() - t0
         self.tok = self.model.tokenizer
         _get_dim = getattr(self.model, "get_embedding_dimension", None) or self.model.get_sentence_embedding_dimension

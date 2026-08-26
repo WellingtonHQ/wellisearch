@@ -25,7 +25,7 @@ WORKDIR /bench
 
 # CPU-only torch first (avoids the multi-GB CUDA wheel), then the rest.
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir sentence-transformers fastembed
+    && pip install --no-cache-dir sentence-transformers fastembed einops
 
 # The benchmark + its test data.
 COPY embed_bench.py requirements.txt ./
