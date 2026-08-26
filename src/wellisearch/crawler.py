@@ -51,8 +51,12 @@ def _headers() -> dict[str, str]:
     return h
 
 
-async def fit_markdown(url: str) -> str:
-    """Crawl one URL → clean fit-markdown. Raises CrawlError on any failure."""
+async def fit_markdown(url: str) -> tuple[str, str | None]:
+    """Crawl one URL → (clean fit-markdown, page title). Raises CrawlError on failure.
+
+    title is the page's <title>/og:title from Crawl4AI's metadata (our fork's /md
+    returns it); None when the page has none — callers fall back to derive_title().
+    """
     s = get_settings()
     base = s.CRAWL4AI_URL.rstrip("/")
     async with httpx.AsyncClient(timeout=s.CRAWL_TIMEOUT_S) as client:
@@ -72,7 +76,7 @@ async def fit_markdown(url: str) -> str:
     md = data.get("markdown") or ""
     if not md.strip():
         raise CrawlError(url, "empty markdown returned")
-    return md
+    return md, data.get("title")
 
 
 async def health() -> tuple[bool, str]:
