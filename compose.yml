@@ -44,15 +44,15 @@ services:
   # Crawl4AI Web Crawler Service (moved here from open-webui/wellington).
   # Stays on wellisearch_default so OpenWebUI resolves it by service name.
   #
-  # Built from OUR fork (../crawl4ai = github.com/WellingtonHQ/crawl4ai), not the
-  # official image. The fork bakes in what used to be volume-mounted patches:
+  # Built from OUR fork (github.com/WellingtonHQ/crawl4ai, branch wellington), not
+  # the official image. The fork bakes in what used to be volume-mounted patches:
   #   - /md returns the page title (metadata.title) alongside the markdown
   #   - monitor 24h retention (deploy/docker/monitor.py)
   #   - gunicorn --workers 3 (deploy/docker/supervisord.conf)
   #   - LLM reasoning-effort hook (deploy/docker/llm-hook/, via Dockerfile)
   # Bumping the fork's base version: re-verify those four against the new release.
   crawl4ai:
-    build: ../crawl4ai
+    build: https://github.com/WellingtonHQ/crawl4ai.git#wellington
     image: wellingtonhq/crawl4ai:0.9.2-wellisearch
     container_name: crawl4ai
     restart: always
