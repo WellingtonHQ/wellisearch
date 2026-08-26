@@ -74,12 +74,28 @@ docker run --rm \
   embedbench python embed_bench.py --data /bench/data/needle --max-len 8192 --results /results
 ```
 
-First run downloads the three models into the `embedbench-cache` volume
-(~1.7 GB); later runs reuse it. Results land in `benchmarks/results/`.
+First run downloads the three models into the `embedbench-cache` **named
+volume** (~1.7 GB); later runs reuse it. Results land in `benchmarks/results/`
+(bind-mounted from the host).
+
+**`--rm` is safe to keep.** It only removes the *container* after the run — it
+does **not** touch the `embedbench-cache` volume (the models) or the
+`benchmarks/results/` bind mount, both of which persist across runs. It's good
+hygiene: it prevents dead containers from piling up in `docker ps -a`. Don't
+remove it.
 
 The `longtail` and `needle` runs pass `--max-len 8192` so nomic/Qwen embed the
 full chunk while MiniLM stays capped at 512 — the variable under test. (The
 image bundles all three sets under `/bench/data/`; rebuild after adding data.)
+
+### Cleanup
+
+- **Containers:** nothing to clean up — `--rm` removes each container when it
+  exits. (If you ever run *without* `--rm`, prune the leftovers with
+  `docker container prune` or `docker rm <id>`.)
+- **Model cache** (only if you want to force a re-download / free ~1.7 GB):
+  `docker volume rm embedbench-cache`
+- **Results:** just delete the files in `benchmarks/results/` on the host.
 
 ### Plain Python
 
