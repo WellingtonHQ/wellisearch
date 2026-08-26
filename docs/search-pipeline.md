@@ -20,6 +20,13 @@ k       = num_results or SEARCH_K          # default 5
 crawl_n = SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)  # default 5
 ```
 
+> **`skip_local=true`** bypasses steps 2–4 entirely: the local index is not
+> touched (no embed, no `fn_search_local`), `local_rows` stays empty, and the
+> pipeline goes straight to the provider gateway (§5b). Use it when the caller
+> was unsatisfied with a prior local result and wants a live provider answer.
+> In this mode `index_ms` is `0`, `provider_ms` is always present, and a
+> provider failure yields `source: error` (no degraded local fallback).
+
 ### 2. Embed the query
 
 `embed_one(query)` runs fastembed (`EMBED_MODEL`, 384-d) on a worker thread
@@ -133,6 +140,7 @@ the structured JSON envelope instead (the internal dict, not this Markdown).
 ```
 Source: local
 Degraded: false
+Time: 1234 ms (index: 45 ms)
 
 Title: PostgreSQL 18 Documentation
 URL: https://www.postgresql.org/docs/current/
@@ -150,6 +158,7 @@ Header lines (response-level):
 |---|---|
 | `Source:` | `local` \| `tavily` \| `brave` \| `searxng` \| `error` |
 | `Degraded:` | `true` \| `false` — true only in §6 degraded mode |
+| `Time:` | total ms, split into `index:` (Postgres search) and — only when a provider was used — `provider:` (gateway wait). With `skip_local=true`, `index:` is `0` and `provider:` is always present |
 | `Provider Errors:` | `{provider}: {error}` pairs joined by `;` — present only when providers failed |
 
 Result blocks:

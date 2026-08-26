@@ -40,18 +40,22 @@ The search pipeline.
 | `k` | int | `SEARCH_K` (5) | max results |
 | `max_crawl` | int | `SEARCH_MAX_CRAWL` (5) | how many gateway result URLs to index in the background |
 | `max_age_days` | float | unset | drop local rows crawled older than this (never-crawled kept) |
+| `skip_local` | bool | `false` | bypass the local index entirely and force a live provider answer (use when unsatisfied with a prior local result) |
 | `format` | string | `markdown` | `markdown` or `json`; wins over the `Accept` header |
 
 By default returns the Markdown search document (`Content-Type:
 text/markdown`, no JSON envelope — see [search-pipeline.md](search-pipeline.md)):
-a `Source:` / `Degraded:` header (+ `Provider Errors:` when providers failed),
-then `Title:` / `URL:` / `Snippet:` blocks separated by `---` lines; local hits
-carry a `Last Crawled:` line per result. `Source: error` maps to **HTTP 502**.
+a `Source:` / `Degraded:` / `Time:` header (+ `Provider Errors:` when providers
+failed), then `Title:` / `URL:` / `Snippet:` blocks separated by `---` lines;
+local hits carry a `Last Crawled:` line per result. The `Time:` line shows the
+total ms split into `index:` (Postgres index search) and — only when a provider
+was used — `provider:` (gateway wait). `Source: error` maps to **HTTP 502**.
 Set `format=json` (or send `Accept: application/json`) for the structured JSON
 envelope instead (`Content-Type: application/json`):
-`{ source, degraded, count, results: [{ url, title, snippet, score,
-last_crawled?, fetch_count? }], provider_errors? }`. An invalid `format` is a
-**400**.
+`{ source, degraded, count, timing: { total_ms, index_ms, provider_ms? },
+results: [{ url, title, snippet, score, last_crawled?, fetch_count? }],
+provider_errors? }`. With `skip_local=true` the `index_ms` is `0` and
+`provider_ms` is always present. An invalid `format` is a **400**.
 
 ### `POST /api/fetch`
 Read one URL as fit markdown (stored-first, else crawl+store).
@@ -61,12 +65,16 @@ Body: `{ "url": "...", "max_chars": 12000, "format": "markdown" }`
 
 By default returns the Markdown page document (`Content-Type: text/markdown`,
 no JSON envelope): a `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:`
-header, then the page body. A failed fetch returns a `URL:` /
+header plus a `Time:` line, then the page body. The `Time:` line shows the
+total ms split into `index:` (Postgres lookup) and — only when the page had to
+be crawled — `crawl:` (crawl4ai round-trip). A failed fetch returns a `URL:` /
 `Status: failed` / `Error:` header (HTTP 200). Bumps the page's `fetch_count`.
 Set `format=json` (or send `Accept: application/json`) for the structured JSON
 envelope instead (`Content-Type: application/json`):
-`{ ok, url, title, markdown, chars, truncated, from_index }` (a failed fetch
-is `{ ok: false, url, error }`). An invalid `format` is a **400**.
+`{ ok, url, title, markdown, chars, truncated, from_index,
+timing: { total_ms, index_ms, crawl_ms? } }` (a failed fetch is
+`{ ok: false, url, error, timing: { total_ms } }`). An invalid `format` is a
+**400**.
 
 ### `POST /api/fetch-bulk`
 Bulk read under a shared character budget.
@@ -87,17 +95,19 @@ unlimited. `strategy` ∈ `smart | head | tail | even | priority`. `format`
 
 By default returns the combined Markdown document (`Content-Type:
 text/markdown`, no JSON envelope): a `Strategy:` / `Budget:` / `Pages Fetched:` /
-`Total Chars:` / `Truncated:` header (`Budget:` only when a budget is set),
-then one `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:` section
-per page (body after a `---` line, trimmed pages keep their
+`Total Chars:` / `Truncated:` header (`Budget:` only when a budget is set) plus
+a `Time:` line (total ms split into `index:` and — when any page was crawled —
+`crawl:`), then one `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:`
+section per page (body after a `---` line, trimmed pages keep their
 `[truncated — N chars omitted, strategy=X]` marker); failed URLs get a
 `URL:` / `Status: failed` / `Error:` section. Nothing fetched → the header
 carries `Pages Fetched: 0` / `Status: failed` / `Error:` plus one error
 section per URL (HTTP 200). Set `format=json` (or send `Accept: application/json`)
 for the structured JSON envelope instead (`Content-Type: application/json`):
-`{ ok, pages_fetched, truncated, total_chars, strategy, budget?, pages: [{ url,
-title, content, chars, truncated, omitted, from_index }] }` (failed/bad URLs in
-`pages` carry `{ url, error }`). An invalid `format` is a **400**.
+`{ ok, pages_fetched, truncated, total_chars, strategy, budget?,
+timing: { total_ms, index_ms, crawl_ms? }, pages: [{ url, title, content, chars,
+truncated, omitted, from_index }] }` (failed/bad URLs in `pages` carry
+`{ url, error }`). An invalid `format` is a **400**.
 
 ### `GET /api/stats`
 Dashboard payload: index counts, freshness buckets, queue depth, provider
@@ -202,20 +212,21 @@ All six tools call the same code as their REST counterparts.
 
 | Tool | Purpose | Params |
 |---|---|---|
-| `search_web` | Search the web (local-first). Returns a Markdown document by default: `Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks (`Last Crawled` per local result). `format="json"` returns the JSON envelope. | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None`, `format="markdown"` |
-| `fetch_page` | Read one URL as fit markdown (stored-first, else crawl+store). Returns a Markdown document by default: `Title`/`URL`/`From Index`/`Chars`/`Truncated` header + page body. `format="json"` returns the JSON envelope. Bumps `fetch_count`. | `url: str`, `max_chars=None`, `format="markdown"` |
-| `fetch_pages` | Bulk read under a shared char budget. Returns a Markdown document by default: `Strategy`/`Budget`/`Pages Fetched`/`Total Chars`/`Truncated` header + one section per page. `format="json"` returns the JSON envelope. | `urls: list[str]`, `max_chars=None`, `per_page_chars=None`, `strategy="smart"`, `format="markdown"` |
+| `search_web` | Search the web (local-first). Returns a Markdown document by default: `Source`/`Degraded`/`Time` header + `Title`/`URL`/`Snippet` blocks (`Last Crawled` per local result). `skip_local=true` bypasses the local index and forces a provider. `format="json"` returns the JSON envelope (with a `timing` object). | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None`, `skip_local=false`, `format="markdown"` |
+| `fetch_page` | Read one URL as fit markdown (stored-first, else crawl+store). Returns a Markdown document by default: `Title`/`URL`/`From Index`/`Chars`/`Truncated` header + `Time` line + page body. `format="json"` returns the JSON envelope (with a `timing` object). Bumps `fetch_count`. | `url: str`, `max_chars=None`, `format="markdown"` |
+| `fetch_pages` | Bulk read under a shared char budget. Returns a Markdown document by default: `Strategy`/`Budget`/`Pages Fetched`/`Total Chars`/`Truncated` header + `Time` line + one section per page. `format="json"` returns the JSON envelope (with a `timing` object). | `urls: list[str]`, `max_chars=None`, `per_page_chars=None`, `strategy="smart"`, `format="markdown"` |
 | `index_stats` | Snapshot of index + gateway (counts, freshness, hit-rate, queue, quota). | — |
 | `seed_url` | Queue a URL for background indexing. Returns queue position. | `url: str` |
 | `refresh_page` | Force an immediate re-crawl of one page. | `url: str` |
 
 The tool descriptions tell the LLM the contract explicitly: each of
 `search_web`, `fetch_page`, and `fetch_pages` returns a Markdown document by
-default (`Source`/`Degraded` header + `Title`/`URL`/`Snippet` blocks for
-search; `Title`/`URL`/`From Index`/`Chars`/`Truncated` header for fetch), or
-the structured JSON envelope when `format="json"` — local search hits cost zero
-provider credits, and a miss triggers background indexing, so the model doesn't
-need to wait or re-call.
+default (`Source`/`Degraded`/`Time` header + `Title`/`URL`/`Snippet` blocks for
+search; `Title`/`URL`/`From Index`/`Chars`/`Truncated` header + `Time` line for
+fetch), or the structured JSON envelope when `format="json"` (which carries a
+`timing` object: `total_ms`, `index_ms`, and `provider_ms`/`crawl_ms` when that
+leg ran) — local search hits cost zero provider credits, and a miss triggers
+background indexing, so the model doesn't need to wait or re-call.
 
 ## Error model
 

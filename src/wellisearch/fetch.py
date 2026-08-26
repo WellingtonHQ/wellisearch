@@ -16,12 +16,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from urllib.parse import urlparse
 
 from . import crawler
 from .config import get_settings
 from .db import db
-from .index import store_page
+from .serialize import format_timing
 from .truncation import (
     STRATEGIES,
     allocate_budgets,
@@ -40,11 +41,15 @@ def render_fetch_page_markdown(out: dict) -> str:
     Title/URL/From Index/Chars/Truncated header followed by the page body.
     A failed fetch is a URL/Status/Error header only."""
     if not out.get("ok"):
-        return "\n".join([
+        lines = [
             f"URL: {out.get('url') or ''}",
             "Status: failed",
             f"Error: {out.get('error') or 'unknown error'}",
-        ])
+        ]
+        tline = format_timing(out.get("timing"))
+        if tline:
+            lines.append(tline)
+        return "\n".join(lines)
     lines = [
         f"Title: {out.get('title') or out.get('url') or ''}",
         f"URL: {out.get('url') or ''}",
@@ -52,6 +57,9 @@ def render_fetch_page_markdown(out: dict) -> str:
         f"Chars: {out.get('chars') or 0}",
         f"Truncated: {'true' if out.get('truncated') else 'false'}",
     ]
+    tline = format_timing(out.get("timing"))
+    if tline:
+        lines.append(tline)
     return "\n\n".join(["\n".join(lines), out.get("markdown") or ""])
 
 
@@ -66,6 +74,9 @@ def render_fetch_pages_markdown(out: dict) -> str:
             "Status: failed",
             f"Error: {out.get('error') or 'unknown error'}",
         ]
+        tline = format_timing(out.get("timing"))
+        if tline:
+            lines.append(tline)
         sections = [
             "\n".join([
                 f"URL: {p.get('url') or ''}",
@@ -86,6 +97,9 @@ def render_fetch_pages_markdown(out: dict) -> str:
         f"Total Chars: {out.get('total_chars') or 0}",
         f"Truncated: {'true' if out.get('truncated') else 'false'}",
     ]
+    tline = format_timing(out.get("timing"))
+    if tline:
+        lines.append(tline)
     sections = []
     for p in out.get("pages") or []:
         if p.get("error"):
@@ -129,8 +143,14 @@ def _title_from_markdown(md: str) -> str | None:
 
 
 async def _resolve_page(url: str) -> dict:
-    """Content for one URL: from index when present, else crawl on demand."""
+    """Content for one URL: from index when present, else crawl on demand.
+
+    Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
+    (the crawl4ai round-trip + store) so callers can report the timing split.
+    """
+    t_index = time.monotonic()
     page = await db.page_get(url)
+    index_ms = int((time.monotonic() - t_index) * 1000)
     if page and not page.get("disabled") and page.get("fit_markdown"):
         return {
             "url": url,
@@ -138,11 +158,15 @@ async def _resolve_page(url: str) -> dict:
             "content": page["fit_markdown"],
             "from_index": True,
             "fetch_count": page.get("fetch_count") or 0,
+            "index_ms": index_ms,
+            "crawl_ms": 0,
         }
 
     # crawl on demand (in-flight-deduped inside crawl_url)
+    t_crawl = time.monotonic()
     r = await crawl_url(url, trigger="fetch")
     page = await db.page_get(url)
+    crawl_ms = int((time.monotonic() - t_crawl) * 1000)
     md = (page or {}).get("fit_markdown") or ""
     if not md:
         raise RuntimeError(f"crawl succeeded but no content stored for {url}")
@@ -152,19 +176,28 @@ async def _resolve_page(url: str) -> dict:
         "content": md,
         "from_index": False,
         "fetch_count": (page or {}).get("fetch_count") or 0,
+        "index_ms": index_ms,
+        "crawl_ms": crawl_ms,
     }
 
 
 async def fetch_page(url: str, max_chars: int | None = None) -> dict:
     """Single-URL read: stored or crawled-on-demand, fetch_count bumped."""
+    t_start = time.monotonic()
+
+    def _timing(**extra: int) -> dict:
+        t: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
+        t.update(extra)
+        return t
+
     if not _valid_url(url):
-        return {"ok": False, "error": f"invalid or non-http(s) url: {url!r}", "url": url}
+        return {"ok": False, "error": f"invalid or non-http(s) url: {url!r}", "url": url, "timing": _timing()}
 
     try:
         page = await _resolve_page(url)
     except Exception as e:
         log.warning("fetch_page failed for %s: %s", url, e)
-        return {"ok": False, "error": str(e), "url": url}
+        return {"ok": False, "error": str(e), "url": url, "timing": _timing()}
 
     await db.bump_fetch_count(url)
 
@@ -177,6 +210,10 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
         omitted = len(page["content"]) - len(text)
         text = text + "\n" + truncation_marker(omitted, "head")
 
+    timing = _timing(index_ms=page.get("index_ms", 0))
+    if page.get("crawl_ms"):
+        timing["crawl_ms"] = page["crawl_ms"]
+
     return {
         "ok": True,
         "url": url,
@@ -185,6 +222,7 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
         "chars": len(text),
         "truncated": truncated,
         "from_index": page["from_index"],
+        "timing": timing,
     }
 
 
@@ -196,6 +234,12 @@ async def fetch_pages(
 ) -> dict:
     """Bulk read under a shared char budget with a swappable strategy."""
     s = get_settings()
+    t_start = time.monotonic()
+
+    def _timing(**extra: int) -> dict:
+        t: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
+        t.update(extra)
+        return t
 
     # --- validate + dedupe (preserve first-seen order)
     seen: set[str] = set()
@@ -214,6 +258,7 @@ async def fetch_pages(
             "ok": False,
             "error": "no valid urls provided",
             "pages": bad,
+            "timing": _timing(),
         }
 
     strat = (strategy or s.FETCH_DEFAULT_STRATEGY).lower()
@@ -222,6 +267,7 @@ async def fetch_pages(
             "ok": False,
             "error": f"unknown strategy {strat!r} (choose from {list(STRATEGIES)})",
             "pages": bad,
+            "timing": _timing(),
         }
 
     budget: int | None
@@ -253,6 +299,7 @@ async def fetch_pages(
             "ok": False,
             "error": "all urls failed to fetch",
             "pages": failed + bad,
+            "timing": _timing(),
         }
 
     # bump fetch_count for every successfully fetched page
@@ -285,6 +332,12 @@ async def fetch_pages(
             "from_index": p["from_index"],
         })
 
+    index_ms = sum(p.get("index_ms", 0) for p in resolved)
+    crawl_ms = sum(p.get("crawl_ms", 0) for p in resolved)
+    timing = _timing(index_ms=index_ms)
+    if crawl_ms:
+        timing["crawl_ms"] = crawl_ms
+
     return {
         "ok": True,
         "pages_fetched": len(resolved),
@@ -293,4 +346,5 @@ async def fetch_pages(
         "strategy": strat,
         "budget": budget,
         "pages": pages_out + failed + bad,
+        "timing": timing,
     }
