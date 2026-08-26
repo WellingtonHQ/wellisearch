@@ -102,20 +102,38 @@ async def main() -> None:
         check("local search: 200 + degraded=false", r.status_code == 200 and "Degraded: false" in md and "URL:" in md,
               md[:120].replace("\n", " | "))
 
-        # 6.5 skip_local: bypass the index, force a live provider -----------------------
+        # 6.5 search_mode=provider: bypass the index, force a live provider --
         # (a query that normally hits local must now come from a provider)
-        r = await c.get("/api/search", params={"query": "fastapi mcp server", "k": "5", "skip_local": "true", "format": "json"})
+        r = await c.get("/api/search", params={"query": "fastapi mcp server", "k": "5", "search_mode": "provider", "format": "json"})
         j = r.json() if r.status_code in (200, 502) else {}
         t = j.get("timing", {}) if isinstance(j, dict) else {}
-        check("skip_local: 200 + non-local source",
+        check("search_mode=provider: 200 + non-local source",
               r.status_code == 200 and j.get("source") not in (None, "local", "error"),
               f"source={j.get('source')} status={r.status_code}")
-        check("skip_local: index_ms=0 + provider_ms present",
+        check("search_mode=provider: index_ms=0 + provider_ms present",
               t.get("index_ms") == 0 and "provider_ms" in t,
               json.dumps(t))
-        check("skip_local: results returned",
+        check("search_mode=provider: results returned",
               isinstance(j.get("results"), list) and len(j["results"]) >= 1,
               f"n={len(j.get('results', [])) if isinstance(j.get('results'), list) else '-'}")
+
+        # 6.6 search_mode=local: index only (a query the index has) -------------
+        r = await c.get("/api/search", params={"query": url.split("/")[2] + " introduction", "k": "5", "search_mode": "local", "format": "json"})
+        j = r.json() if r.status_code in (200, 502) else {}
+        t = j.get("timing", {}) if isinstance(j, dict) else {}
+        check("search_mode=local: 200 + local source",
+              r.status_code == 200 and j.get("source") == "local",
+              f"source={j.get('source')} status={r.status_code}")
+        check("search_mode=local: index_ms present, no provider_ms",
+              "index_ms" in t and "provider_ms" not in t,
+              json.dumps(t))
+        check("search_mode=local: results returned",
+              isinstance(j.get("results"), list) and len(j["results"]) >= 1,
+              f"n={len(j.get('results', [])) if isinstance(j.get('results'), list) else '-'}")
+
+        # 6.7 invalid search_mode -> 400 ----------------------------------------
+        r = await c.get("/api/search", params={"query": "anything", "search_mode": "bogus"})
+        check("invalid search_mode: 400", r.status_code == 400, f"status={r.status_code}")
 
         # 7. fetch-bulk with truncation --------------------------------------------------
         r = await c.post("/api/fetch-bulk", json={
@@ -319,18 +337,18 @@ async def mcp_pass() -> None:
                       re.search(r"^Time: \d+ ms \(index: \d+ ms", md, re.M) is not None,
                       (re.search(r"^Time: .*", md, re.M) or [None, "MISSING"])[0])
 
-                # skip_local over MCP: forces a provider answer
-                res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3, "skip_local": True, "format": "json"})
+                # search_mode=provider over MCP: forces a provider answer
+                res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3, "search_mode": "provider", "format": "json"})
                 txt = res.content[0].text if res.content else ""
                 try:
                     j = json.loads(txt)
                     t = j.get("timing", {})
-                    check("mcp: search_web skip_local -> non-local + provider_ms",
+                    check("mcp: search_web search_mode=provider -> non-local + provider_ms",
                           isinstance(j, dict) and j.get("source") not in (None, "local", "error")
                           and t.get("index_ms") == 0 and "provider_ms" in t,
                           f"source={j.get('source') if isinstance(j, dict) else '-'} timing={json.dumps(t)}")
                 except Exception as e:
-                    check("mcp: search_web skip_local -> non-local + provider_ms", False, f"not JSON: {type(e).__name__} {txt[:80]!r}")
+                    check("mcp: search_web search_mode=provider -> non-local + provider_ms", False, f"not JSON: {type(e).__name__} {txt[:80]!r}")
 
                 res = await session.call_tool(
                     "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"})

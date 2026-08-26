@@ -40,7 +40,7 @@ The search pipeline.
 | `k` | int | `SEARCH_K` (5) | max results |
 | `max_crawl` | int | `SEARCH_MAX_CRAWL` (5) | how many gateway result URLs to index in the background |
 | `max_age_days` | float | unset | drop local rows crawled older than this (never-crawled kept) |
-| `skip_local` | bool | `false` | bypass the local index entirely and force a live provider answer (use when unsatisfied with a prior local result) |
+| `search_mode` | string | `auto` | `auto` (local first, provider on a miss), `local` (index only — an error if the index has nothing), or `provider` (bypass the local index and force a live provider answer) |
 | `format` | string | `markdown` | `markdown` or `json`; wins over the `Accept` header |
 
 By default returns the Markdown search document (`Content-Type:
@@ -54,8 +54,9 @@ Set `format=json` (or send `Accept: application/json`) for the structured JSON
 envelope instead (`Content-Type: application/json`):
 `{ source, degraded, count, timing: { total_ms, index_ms, provider_ms? },
 results: [{ url, title, snippet, score, last_crawled?, fetch_count? }],
-provider_errors? }`. With `skip_local=true` the `index_ms` is `0` and
-`provider_ms` is always present. An invalid `format` is a **400**.
+provider_errors? }`. With `search_mode=provider` the `index_ms` is `0` and
+`provider_ms` is always present; with `search_mode=local` there is no
+`provider_ms`. An invalid `format` or `search_mode` is a **400**.
 
 ### `POST /api/fetch`
 Read one URL as fit markdown (stored-first, else crawl+store).
@@ -212,7 +213,7 @@ All six tools call the same code as their REST counterparts.
 
 | Tool | Purpose | Params |
 |---|---|---|
-| `search_web` | Search the web (local-first). Returns a Markdown document by default: `Source`/`Degraded`/`Time` header + `Title`/`URL`/`Snippet` blocks (`Last Crawled` per local result). `skip_local=true` bypasses the local index and forces a provider. `format="json"` returns the JSON envelope (with a `timing` object). | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None`, `skip_local=false`, `format="markdown"` |
+| `search_web` | Search the web (local-first). Returns a Markdown document by default: `Source`/`Degraded`/`Time` header + `Title`/`URL`/`Snippet` blocks (`Last Crawled` per local result). `search_mode` chooses the source: `auto` (default), `local` (index only), `provider` (bypass the index, force a provider). `format="json"` returns the JSON envelope (with a `timing` object). | `query: str`, `num_results=5`, `max_crawl=5`, `max_age_days=None`, `search_mode="auto"`, `format="markdown"` |
 | `fetch_page` | Read one URL as fit markdown (stored-first, else crawl+store). Returns a Markdown document by default: `Title`/`URL`/`From Index`/`Chars`/`Truncated` header + `Time` line + page body. `format="json"` returns the JSON envelope (with a `timing` object). Bumps `fetch_count`. | `url: str`, `max_chars=None`, `format="markdown"` |
 | `fetch_pages` | Bulk read under a shared char budget. Returns a Markdown document by default: `Strategy`/`Budget`/`Pages Fetched`/`Total Chars`/`Truncated` header + `Time` line + one section per page. `format="json"` returns the JSON envelope (with a `timing` object). | `urls: list[str]`, `max_chars=None`, `per_page_chars=None`, `strategy="smart"`, `format="markdown"` |
 | `index_stats` | Snapshot of index + gateway (counts, freshness, hit-rate, queue, quota). | — |

@@ -2,7 +2,9 @@
 
 No crawl in the response path: local hits cost zero provider credits; on a
 miss the provider serves immediately and the top result URLs are enqueued
-for background indexing (kicked, debounced).
+for background indexing (kicked, debounced). `search_mode` selects the
+source: auto (local first, default), local (index only), provider (gateway
+only).
 """
 from __future__ import annotations
 
@@ -19,6 +21,12 @@ from .providers import GatewayExhausted, get_gateway
 from .serialize import format_timing
 
 log = logging.getLogger("wellisearch.search_web")
+
+# search_mode values: which source serves the answer.
+#   auto     — local index first, provider gateway on a miss (default)
+#   local    — local index only; an error if the index has nothing
+#   provider — provider gateway only; the local index is not consulted
+SEARCH_MODES = ("auto", "local", "provider")
 
 
 def render_search_markdown(out: dict) -> str:
@@ -58,20 +66,24 @@ async def search_web(
     num_results: int | None = None,
     max_crawl: int | None = None,
     max_age_days: float | None = None,
-    skip_local: bool = False,
+    search_mode: str = "auto",
 ) -> dict:
     s = get_settings()
     k = num_results or s.SEARCH_K
     crawl_n = s.SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)
+    if search_mode not in SEARCH_MODES:
+        raise ValueError(
+            f"invalid search_mode {search_mode!r} (choose from {list(SEARCH_MODES)})"
+        )
 
     t_start = time.monotonic()
 
-    # ---- local index first (zero provider cost) — skipped entirely when
-    # skip_local is set (the caller wants a live provider answer, e.g. after
-    # being unsatisfied with a prior local result).
+    # ---- local index (zero provider cost) — skipped entirely in provider
+    # mode (the caller wants a live provider answer, e.g. after being
+    # unsatisfied with a prior local result).
     local_rows: list[dict] = []
     index_ms = 0
-    if not skip_local:
+    if search_mode != "provider":
         t_index = time.monotonic()
         try:
             qvec = await asyncio.to_thread(embed_one, query)
@@ -105,7 +117,7 @@ async def search_web(
         index_ms = int((time.monotonic() - t_index) * 1000)
 
     # Gate: does any top local result cover the query enough? `coverage` is
-    # computed in fn_search_local (see docs/ranking.md). With skip_local the
+    # computed in fn_search_local (see docs/ranking.md). In provider mode the
     # row set is empty, so the gate is always False and the gateway serves.
     serve_local = any(
         (r.get("coverage") or 0.0) >= s.LOCAL_MIN_COVERAGE for r in local_rows
@@ -128,14 +140,25 @@ async def search_web(
     errors: list[dict] = []
     provider_ms: int | None = None
 
-    if serve_local:
+    if search_mode == "local":
+        # local only: serve what the index has — the caller explicitly chose
+        # local, so the coverage gate does not apply. No provider fallback.
+        if local_rows:
+            source = "local"
+            results = [_local_result(r) for r in local_rows[:k]]
+            for r in results:
+                await db.mark_search_hit(r["url"])
+        else:
+            source = "error"
+            results = []
+    elif serve_local:
         # local hit — zero provider credits (the quota-preservation layer)
         source = "local"
         results = [_local_result(r) for r in local_rows[:k]]
         for r in results:
             await db.mark_search_hit(r["url"])
     else:
-        # ---- provider gateway (no good local hit)
+        # ---- provider gateway (auto: no good local hit; provider: always)
         gw = get_gateway()
         t_prov = time.monotonic()
         try:
@@ -158,7 +181,7 @@ async def search_web(
             provider_ms = int((time.monotonic() - t_prov) * 1000)
             log.error("all providers failed: %s", e)
             errors = e.errors
-            if local_rows:
+            if search_mode == "auto" and local_rows:
                 # degraded mode: serve whatever local results we have (§14.12)
                 degraded = True
                 source = "local"
@@ -166,6 +189,8 @@ async def search_web(
                 for r in results:
                     await db.mark_search_hit(r["url"])
             else:
+                # provider mode has no local fallback; auto only reaches here
+                # when the index returned nothing
                 source = "error"
                 results = []
 

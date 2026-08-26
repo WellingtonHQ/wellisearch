@@ -133,8 +133,10 @@ def register_tools(server: MCPServer) -> None:
             "result and cost zero provider credits; on a miss, top result URLs "
             "are indexed in the background — no need to wait. If Degraded is "
             "true, all providers failed and only local results are shown (see "
-            "the Provider Errors header line). Set skip_local=true to bypass the "
-            "local index entirely and force a live provider answer (use when "
+            "the Provider Errors header line). Set search_mode to choose the "
+            "source: \"auto\" (default, local first then provider), \"local\" "
+            "(index only — an error if the index has nothing), or \"provider\" "
+            "(bypass the local index and force a live provider answer, use when "
             "unsatisfied with a prior local result). Set format=\"json\" for the "
             "structured JSON envelope instead of Markdown."
         ),
@@ -144,7 +146,7 @@ def register_tools(server: MCPServer) -> None:
         num_results: int = 5,
         max_crawl: int = 5,
         max_age_days: float | None = None,
-        skip_local: bool = False,
+        search_mode: str = "auto",  # "auto" | "local" | "provider"
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:
         out = await _search_web(
@@ -152,7 +154,7 @@ def register_tools(server: MCPServer) -> None:
             num_results=num_results,
             max_crawl=max_crawl,
             max_age_days=max_age_days,
-            skip_local=skip_local,
+            search_mode=search_mode,
         )
         return _fmt(out, format, render_search_markdown)
 

@@ -41,11 +41,11 @@
             "schema": { "type": "number" }
           },
           {
-            "name": "skip_local",
+            "name": "search_mode",
             "in": "query",
             "required": false,
-            "description": "Bypass the local index entirely and force a live provider answer (use when unsatisfied with a prior local result).",
-            "schema": { "type": "boolean", "default": false }
+            "description": "Which source serves the answer: auto (default — local index first, provider on a miss), local (index only — an error if the index has nothing), or provider (bypass the local index and force a live provider answer).",
+            "schema": { "type": "string", "enum": ["auto", "local", "provider"], "default": "auto" }
           },
           {
             "name": "format",

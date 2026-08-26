@@ -19,10 +19,10 @@ Workflow:
 1. search_web(query) → a Markdown document: a Source/Degraded/Time header,
    then Title/URL/Snippet result blocks separated by --- lines. Local hits
    carry a Last Crawled line per result and cost zero provider credits. The
-   Time line shows total ms split into index: ms and (when a provider was
-   used) provider: ms. Set skip_local=true to bypass the local index and
-   force a live provider answer (e.g. when unsatisfied with a prior local
-   result).
+    Time line shows total ms split into index: ms and (when a provider was
+    used) provider: ms. Set search_mode to choose the source: "auto" (default,
+    local first then provider), "local" (index only), or "provider" (bypass
+    the local index and force a live provider answer).
   2. Read pages: fetch_page(url) for one, fetch_pages(urls, max_chars, strategy)
      for several under a shared char budget. Both return a Markdown document
      with a Title/URL/From Index/Chars/Truncated header plus a Time line
