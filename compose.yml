@@ -58,7 +58,7 @@ services:
     restart: always
     # 12G: gunicorn runs 3 workers (baked into the fork's supervisord.conf);
     # each owns a chrome pool, so the single-worker 4G cap OOMs at 3x concurrency.
-    mem_limit: 12G
+    mem_limit: 16G
     environment:
       - GUNICORN_BIND=0.0.0.0:11235
       - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_KEY:-change-me}
