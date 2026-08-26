@@ -1,11 +1,27 @@
-# Embedding-model benchmark
+# Benchmarks
+
+Two CPU-only benchmarks for wellisearch, both fixed and reproducible:
+
+| Benchmark | Script | What it measures |
+|---|---|---|
+| **Embedding model** | `embed_bench.py` | retrieval quality (Recall@k, MRR) + speed (tok/s, ms/doc) |
+| **LLM fit-markdown cleanup** | `llm_cleanup_bench.py` | how well small LLMs clean stored markdown — quality + TTFT / latency / tok-s |
+
+Both write results to `benchmarks/results/`. The embedding bench needs a Docker
+image (or a venv) with PyTorch. The LLM cleanup bench is a thin HTTP client: it
+talks to **Ollama** (candidate models) and **LM Studio** (the 27B judge) over
+their OpenAI-compatible endpoints — it downloads no model weights itself.
+
+---
+
+## Embedding-model benchmark
 
 A fixed, reproducible CPU-only benchmark for wellisearch's embedding model.
 It runs the **same** retrieval test against several models and reports both
 **quality** (hardware-independent) and **speed** (hardware-dependent), so you
 can compare *models* and *machines* on one number each.
 
-## What it tests
+### What it tests
 
 A snapshot of the real wellisearch index: **10 pages → 142 chunks**, with **10
 real user-style queries**. Ground truth for each query is the set of chunks
@@ -24,7 +40,7 @@ The baseline is measured through FastEmbed/ONNX (production path); the
 candidates run on PyTorch. All models truncate at `min(--max-len, model_max)`,
 so the comparison is fair.
 
-## Test sets
+### Test sets
 
 Three sets ship under `data/`, each isolating a different question:
 
@@ -39,7 +55,7 @@ the **full** chunk while MiniLM stays capped at its native 512 — that differen
 is the variable under test. The default set caps all models at 512 for a fair
 speed/quality comparison.
 
-## Metrics
+### Metrics
 
 - **Quality:** Recall@1, Recall@5, Recall@10, MRR@10 (hardware-independent).
 - **Speed:**
@@ -47,9 +63,9 @@ speed/quality comparison.
   - **single-doc latency** (median / p95 ms), sampled across short→long docs — the `embed_one` cost;
   - **total wall time** for the whole run.
 
-## Run it
+### Run it
 
-### Docker (recommended — reproducible environment)
+#### Docker (recommended — reproducible environment)
 
 ```sh
 # build once (context = the benchmarks/ directory). Rebuild after adding test data.
@@ -88,7 +104,7 @@ The `longtail` and `needle` runs pass `--max-len 8192` so nomic/Qwen embed the
 full chunk while MiniLM stays capped at 512 — the variable under test. (The
 image bundles all three sets under `/bench/data/`; rebuild after adding data.)
 
-### Cleanup
+#### Cleanup
 
 - **Containers:** nothing to clean up — `--rm` removes each container when it
   exits. (If you ever run *without* `--rm`, prune the leftovers with
@@ -97,14 +113,14 @@ image bundles all three sets under `/bench/data/`; rebuild after adding data.)
   `docker volume rm embedbench-cache`
 - **Results:** just delete the files in `benchmarks/results/` on the host.
 
-### Plain Python
+#### Plain Python
 
 ```sh
 pip install -r benchmarks/requirements.txt   # torch + sentence-transformers + fastembed
 python benchmarks/embed_bench.py
 ```
 
-### Options
+#### Options
 
 ```
 --model ID          repeatable; default = MiniLM baseline + nomic + qwen
@@ -119,7 +135,7 @@ python benchmarks/embed_bench.py
 --no-save           don't write JSON result files
 ```
 
-## Reading the results
+### Reading the results
 
 Each run writes to `benchmarks/results/`:
 
@@ -129,7 +145,7 @@ Each run writes to `benchmarks/results/`:
 
 The console report prints the same table and the total run time.
 
-## Comparing across machines
+### Comparing across machines
 
 Because quality is hardware-independent, a model that scores 10/10 on one
 machine scores 10/10 on all of them. Speed (tok/s, ms/doc, wall time) is what
@@ -137,7 +153,7 @@ varies by machine — that's the point of running it on each box. Keep the
 `--threads`, `--batch`, and `--max-len` settings the same across machines for a
 like-for-like speed comparison (the defaults are a reasonable fair CPU setup).
 
-## Notes & caveats
+### Notes & caveats
 
 - **The default set is small (10 queries) and non-discriminating on quality** —
   every model scores 10/10 there, so it separates models by *speed*, not
@@ -151,3 +167,140 @@ like-for-like speed comparison (the defaults are a reasonable fair CPU setup).
 - **Dimensions differ** (384 / 768 / 1024). Changing the model invalidates all
   stored vectors — the app requires a full reindex (`python -m wellisearch.reindex`).
 - Models download from Hugging Face on first use and are cached locally.
+
+---
+
+## LLM fit-markdown cleanup benchmark
+
+A fixed, reproducible CPU-only benchmark for the **fit-markdown cleanup** task:
+given a page's stored `fit_markdown` (the baseline), a small LLM rewrites it
+into clean markdown **without adding, inferring, or embellishing** content. We
+compare five local models on **quality** and **performance**.
+
+### What it tests
+
+The input is the page's existing `fit_markdown` (markdown → clean markdown, not
+HTML → markdown). A model "wins" a page if it strips boilerplate (nav, cookie,
+sign-in, ads, footer) while keeping every substantive fact, heading, list,
+table, and code block — and adds nothing new.
+
+Five models run by default (served by Ollama):
+
+| Label | Ollama tag | Params |
+|---|---|---|
+| `qwen3-8b` | `qwen3:8b` | 8B |
+| `qwen3-4b` | `qwen3:4b` | 4B |
+| `gemma3-12b` | `gemma3:12b` | 12B |
+| `qwen3-1.7b` | `qwen3:1.7b` | 1.7B |
+| `qwen3-0.6b` | `qwen3:0.6b` | 0.6B |
+
+The sample is a stratified set of **30 real URLs** pulled from the index
+(Postgres) — spread across domains and content-length quantiles — and snapshotted
+to JSON so the run is reproducible and re-runnable offline.
+
+### Metrics
+
+- **Quality (deterministic, unbiased):**
+  - `no_addition` — share of output 8-grams already present in the input (≈1 = nothing fabricated);
+  - `preservation` — share of input content-words kept (≈1 = not over-trimmed);
+  - `boilerplate_removed` — fraction of boilerplate patterns removed;
+  - `structure_preserved` — headings / tables / code-fences / list-items kept;
+  - `length_ratio` — output length ÷ input length.
+- **Quality (LLM judge, 1–5 rubric):** a 27B model (Qwen3.8-27B in LM Studio)
+  scores **faithfulness** (nothing added/changed), **noise_removal** (boilerplate
+  gone), and **preservation** (substance kept).
+- **Performance:** time-to-first-token (TTFT), total latency, completion tok/s,
+  and token counts. A per-model warmup call excludes one-time load latency.
+
+> **Judge-bias caveat:** the judge is Qwen3.8-27B and 4 of the 5 candidates are
+> Qwen3 — the judge may favour its own family. Treat the **deterministic**
+> metrics as the unbiased core and the judge scores as a secondary signal.
+
+### Run it
+
+The bench is a thin HTTP client — no local weights. It needs:
+
+1. **Ollama** serving the candidate models (any OpenAI-compatible base URL).
+2. **LM Studio** (or any OpenAI-compatible server) serving the 27B judge.
+3. **Postgres** (only for the `sample` step, to build the input snapshot).
+
+#### Ollama (candidate models)
+
+```sh
+# bring up Ollama with the five models (see ollama-compose.yml)
+docker compose -f benchmarks/ollama-compose.yml up -d
+# pull the models once (Ollama also auto-pulls on first request)
+docker exec -it <ollama> ollama pull qwen3:8b
+docker exec -it <ollama> ollama pull qwen3:4b
+docker exec -it <ollama> ollama pull gemma3:12b
+docker exec -it <ollama> ollama pull qwen3:1.7b
+docker exec -it <ollama> ollama pull qwen3:0.6b
+```
+
+Ollama exposes an OpenAI-compatible API at `http://127.0.0.1:11434/v1` (the
+default `--ollama-url`).
+
+#### Plain Python
+
+```sh
+# deps: httpx + psycopg (both already in the app's pyproject.toml)
+pip install httpx 'psycopg[binary]'
+
+# 1) build the 30-page sample snapshot from the index (needs Postgres)
+python benchmarks/llm_cleanup_bench.py sample
+
+# 2) run all five models (+ judge) over the sample
+python benchmarks/llm_cleanup_bench.py run
+
+# 3) (re)generate the Markdown report from the last run
+python benchmarks/llm_cleanup_bench.py report
+
+# or do all three at once:
+python benchmarks/llm_cleanup_bench.py all
+
+# quick sanity check (2 pages x first 2 models):
+python benchmarks/llm_cleanup_bench.py run --smoke
+```
+
+#### Options
+
+```
+--models L=T,...    comma list label=ollama_tag (default: the five models above)
+--sample-size N     number of pages in the sample (default 30)
+--no-judge          skip the 27B LLM judge (deterministic metrics only)
+--concurrency N     parallel pages per model (default 1 = fair CPU timing)
+--ollama-url URL    Ollama OpenAI-compatible base URL (default http://127.0.0.1:11434/v1)
+--judge-url URL     judge OpenAI-compatible base URL (default http://127.0.0.1:1234/v1)
+--out-dir DIR       output dir (default benchmarks/results)
+--smoke             2 pages x first 2 models, quick sanity check
+```
+
+Environment variables (all optional, sensible defaults): `POSTGRES_*`,
+`OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `JUDGE_BASE_URL`, `JUDGE_MODEL`
+(default `qwen3.8-27b`), `JUDGE_API_KEY`, `BENCH_TEMPERATURE` (default `0.0`),
+`BENCH_MAX_OUTPUT_TOKENS` (default `4096`), `BENCH_SAMPLE_SIZE` (default `30`),
+`BENCH_OUT_DIR`.
+
+### Reading the results
+
+Each run writes to `benchmarks/results/`:
+
+- `llm-cleanup.sample.json` — the stratified input snapshot (reproducible).
+- `llm-cleanup.results.json` — full per-page results (metrics + judge + timing).
+- `llm-cleanup.report.md` — the side-by-side Markdown report (median / p95 per
+  metric, plus a per-page detail table). This is the file to read.
+
+The console prints the same summary table as it runs.
+
+### Notes & caveats
+
+- **Fair CPU timing:** run with `--concurrency 1` (the default) and the same
+  `--temperature` / `--max-output_tokens` across models. A per-model warmup call
+  is made first so one-time load latency is excluded from the measured runs.
+- **Deterministic first:** because the judge shares a family with most
+  candidates, trust the deterministic metrics (no-addition, preservation,
+  boilerplate-removed) for the quality ranking; use the judge as a tie-breaker.
+- **Sample is a snapshot:** once built, `run`/`report` work offline and are
+  reproducible. Re-run `sample` to refresh it from the live index.
+- **Judge is required for the rubric scores** but optional (`--no-judge`) if you
+  only want the deterministic metrics and performance numbers.
