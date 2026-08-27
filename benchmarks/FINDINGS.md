@@ -163,6 +163,6 @@ unnecessary.
 
 ## Artifacts
 
-- Harness: `benchmarks/embed_bench.py`, `benchmarks/Dockerfile`, `benchmarks/README.md`
+- Harness: `benchmarks/embed_bench.py`, `benchmarks/Dockerfile.embed-bench`, `benchmarks/README.md`
 - Test sets: `benchmarks/data/` (general), `benchmarks/data/longtail/`, `benchmarks/data/needle/`
 - Results: `benchmarks/results/` (gitignored)

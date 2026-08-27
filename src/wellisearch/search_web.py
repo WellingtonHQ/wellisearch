@@ -46,6 +46,8 @@ def render_search_markdown(out: dict) -> str:
         lines.append(
             "Provider Errors: " + "; ".join(f"{e.get('provider')}: {e.get('error')}" for e in errors)
         )
+    if out.get("index_error"):
+        lines.append(f"Index Error: {out['index_error']}")
 
     blocks = []
     for r in out.get("results") or []:
@@ -61,6 +63,49 @@ def render_search_markdown(out: dict) -> str:
     return "\n\n".join(["\n".join(lines), "\n---\n".join(blocks)])
 
 
+async def _local_index_search(query: str, k: int, max_age_days: float | None) -> tuple[list[dict], int, str | None]:
+    """The local-index leg: embed the query, rank via fn_search_local, apply
+    the optional freshness filter. Returns (rows, index_ms, index_error).
+
+    A bad query embedding degrades to FTS+trigram only (not an error). A
+    failed fn_search_local (statement timeout, DB error) degrades to an empty
+    row set AND returns the exception as `index_error` — auto mode falls back
+    to the provider gateway (the error is hidden there), local mode surfaces
+    it in the error envelope so "the index is empty" and "the index is down"
+    are distinguishable.
+    """
+    s = get_settings()
+    t_index = time.monotonic()
+    try:
+        qvec = await asyncio.to_thread(embed_one, query)
+    except Exception as e:
+        log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
+        qvec = None
+
+    # Fetch a bit more than we'll return so the coverage gate can see a
+    # full-coverage page that ranks just outside the top-k by score. The extra
+    # rows cost nothing — the legs/fusion are the same; only the final LIMIT
+    # differs.
+    gate_k = max(k, 10)
+    try:
+        rows = await db.fetch_all(
+            "SELECT * FROM fn_search_local(%s, %s::vector, %s)",
+            (query, qvec if qvec is not None else None, gate_k),
+            timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
+        )
+    except Exception as e:
+        log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
+        return [], int((time.monotonic() - t_index) * 1000), f"{type(e).__name__}: {e}"
+
+    if max_age_days is not None:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
+        rows = [
+            r for r in rows
+            if r.get("last_crawled") is None or r["last_crawled"] >= cutoff
+        ]
+    return rows, int((time.monotonic() - t_index) * 1000), None
+
+
 async def search_web(
     query: str,
     num_results: int | None = None,
@@ -69,7 +114,7 @@ async def search_web(
     search_mode: str = "auto",
 ) -> dict:
     s = get_settings()
-    k = num_results or s.SEARCH_K
+    k = max(1, num_results or s.SEARCH_K)  # clamp: negative k would slice rows off the end
     crawl_n = s.SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)
     if search_mode not in SEARCH_MODES:
         raise ValueError(
@@ -83,38 +128,9 @@ async def search_web(
     # unsatisfied with a prior local result).
     local_rows: list[dict] = []
     index_ms = 0
+    index_error: str | None = None
     if search_mode != "provider":
-        t_index = time.monotonic()
-        try:
-            qvec = await asyncio.to_thread(embed_one, query)
-        except Exception as e:
-            log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
-            qvec = None
-
-        # Fetch a bit more than we'll return so the coverage gate (below) can
-        # see a full-coverage page that ranks just outside the top-k by score.
-        # The extra rows cost nothing — the legs/fusion are the same; only the
-        # final LIMIT differs.
-        gate_k = max(k, 10)
-        try:
-            local_rows = await db.fetch_all(
-                "SELECT * FROM fn_search_local(%s, %s::vector, %s)",
-                (query, qvec if qvec is not None else None, gate_k),
-                timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
-            )
-        except Exception:
-            # includes QueryCanceled (statement timeout) — the gateway below
-            # serves the request instead of stalling on the local index
-            log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
-            local_rows = []
-
-        if max_age_days is not None:
-            cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
-            local_rows = [
-                r for r in local_rows
-                if r.get("last_crawled") is None or r["last_crawled"] >= cutoff
-            ]
-        index_ms = int((time.monotonic() - t_index) * 1000)
+        local_rows, index_ms, index_error = await _local_index_search(query, k, max_age_days)
 
     # Gate: does any top local result cover the query enough? `coverage` is
     # computed in fn_search_local (see docs/ranking.md). In provider mode the
@@ -198,7 +214,11 @@ async def search_web(
 
     # Envelope: structured data only. The Markdown body is rendered at the
     # surfaces (tools.py for MCP, app.py for REST) via render_search_markdown.
-    timing: dict = {"total_ms": int((time.monotonic() - t_start) * 1000), "index_ms": index_ms}
+    # index_ms is only present when the index leg actually ran — provider
+    # mode never consults the index, so `index: 0 ms` would mislead.
+    timing: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
+    if search_mode != "provider":
+        timing["index_ms"] = index_ms
     if provider_ms is not None:
         timing["provider_ms"] = provider_ms
 
@@ -211,4 +231,9 @@ async def search_web(
     }
     if errors:
         out["provider_errors"] = errors
+    # local mode with a failed index leg: the empty row set is a failure, not
+    # "nothing indexed" — carry the diagnostics in the envelope (mirrors
+    # provider_errors) so the caller can tell the two apart.
+    if source == "error" and index_error:
+        out["index_error"] = index_error
     return out

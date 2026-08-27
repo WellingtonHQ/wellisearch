@@ -51,8 +51,8 @@ def _headers() -> dict[str, str]:
     return h
 
 
-async def fit_markdown(url: str) -> tuple[str, str | None]:
-    """Crawl one URL → (clean fit-markdown, page title). Raises CrawlError on failure.
+async def fit_markdown(url: str) -> tuple[str | None, str]:
+    """Crawl one URL → (page title, clean fit-markdown). Raises CrawlError on failure.
 
     title is the page's <title>/og:title from Crawl4AI's metadata (our fork's /md
     returns it); None when the page has none — callers then store/keep no title.
@@ -76,7 +76,7 @@ async def fit_markdown(url: str) -> tuple[str, str | None]:
     md = data.get("markdown") or ""
     if not md.strip():
         raise CrawlError(url, "empty markdown returned")
-    return md, data.get("title")
+    return data.get("title"), md
 
 
 async def health() -> tuple[bool, str]:

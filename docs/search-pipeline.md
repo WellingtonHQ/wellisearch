@@ -16,22 +16,15 @@ images/search-pipeline.svg
 ### 1. Resolve defaults
 
 ```python
-k       = num_results or SEARCH_K          # default 5
+k       = max(1, num_results or SEARCH_K)  # default 5; clamped so negative k can't slice rows off the end
 crawl_n = SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)  # default 5
 ```
 
-> **`search_mode`** selects the source (default `auto`):
-> - `auto` — the default flow below: local index first, provider gateway on a
->   miss, degraded local fallback if every provider fails.
-> - `local` — steps 2–4 only; the index serves whatever it has (the coverage
->   gate does not apply). No provider; an empty index yields `source: error`.
->   There is no `provider_ms`.
-> - `provider` — bypasses steps 2–4 entirely: the local index is not touched
->   (no embed, no `fn_search_local`), `local_rows` stays empty, and the
->   pipeline goes straight to the provider gateway (§5b). Use it when the
->   caller was unsatisfied with a prior local result and wants a live provider
->   answer. In this mode `index_ms` is `0`, `provider_ms` is always present,
->   and a provider failure yields `source: error` (no degraded local fallback).
+> **`search_mode`** selects the source (default `auto`): `auto` — the default
+> flow below; `local` — steps 2–4 only, no provider; `provider` — bypasses
+> steps 2–4, the local index is not touched. Full semantics (degraded
+> fallback, empty index → `source: error`) are in
+> [api.md](api.md#get-apisearch).
 
 ### 2. Embed the query
 
@@ -49,8 +42,12 @@ SELECT * FROM fn_search_local(%s, %s::vector, %s)
 See [ranking.md](ranking.md) for the full algorithm. Returns at most
 `max(k, 10)` rows with `url, title, snippet, score, coverage, last_crawled,
 fetch_count` (the extra rows let the gate below see past the top-k by
-score). If the function itself errors, `local_rows = []` and the pipeline
-continues to the gateway.
+score). If the function itself errors, `local_rows = []` **and** the failure
+is returned as `index_error`: auto mode continues to the gateway (the error
+stays hidden behind the fallback), local mode surfaces it in the error
+envelope (`index_error` field in JSON, `Index Error:` header line in
+Markdown) so "the index is empty" and "the index is down" are
+distinguishable.
 
 **Optional freshness filter**: if `max_age_days` is given, rows with
 `last_crawled` older than the cutoff are dropped (rows never crawled are
@@ -164,8 +161,9 @@ Header lines (response-level):
 |---|---|
 | `Source:` | `local` \| `tavily` \| `brave` \| `searxng` \| `error` |
 | `Degraded:` | `true` \| `false` — true only in §6 degraded mode |
-| `Time:` | total ms, split into `index:` (Postgres search) and — only when a provider was used — `provider:` (gateway wait). With `search_mode=provider`, `index:` is `0` and `provider:` is always present; with `search_mode=local` there is no `provider:` |
+| `Time:` | total ms, split into `index:` (Postgres search) and — only when a provider was used — `provider:` (gateway wait); in `search_mode=provider` the `index:` part is omitted (the index leg never ran) |
 | `Provider Errors:` | `{provider}: {error}` pairs joined by `;` — present only when providers failed |
+| `Index Error:` | the index-leg failure (exception text) — present only when `search_mode=local` and the index leg itself failed (mirrors `provider_errors`; the `index_error` JSON field) |
 
 Result blocks:
 

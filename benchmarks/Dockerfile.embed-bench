@@ -1,7 +1,7 @@
 # Reproducible CPU-only environment for the embedding benchmark.
 #
 # Build (context = the benchmarks/ directory):
-#   docker build -f benchmarks/Dockerfile -t embedbench benchmarks/
+#   docker build -f benchmarks/Dockerfile.embed-bench -t embedbench benchmarks/
 #
 # Run (models cache + results persisted on the host):
 #   docker run --rm \

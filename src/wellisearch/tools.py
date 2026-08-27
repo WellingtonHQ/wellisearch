@@ -149,13 +149,18 @@ def register_tools(server: MCPServer) -> None:
         search_mode: str = "auto",  # "auto" | "local" | "provider"
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:
-        out = await _search_web(
-            query,
-            num_results=num_results,
-            max_crawl=max_crawl,
-            max_age_days=max_age_days,
-            search_mode=search_mode,
-        )
+        try:
+            out = await _search_web(
+                query,
+                num_results=num_results,
+                max_crawl=max_crawl,
+                max_age_days=max_age_days,
+                search_mode=search_mode,
+            )
+        except ValueError as e:
+            # invalid search_mode: REST answers 400, MCP has no status code —
+            # same "Error: ..." shape as a bad format below
+            return f"Error: {e}"
         return _fmt(out, format, render_search_markdown)
 
     @server.tool(

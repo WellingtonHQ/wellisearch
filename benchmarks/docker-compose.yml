@@ -24,7 +24,7 @@ services:
   bench:
     build:
       context: ..
-      dockerfile: benchmarks/Dockerfile.llm
+      dockerfile: benchmarks/Dockerfile.fit-markdown-cleanup
     image: llm-cleanup-bench
     environment:
       # Timestamps in the logs should match the clock you read them against.
@@ -50,7 +50,7 @@ services:
         condition: service_healthy
     # default command is `run`; to also rebuild the sample + write the report:
     #   docker compose -f benchmarks/docker-compose.yml run --rm bench \
-    #     python llm_cleanup_bench.py all
+    #     python llm_md_cleanup_bench.py all
 
   ollama:
     image: ollama/ollama:latest

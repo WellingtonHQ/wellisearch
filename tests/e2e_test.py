@@ -116,8 +116,8 @@ async def main() -> None:
         check("search_mode=provider: 200 + non-local source",
               r.status_code == 200 and j.get("source") not in (None, "local", "error"),
               f"source={j.get('source')} status={r.status_code}")
-        check("search_mode=provider: index_ms=0 + provider_ms present",
-              t.get("index_ms") == 0 and "provider_ms" in t,
+        check("search_mode=provider: index_ms absent (index leg skipped) + provider_ms present",
+              "index_ms" not in t and "provider_ms" in t,
               json.dumps(t))
         check("search_mode=provider: results returned",
               isinstance(j.get("results"), list) and len(j["results"]) >= 1,
@@ -351,7 +351,7 @@ async def mcp_pass() -> None:
                     t = j.get("timing", {})
                     check("mcp: search_web search_mode=provider -> non-local + provider_ms",
                           isinstance(j, dict) and j.get("source") not in (None, "local", "error")
-                          and t.get("index_ms") == 0 and "provider_ms" in t,
+                          and "index_ms" not in t and "provider_ms" in t,
                           f"source={j.get('source') if isinstance(j, dict) else '-'} timing={json.dumps(t)}")
                 except Exception as e:
                     check("mcp: search_web search_mode=provider -> non-local + provider_ms", False, f"not JSON: {type(e).__name__} {txt[:80]!r}")

@@ -30,8 +30,10 @@ def format_timing(timing: dict | None) -> str | None:
     `timing` carries `total_ms` plus whichever legs ran: `index_ms` (Postgres
     index search), `provider_ms` (search gateway wait), `crawl_ms` (fetch
     crawl wait). Only the legs that are present are listed, so a local-only
-    search shows `(index: N ms)` and a provider search shows
-    `(index: N ms, provider: M ms)`.
+    search shows `(index: N ms)`, an auto-mode provider search shows
+    `(index: N ms, provider: M ms)`, and provider mode (index leg skipped)
+    shows `(provider: M ms)`. Legs are the critical path of what ran, so the
+    split never exceeds the total.
     """
     if not timing:
         return None

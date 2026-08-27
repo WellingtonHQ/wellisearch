@@ -65,7 +65,7 @@
               },
               "application/json": {
                 "schema": { "type": "object" },
-                "description": "Structured: source, degraded, count, timing{total_ms,index_ms,provider_ms?}, results[]."
+                "description": "Structured: source, degraded, count, timing{total_ms,index_ms?,provider_ms?} (index_ms absent in provider mode), results[]."
               }
             }
           },

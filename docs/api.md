@@ -39,7 +39,7 @@ The search pipeline.
 | `query` | string | required | the search text |
 | `k` | int | `SEARCH_K` (5) | max results |
 | `max_crawl` | int | `SEARCH_MAX_CRAWL` (5) | how many gateway result URLs to index in the background |
-| `max_age_days` | float | unset | drop local rows crawled older than this (never-crawled kept) |
+| `max_age_days` | float | unset | drop local rows crawled older than this (never-crawled kept); ignored with `search_mode=provider` (the index is never consulted) |
 | `search_mode` | string | `auto` | `auto` (local first, provider on a miss), `local` (index only — an error if the index has nothing), or `provider` (bypass the local index and force a live provider answer) |
 | `format` | string | `markdown` | `markdown` or `json`; wins over the `Accept` header |
 
@@ -52,11 +52,14 @@ total ms split into `index:` (Postgres index search) and — only when a provide
 was used — `provider:` (gateway wait). `Source: error` maps to **HTTP 502**.
 Set `format=json` (or send `Accept: application/json`) for the structured JSON
 envelope instead (`Content-Type: application/json`):
-`{ source, degraded, count, timing: { total_ms, index_ms, provider_ms? },
+`{ source, degraded, count, timing: { total_ms, index_ms?, provider_ms? },
 results: [{ url, title, snippet, score, last_crawled?, fetch_count? }],
-provider_errors? }`. With `search_mode=provider` the `index_ms` is `0` and
-`provider_ms` is always present; with `search_mode=local` there is no
-`provider_ms`. An invalid `format` or `search_mode` is a **400**.
+provider_errors?, index_error? }`. With `search_mode=provider` the `index_ms`
+key is absent (the index leg never runs) and `provider_ms` is always present;
+with `search_mode=local` there is no `provider_ms`, and a failed index leg
+(only visible in this mode — auto mode falls back to the provider) adds
+`index_error` to the envelope and an `Index Error:` line to the Markdown
+header. An invalid `format` or `search_mode` is a **400**.
 
 ### `POST /api/fetch`
 Read one URL as fit markdown (stored-first, else crawl+store).
@@ -235,10 +238,12 @@ background indexing, so the model doesn't need to wait or re-call.
   `format` value).
 - `401` — missing/invalid API key.
 - `404` — page/provider not found.
-- `502` — search `Source: error` (all providers failed, no local rows) or a
-  failed `POST /api/refresh`. The 502 search body is the `source: error`
-  envelope (Markdown header with `Provider Errors:` by default, or the JSON
-  envelope when `format=json`).
+- `502` — search `Source: error` (all providers failed, no local rows — or,
+  in `search_mode=local`, the index leg itself failed) or a failed
+  `POST /api/refresh`. The 502 search body is the `source: error` envelope
+  (Markdown header with `Provider Errors:` / `Index Error:` where
+  applicable, or the JSON envelope with `provider_errors` / `index_error`
+  when `format=json`).
 
 Provider-level failures on `search_web` are *not* HTTP errors — they're
 reported in-band via the `Degraded: true` / `Provider Errors:` header lines

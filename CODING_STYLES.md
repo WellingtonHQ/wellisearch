@@ -1,7 +1,7 @@
 # Code Styles
 
 Rules for keeping this codebase readable and maintainable. Applies to all `.py`
-files in `src/wellisearch/`, `tests/`, `tools/`, and `benchmarks/`.
+files in `src/wellisearch/`, `tests/`, and `benchmarks/`.
 
 ---
 

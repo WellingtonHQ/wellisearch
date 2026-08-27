@@ -5,7 +5,7 @@ Two CPU-only benchmarks for wellisearch, both fixed and reproducible:
 | Benchmark | Script | What it measures |
 |---|---|---|
 | **Embedding model** | `embed_bench.py` | retrieval quality (Recall@k, MRR) + speed (tok/s, ms/doc) |
-| **LLM fit-markdown cleanup** | `llm_cleanup_bench.py` | how well small LLMs clean stored markdown — quality + TTFT / latency / tok-s |
+| **LLM fit-markdown cleanup** | `llm_md_cleanup_bench.py` | how well small LLMs clean stored markdown — quality + TTFT / latency / tok-s |
 
 Both write results to `benchmarks/results/`. The embedding bench needs a Docker
 image (or a venv) with PyTorch. The LLM cleanup bench is a thin HTTP client: it
@@ -69,7 +69,7 @@ speed/quality comparison.
 
 ```sh
 # build once (context = the benchmarks/ directory). Rebuild after adding test data.
-docker build -f benchmarks/Dockerfile -t embedbench benchmarks/
+docker build -f benchmarks/Dockerfile.embed-bench -t embedbench benchmarks/
 
 # 1) default set (142 chunks) — the general quality + speed comparison
 docker run --rm \
@@ -255,18 +255,18 @@ The credentials (Postgres Tailscale host, judge URL + key) live in the repo
 root `.env`, so pass it with `--env-file .env` (Compose won't auto-find it,
 because the compose file sits in `benchmarks/`).
 
- ```sh
+```sh
 # From the repo root:
 #   - full pipeline (sample + run + report) in one shot:
 docker compose --env-file .env -f benchmarks/docker-compose.yml \
-  run --build --rm bench python llm_cleanup_bench.py all
+  run --build --rm bench python llm_md_cleanup_bench.py all
 
 #   - or just the inference run over the existing sample:
 docker compose --env-file .env -f benchmarks/docker-compose.yml up --build
 ```
 
 `--build` is included on the one-shot command so it always picks up the latest
-`llm_cleanup_bench.py` (Compose reuses the existing image otherwise). The
+`llm_md_cleanup_bench.py` (Compose reuses the existing image otherwise). The
 rebuild is cheap — it just re-COPYs the script and reuses the pip cache.
 
 `up --build` starts `ollama` (auto-pulls the five models on first run) +
@@ -289,8 +289,9 @@ Notes:
   bench command for deterministic-metrics-only runs.
 - **Reproducible input:** `sample` writes `results/llm-cleanup.sample.json`;
   that file is the shared input, so every machine scores the *same* 5 docs.
-- The image + stack are defined in `Dockerfile.llm` and `docker-compose.yml`
-  (separate from the embedding bench's `Dockerfile`, which uses no Ollama).
+- The image + stack are defined in `Dockerfile.fit-markdown-cleanup` and
+  `docker-compose.yml` (separate from the embedding bench's
+  `Dockerfile.embed-bench`, which uses no Ollama).
 
 #### Plain Python
 
@@ -299,19 +300,19 @@ Notes:
 pip install httpx 'psycopg[binary]'
 
 # 1) build the sample snapshot from the index (default 5 pages; needs Postgres)
-python benchmarks/llm_cleanup_bench.py sample
+python benchmarks/llm_md_cleanup_bench.py sample
 
 # 2) run all five models (+ judge) over the sample
-python benchmarks/llm_cleanup_bench.py run
+python benchmarks/llm_md_cleanup_bench.py run
 
 # 3) (re)generate the Markdown report from the last run
-python benchmarks/llm_cleanup_bench.py report
+python benchmarks/llm_md_cleanup_bench.py report
 
 # or do all three at once:
-python benchmarks/llm_cleanup_bench.py all
+python benchmarks/llm_md_cleanup_bench.py all
 
 # quick sanity check (2 pages x first 2 models):
-python benchmarks/llm_cleanup_bench.py run --smoke
+python benchmarks/llm_md_cleanup_bench.py run --smoke
 ```
 
 #### Options
@@ -322,20 +323,24 @@ python benchmarks/llm_cleanup_bench.py run --smoke
 --no-judge          skip the 27B LLM judge (deterministic metrics only)
 --concurrency N     parallel pages per model (default 1 = fair CPU timing)
 --ollama-url URL    Ollama OpenAI-compatible base URL (default http://127.0.0.1:11434/v1)
---judge-url URL     judge OpenAI-compatible base URL (default: the LM Studio Tailscale node)
+--judge-url URL     judge OpenAI-compatible base URL (required unless --no-judge; JUDGE_BASE_URL works too)
 --out-dir DIR       output dir (default benchmarks/results)
 --smoke             2 pages x first 2 models, quick sanity check
 ```
 
 Environment variables (all optional, sensible defaults): `POSTGRES_*`,
-`OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `JUDGE_BASE_URL`, `JUDGE_MODEL`
-(default `qwen3.8-27b`), `JUDGE_API_KEY`, `BENCH_TEMPERATURE` (default `0.0`),
+`OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `JUDGE_BASE_URL` (required when the
+judge runs), `JUDGE_MODEL` (default `qwen3.8-27b`), `JUDGE_API_KEY` (required
+when the judge runs), `BENCH_TEMPERATURE` (default `0.0`),
 `BENCH_MAX_OUTPUT_TOKENS` (default `2048`), `BENCH_SAMPLE_SIZE` (default `5`),
 `BENCH_OUT_DIR`.
 
 The judge is configured in the repo-root `.env` (gitignored) — `JUDGE_BASE_URL`,
 `JUDGE_MODEL`, `JUDGE_API_KEY` — and the bench loads it automatically (explicit
-env vars / flags override). Put your LM Studio key there, not in source.
+env vars / flags override). Put your LM Studio key there, not in source. There
+is no built-in default endpoint or key: a `run` without the judge configured
+exits with a clear "set JUDGE_BASE_URL / JUDGE_API_KEY" error (or pass
+`--no-judge`).
 
 ### Reading the results
 
