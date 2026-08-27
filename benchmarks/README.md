@@ -255,20 +255,30 @@ The credentials (Postgres Tailscale host, judge URL + key) live in the repo
 root `.env`, so pass it with `--env-file .env` (Compose won't auto-find it,
 because the compose file sits in `benchmarks/`).
 
-```sh
+ ```sh
 # From the repo root:
 #   - full pipeline (sample + run + report) in one shot:
 docker compose --env-file .env -f benchmarks/docker-compose.yml \
-  run --rm bench python llm_cleanup_bench.py all
+  run --build --rm bench python llm_cleanup_bench.py all
 
 #   - or just the inference run over the existing sample:
 docker compose --env-file .env -f benchmarks/docker-compose.yml up --build
 ```
 
+`--build` is included on the one-shot command so it always picks up the latest
+`llm_cleanup_bench.py` (Compose reuses the existing image otherwise). The
+rebuild is cheap — it just re-COPYs the script and reuses the pip cache.
+
 `up --build` starts `ollama` (auto-pulls the five models on first run) +
 `bench` (runs all five models over the 5-doc sample, with the judge). The
 sample goes in and the results come out through the `./results` mount, so
 `llm-cleanup.report.md` lands on the host.
+
+Every status line is timestamped with the local wall clock
+(e.g. `[2026-08-26 22:31:18] [run] qwen3-8b (qwen3:8b) over 5 pages …`), so
+you can see when each step happened. The container's `TZ` is pinned to
+`America/Los_Angeles` by default (override with the `TZ` env var) so the
+timestamps match the clock you read them against.
 
 Notes:
 - **Shared Ollama instead of per-machine pulls:** point the client at an

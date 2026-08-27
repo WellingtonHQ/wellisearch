@@ -27,6 +27,9 @@ services:
       dockerfile: benchmarks/Dockerfile.llm
     image: llm-cleanup-bench
     environment:
+      # Timestamps in the logs should match the clock you read them against.
+      # Containers default to UTC; pin to your local zone (override with TZ).
+      TZ: ${TZ:-America/Los_Angeles}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
       BENCH_OUT_DIR: /results
       # Judge (LM Studio or any OpenAI-compatible server)

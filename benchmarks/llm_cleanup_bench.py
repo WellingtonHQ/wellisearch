@@ -65,6 +65,15 @@ import psycopg
 HERE = Path(__file__).resolve().parent
 
 
+def log(msg: str) -> None:
+    """Emit a status line prefixed with a local timestamp, flushed immediately.
+
+    Runs are long (model downloads + slow CPU inference), so a wall-clock
+    timestamp on every status line makes it obvious when each step happened.
+    """
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
+
+
 def _load_dotenv() -> None:
     """Load KEY=VALUE pairs from the repo-root ``.env`` into ``os.environ``.
 
@@ -578,9 +587,9 @@ async def ensure_models(client: httpx.AsyncClient, cfg: Config, tags: list[str])
 
     for tag in tags:
         if tag in existing:
-            print(f"[models] {tag} already present", flush=True)
+            log(f"[models] {tag} already present")
             continue
-        print(f"[models] downloading {tag} … (one-time, can take a while)", flush=True)
+        log(f"[models] downloading {tag} … (one-time, can take a while)")
         t0 = time.perf_counter()
         try:
             r = await client.post(
@@ -591,7 +600,7 @@ async def ensure_models(client: httpx.AsyncClient, cfg: Config, tags: list[str])
             r.raise_for_status()
         except Exception as e:
             raise SystemExit(f"failed to pull {tag}: {e}")
-        print(f"[models] {tag} ready in {time.perf_counter() - t0:.0f}s", flush=True)
+        log(f"[models] {tag} ready in {time.perf_counter() - t0:.0f}s")
 
 
 async def run_all(cfg: Config) -> dict[str, Any]:
@@ -602,8 +611,10 @@ async def run_all(cfg: Config) -> dict[str, Any]:
         await ensure_models(client, cfg, [tag for _, tag in models])
         all_results: dict[str, list[dict[str, Any]]] = {}
         for label, tag in models:
-            print(f"[run] {label} ({tag}) over {len(pages)} pages …", flush=True)
+            log(f"[run] {label} ({tag}) over {len(pages)} pages …")
+            t0 = time.perf_counter()
             all_results[label] = await run_model(client, cfg, label, tag, pages)
+            log(f"[run] {label} done in {time.perf_counter() - t0:.0f}s")
     payload = {
         "ran_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "config": {
@@ -674,6 +685,69 @@ def _fmt_stat(s: dict[str, Any]) -> str:
     if s.get("n", 0) == 0:
         return "—"
     return f"{s['median']} (p95 {s['p95']})"
+
+
+def _median(values: list[float]) -> float | None:
+    return statistics.median(values) if values else None
+
+
+def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
+    """Print a side-by-side model comparison to the console.
+
+    Centred on the three ways the models are compared:
+      speed       wall_s  — total model time over all pages (Σ total_ms), and
+                            tok_s — tokens/sec generation rate
+      throughput  docs/s  — pages processed per second (pages / wall_s)
+      quality     judge   — faithfulness / noise-removal / preservation, 1-5
+
+    wall_s is model-only (excludes the judge), so it isolates how fast each
+    model is. The Markdown/JSON report still carries the full per-page detail.
+    """
+    c = payload["config"]
+    judge = bool(c.get("judge_model"))
+    log(f"[report] summary — {c['sample_size']} pages, judge={c['judge_model'] or 'off'}")
+    log("       speed: wall_s=total model time for all pages, tok_s=tokens/sec; "
+        "docs/s=pages/wall_s; judge scores are 1-5 (5=best)")
+
+    cols = ["model", "pages", "wall_s", "docs/s", "tok_s"]
+    if judge:
+        cols += ["j:faith", "j:noise", "j:presv"]
+
+    data = []
+    for label, recs in payload["results"].items():
+        ok = [r for r in recs if "error" not in r and r.get("output")]
+        wall_s = sum(r.get("total_ms", 0.0) for r in ok) / 1000.0
+        docs_s = len(ok) / wall_s if wall_s > 0 else 0.0
+        tok_s = _median([r["tok_s"] for r in ok if r.get("tok_s")])
+
+        row = [
+            label,
+            f"{len(ok)}/{len(recs)}",
+            f"{wall_s:.1f}" if wall_s > 0 else "—",
+            f"{docs_s:.3f}" if docs_s > 0 else "—",
+            f"{tok_s:.2f}" if tok_s is not None else "—",
+        ]
+        if judge:
+            def jmed(key: str) -> str:
+                vals = [float(r["judge"]["scores"][key]) for r in ok
+                        if r.get("judge", {}).get("scores", {}).get(key) is not None]
+                med = _median(vals)
+                return f"{med:.1f}" if med is not None else "—"
+            row += [jmed("faithfulness"), jmed("noise_removal"), jmed("preservation")]
+        data.append(row)
+
+    widths = [max(len(cols[i]), *(len(r[i]) for r in data)) for i in range(len(cols))]
+
+    def line(cells: list[str]) -> str:
+        return "  ".join(
+            cell.ljust(w) if i == 0 else cell.rjust(w)
+            for i, (cell, w) in enumerate(zip(cells, widths))
+        )
+
+    print(line(cols), flush=True)
+    print("  ".join("-" * w for w in widths), flush=True)
+    for r in data:
+        print(line(r), flush=True)
 
 
 def write_report(cfg: Config, payload: dict[str, Any]) -> None:
@@ -778,19 +852,19 @@ def main() -> None:
         pages = asyncio.run(build_sample(cfg))
         save_sample(cfg, pages)
         domains = sorted({p_["domain"] for p_ in pages})
-        print(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
+        log(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
 
     if args.command in ("run", "all"):
         asyncio.run(run_all(cfg))
-        print(f"[run] results -> {cfg.results_file}")
+        log(f"[run] results -> {cfg.results_file}")
 
     if args.command in ("report", "all"):
-        if args.command == "report":
-            report_from_disk(cfg)
-        else:
-            payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
-            write_report(cfg, payload)
-        print(f"[report] -> {cfg.report_file}")
+        if not cfg.results_file.exists():
+            raise SystemExit(f"no results at {cfg.results_file} — run the `run` step first")
+        payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
+        write_report(cfg, payload)
+        log(f"[report] -> {cfg.report_file}")
+        print_summary(cfg, payload)
 
 
 if __name__ == "__main__":
