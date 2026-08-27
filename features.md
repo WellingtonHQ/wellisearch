@@ -21,6 +21,11 @@ This is optional and is used to save space.
 
 ---
 
+# Fetching
+
+## Max age param
+Add a max-age parameter, similar to search. If an indexed page is older than specified, a new crawl will run. The client will wait for the new crawl to complete.
+
 ## Crawl-failure handling
 
 Crawl4AI returns HTTP 500 for anti-bot blocks (Cloudflare, DataDome, PerimeterX, Akamai,
