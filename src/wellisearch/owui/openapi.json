@@ -41,6 +41,13 @@
             "schema": { "type": "number" }
           },
           {
+            "name": "search_mode",
+            "in": "query",
+            "required": false,
+            "description": "Which source serves the answer: auto (default — local index first, provider on a miss), local (index only — an error if the index has nothing), or provider (bypass the local index and force a live provider answer).",
+            "schema": { "type": "string", "enum": ["auto", "local", "provider"], "default": "auto" }
+          },
+          {
             "name": "format",
             "in": "query",
             "required": false,
@@ -54,11 +61,11 @@
             "content": {
               "text/markdown": {
                 "schema": { "type": "string" },
-                "description": "Source/Degraded header + Title/URL/Snippet blocks."
+                "description": "Source/Degraded/Time header + Title/URL/Snippet blocks."
               },
               "application/json": {
                 "schema": { "type": "object" },
-                "description": "Structured: source, degraded, count, results[]."
+                "description": "Structured: source, degraded, count, timing{total_ms,index_ms?,provider_ms?} (index_ms absent in provider mode), results[]."
               }
             }
           },
@@ -104,11 +111,11 @@
             "content": {
               "text/markdown": {
                 "schema": { "type": "string" },
-                "description": "Title/URL/From Index/Chars/Truncated header + page body."
+                "description": "Title/URL/From Index/Chars/Truncated header + Time line + page body."
               },
               "application/json": {
                 "schema": { "type": "object" },
-                "description": "Structured: ok, url, title, markdown, chars, truncated, from_index."
+                "description": "Structured: ok, url, title, markdown, chars, truncated, from_index, timing{total_ms,index_ms,crawl_ms?}."
               }
             }
           }
@@ -157,11 +164,11 @@
             "content": {
               "text/markdown": {
                 "schema": { "type": "string" },
-                "description": "Strategy/Budget/Pages Fetched/Total Chars/Truncated header + one section per page."
+                "description": "Strategy/Budget/Pages Fetched/Total Chars/Truncated header + Time line + one section per page."
               },
               "application/json": {
                 "schema": { "type": "object" },
-                "description": "Structured: ok, pages_fetched, total_chars, strategy, budget, pages[]."
+                "description": "Structured: ok, pages_fetched, total_chars, strategy, budget, timing{total_ms,index_ms,crawl_ms?}, pages[]."
               }
             }
           }

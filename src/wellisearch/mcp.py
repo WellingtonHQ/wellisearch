@@ -16,13 +16,18 @@ INSTRUCTIONS = """
 wellisearch — self-hosted web search + page reading for the LLM.
 
 Workflow:
-1. search_web(query) → a Markdown document: a Source/Degraded header, then
-   Title/URL/Snippet result blocks separated by --- lines. Local hits carry a
-   Last Crawled line per result and cost zero provider credits.
- 2. Read pages: fetch_page(url) for one, fetch_pages(urls, max_chars, strategy)
-    for several under a shared char budget. Both return a Markdown document
-    with a Title/URL/From Index/Chars/Truncated header (bulk adds a global
-    Strategy/Budget/Pages Fetched/Total Chars/Truncated header) — not JSON.
+1. search_web(query) → a Markdown document: a Source/Degraded/Time header,
+   then Title/URL/Snippet result blocks separated by --- lines. Local hits
+   carry a Last Crawled line per result and cost zero provider credits. The
+   Time line shows total ms split into index: ms and (when a provider was
+   used) provider: ms. Set search_mode to choose the source: "auto" (default,
+   local first then provider), "local" (index only), or "provider" (bypass
+   the local index and force a live provider answer).
+2. Read pages: fetch_page(url) for one, fetch_pages(urls, max_chars, strategy)
+   for several under a shared char budget. Both return a Markdown document
+   with a Title/URL/From Index/Chars/Truncated header plus a Time line
+   (bulk adds a global Strategy/Budget/Pages Fetched/Total Chars/Truncated
+   header) — not JSON.
 3. If the answer is thin, rephrase and search_web again (≤2 reformulations).
 
 Rules: never invent page content; if a fetch fails, say which URL failed and

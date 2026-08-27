@@ -1,0 +1,78 @@
+# LLM fit-markdown cleanup benchmark — a portable stack (client + Ollama) you
+# can bring up on any machine to compare hardware.
+#
+#   docker compose -f benchmarks/docker-compose.yml up --build
+#
+# How it fits "multiple machines":
+#   * The bench client is a thin HTTP container — cheap to run anywhere.
+#   * Ollama does the (heavy) inference locally, so each machine measures its
+#     own hardware. Bring this stack up per machine and diff the reports.
+#   * The *input* is shared: build the sample once on a machine with Postgres
+#     access (see README), then copy `results/llm-cleanup.sample.json` here.
+#     It's mounted at /results, so it goes in and the results come out.
+#
+# Prefer a single shared Ollama over per-machine pulls? Point the client at it
+# and skip the bundled one:
+#   OLLAMA_BASE_URL=http://<ollama-host>:11434/v1 \
+#     docker compose -f benchmarks/docker-compose.yml up bench
+#
+# The judge (LM Studio / any OpenAI-compatible server) is reached over the
+# host network, so JUDGE_BASE_URL must be routable from this machine.
+name: llm-bench
+
+services:
+  bench:
+    build:
+      context: ..
+      dockerfile: benchmarks/Dockerfile.fit-markdown-cleanup
+    image: llm-cleanup-bench
+    environment:
+      # Timestamps in the logs should match the clock you read them against.
+      # Containers default to UTC; pin to your local zone (override with TZ).
+      TZ: ${TZ:-America/Los_Angeles}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+      BENCH_OUT_DIR: /results
+      # Judge (LM Studio or any OpenAI-compatible server)
+      JUDGE_BASE_URL: ${JUDGE_BASE_URL:?set JUDGE_BASE_URL (repo .env works on the host)}
+      JUDGE_MODEL: ${JUDGE_MODEL:-qwen3.8-27b}
+      JUDGE_API_KEY: ${JUDGE_API_KEY:?set JUDGE_API_KEY (repo .env works on the host)}
+      # Postgres — only consulted if you run the `sample` step
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-wellington}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-wellisearch}
+    volumes:
+      # shared sample in, results out
+      - ./results:/results
+    depends_on:
+      ollama:
+        condition: service_healthy
+    # default command is `run`; to also rebuild the sample + write the report:
+    #   docker compose -f benchmarks/docker-compose.yml run --rm bench \
+    #     python llm_md_cleanup_bench.py all
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    # One slot at a time: the bench is sequential, and this avoids Ollama
+    # keeping parallel slots (and extra model copies) resident in RAM.
+    environment:
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_KEEP_ALIVE=10m
+    volumes:
+      - ollama-models:/root/.ollama
+    # Map to the host to reuse this Ollama from other machines / tools:
+    # ports:
+    #   - "11434:11434"
+    healthcheck:
+      # The official image ships no curl/wget; use bash /dev/tcp to confirm the
+      # server is listening on 11434.
+      test: ["CMD", "bash", "-c", "(exec 3<>/dev/tcp/127.0.0.1/11434) 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  ollama-models:

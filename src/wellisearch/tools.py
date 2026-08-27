@@ -126,14 +126,19 @@ def register_tools(server: MCPServer) -> None:
         description=(
             "Search the web (local index first, provider gateway on a miss). "
             "Returns a Markdown document: a header with Source "
-            "(local|tavily|brave|searxng|error) and Degraded (true|false), "
-            "then result blocks of Title/URL/Snippet separated by --- lines. "
-            "Local hits include a Last Crawled line per result and cost zero "
-            "provider credits; on a miss, top result URLs are indexed in the "
-            "background — no need to wait. If Degraded is true, all providers "
-            "failed and only local results are shown (see the Provider Errors "
-            "header line). Set format=\"json\" for the structured JSON envelope "
-            "instead of Markdown."
+            "(local|tavily|brave|searxng|error), Degraded (true|false), and a "
+            "Time line (total ms, split into index: ms and — when a provider "
+            "was used — provider: ms), then result blocks of Title/URL/Snippet "
+            "separated by --- lines. Local hits include a Last Crawled line per "
+            "result and cost zero provider credits; on a miss, top result URLs "
+            "are indexed in the background — no need to wait. If Degraded is "
+            "true, all providers failed and only local results are shown (see "
+            "the Provider Errors header line). Set search_mode to choose the "
+            "source: \"auto\" (default, local first then provider), \"local\" "
+            "(index only — an error if the index has nothing), or \"provider\" "
+            "(bypass the local index and force a live provider answer, use when "
+            "unsatisfied with a prior local result). Set format=\"json\" for the "
+            "structured JSON envelope instead of Markdown."
         ),
     )
     async def search_web(
@@ -141,26 +146,35 @@ def register_tools(server: MCPServer) -> None:
         num_results: int = 5,
         max_crawl: int = 5,
         max_age_days: float | None = None,
+        search_mode: str = "auto",  # "auto" | "local" | "provider"
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:
-        out = await _search_web(
-            query,
-            num_results=num_results,
-            max_crawl=max_crawl,
-            max_age_days=max_age_days,
-        )
+        try:
+            out = await _search_web(
+                query,
+                num_results=num_results,
+                max_crawl=max_crawl,
+                max_age_days=max_age_days,
+                search_mode=search_mode,
+            )
+        except ValueError as e:
+            # invalid search_mode: REST answers 400, MCP has no status code —
+            # same "Error: ..." shape as a bad format below
+            return f"Error: {e}"
         return _fmt(out, format, render_search_markdown)
 
     @server.tool(
         name="fetch_page",
         description=(
             "Load one URL as clean/fit Markdown for reading. Returns a "
-            "Markdown document: a Title/URL/From Index/Chars/Truncated "
-            "header, then the page body. Indexed pages are served instantly "
-            "from the local index; unknown URLs are crawled on demand and "
-            "stored. Bumps the page's fetch_count (priority + prominence). "
-            "A failed fetch returns a URL/Status/Error header. Set "
-            "format=\"json\" for the structured JSON envelope instead of Markdown."
+            "Markdown document: a Title/URL/From Index/Chars/Truncated header "
+            "plus a Time line (total ms, split into index: ms and — when the "
+            "page had to be crawled — crawl: ms), then the page body. Indexed "
+            "pages are served instantly from the local index; unknown URLs are "
+            "crawled on demand and stored. Bumps the page's fetch_count "
+            "(priority + prominence). A failed fetch returns a URL/Status/Error "
+            "header. Set format=\"json\" for the structured JSON envelope "
+            "instead of Markdown."
         ),
     )
     async def fetch_page(url: str, max_chars: int | None = None, format: str = "markdown") -> str:
@@ -172,8 +186,10 @@ def register_tools(server: MCPServer) -> None:
         description=(
             "Bulk-read multiple URLs in one call under a shared total "
             "character budget. Returns a Markdown document: a "
-            "Strategy/Budget/Pages Fetched/Total Chars/Truncated header, "
-            "then one Title/URL/From Index/Chars/Truncated section per page "
+            "Strategy/Budget/Pages Fetched/Total Chars/Truncated header plus a "
+            "Time line (total ms, split into index: ms and — when any page had "
+            "to be crawled — crawl: ms), then one "
+            "Title/URL/From Index/Chars/Truncated section per page "
             "(body after a --- line). Failed URLs get a URL/Status/Error "
             f"section. strategy: {list(STRATEGIES)} (default 'smart'). "
             "Each trimmed page carries a [truncated — N chars omitted, "

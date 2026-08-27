@@ -1,5 +1,8 @@
-"""Unit tests: chunker + truncation (pure logic, no DB)."""
+"""Unit tests: chunker + truncation + renderers (pure logic, no DB)."""
 from wellisearch.chunk import chunk_markdown
+from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_markdown
+from wellisearch.serialize import format_timing
+from wellisearch.search_web import render_search_markdown
 from wellisearch.truncation import (
     allocate_budgets,
     boundary_cut_head,
@@ -63,5 +66,86 @@ assert trunc
 text, trunc = truncate_page("x" * 100, 500, "head")
 assert not trunc and text == "x" * 100
 print("OK per-page trim")
+
+# --- timing header (feature: response timing) ------------------------------
+# format_timing: None/empty -> no line
+assert format_timing(None) is None
+assert format_timing({}) is None
+# total only
+assert format_timing({"total_ms": 120}) == "Time: 120 ms"
+# local-only search: index leg only
+assert format_timing({"total_ms": 120, "index_ms": 100}) == "Time: 120 ms (index: 100 ms)"
+# provider search: index + provider legs
+assert format_timing({"total_ms": 1200, "index_ms": 100, "provider_ms": 1050}) == \
+    "Time: 1200 ms (index: 100 ms, provider: 1050 ms)"
+# fetch crawl: index + crawl legs
+assert format_timing({"total_ms": 2300, "index_ms": 10, "crawl_ms": 2250}) == \
+    "Time: 2300 ms (index: 10 ms, crawl: 2250 ms)"
+print("OK format_timing")
+
+# search renderer: local hit -> Time line with index only, no provider
+out = {
+    "source": "local", "degraded": False, "count": 1,
+    "results": [{"url": "https://x.com/a", "title": "A", "snippet": "s"}],
+    "timing": {"total_ms": 120, "index_ms": 100},
+}
+md = render_search_markdown(out)
+assert "Time: 120 ms (index: 100 ms)" in md, md
+assert "provider:" not in md, md
+# search renderer: provider hit -> Time line with index + provider
+out["source"] = "brave"
+out["timing"] = {"total_ms": 1200, "index_ms": 100, "provider_ms": 1050}
+md = render_search_markdown(out)
+assert "Time: 1200 ms (index: 100 ms, provider: 1050 ms)" in md, md
+# search renderer: no timing -> no Time line (backward compatible)
+del out["timing"]
+md = render_search_markdown(out)
+assert "Time:" not in md, md
+print("OK render_search_markdown timing")
+
+# fetch_page renderer: from index -> Time line with index only
+out = {
+    "ok": True, "url": "https://x.com/a", "title": "A", "markdown": "body",
+    "chars": 4, "truncated": False, "from_index": True,
+    "timing": {"total_ms": 45, "index_ms": 40},
+}
+md = render_fetch_page_markdown(out)
+assert "Time: 45 ms (index: 40 ms)" in md, md
+assert "crawl:" not in md, md
+# fetch_page renderer: crawled -> Time line with index + crawl
+out["from_index"] = False
+out["timing"] = {"total_ms": 2300, "index_ms": 10, "crawl_ms": 2250}
+md = render_fetch_page_markdown(out)
+assert "Time: 2300 ms (index: 10 ms, crawl: 2250 ms)" in md, md
+# fetch_page renderer: failure still carries a Time line
+out = {"ok": False, "url": "https://x.com/bad", "error": "boom", "timing": {"total_ms": 30}}
+md = render_fetch_page_markdown(out)
+assert "Status: failed" in md and "Time: 30 ms" in md, md
+# fetch_page renderer: no timing -> no Time line
+out = {"ok": True, "url": "u", "title": "t", "markdown": "m", "chars": 1, "truncated": False, "from_index": True}
+md = render_fetch_page_markdown(out)
+assert "Time:" not in md, md
+print("OK render_fetch_page_markdown timing")
+
+# fetch_pages renderer: success -> Time line in the global header
+out = {
+    "ok": True, "pages_fetched": 1, "truncated": False, "total_chars": 10,
+    "strategy": "smart", "budget": None,
+    "pages": [{"url": "https://x.com/a", "title": "A", "content": "body", "chars": 4, "truncated": False, "from_index": True}],
+    "timing": {"total_ms": 500, "index_ms": 20, "crawl_ms": 450},
+}
+md = render_fetch_pages_markdown(out)
+assert "Time: 500 ms (index: 20 ms, crawl: 450 ms)" in md, md
+# fetch_pages renderer: failure -> Time line in the header
+out = {"ok": False, "error": "no valid urls provided", "pages": [], "timing": {"total_ms": 5}}
+md = render_fetch_pages_markdown(out)
+assert "Status: failed" in md and "Time: 5 ms" in md, md
+# fetch_pages renderer: no timing -> no Time line
+out = {"ok": True, "pages_fetched": 1, "truncated": False, "total_chars": 10,
+       "strategy": "smart", "budget": None,
+       "pages": [{"url": "u", "title": "t", "content": "c", "chars": 1, "truncated": False, "from_index": True}]}
+md = render_fetch_pages_markdown(out)
+assert "Time:" not in md, md
+print("OK render_fetch_pages_markdown timing")
 
 print("ALL UNIT TESTS PASSED")

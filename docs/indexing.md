@@ -4,7 +4,7 @@ Every crawl — from a queue drain, a watchlist refresh, an on-demand read, or a
 manual seed — funnels through the same two functions:
 
 ```
-crawler.fit_markdown(url)   →   index.store_page(url, markdown)
+crawler.fit_markdown(url)   →   index.store_page(url, markdown, title)
 ```
 
 The invariant: **one crawling path, one storage path.** There is no
@@ -25,6 +25,7 @@ images/indexing.svg
 | Worker watchlist refresh | `refresh` | no (direct) | `worker._refresh_watchlist` |
 | On-demand read of an unindexed URL | `fetch` | no (direct) | `fetch_page` / `fetch_pages` |
 | Force re-crawl | `manual` | no (direct) | `refresh_page` tool / `POST /api/refresh` |
+| One-shot re-crawl of all indexed pages (refresh crawl-time values) | `recrawl` | no (direct) | `python -m wellisearch.recrawl` |
 
 ## The queue (durable, deduped)
 
@@ -73,7 +74,8 @@ drain; it resets stuck `in_flight` rows first).
 ## Crawl4AI (the only crawler)
 
 `crawler.fit_markdown(url)` POSTs to Crawl4AI's `/md` endpoint and returns
-clean "fit" markdown (main content, no chrome). Details:
+`(title, markdown)` — the page's `<title>`/`og:title` (`None` when the page
+has none) plus clean "fit" markdown (main content, no chrome). Details:
 
 - Base URL: `CRAWL4AI_URL` (default `http://crawl4ai:11235`); auth via
   `CRAWL4AI_API_KEY` (Bearer).
@@ -85,8 +87,9 @@ clean "fit" markdown (main content, no chrome). Details:
 
 ## store_page (hash → chunk → embed → upsert)
 
-`index.store_page(url, markdown)` returns `(status, chunks_written)` where
-`status ∈ {'ok','unchanged'}`.
+`index.store_page(url, markdown, title=None)` returns `(status,
+chunks_written)` where `status ∈ {'ok','unchanged'}`; `title` is the crawled
+page title persisted onto the page row.
 
 ### 1. Unchanged short-circuit
 

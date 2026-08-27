@@ -49,7 +49,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     t0 = time.monotonic()
     ms = 0
     try:
-        md = await crawler.fit_markdown(url)
+        title, md = await crawler.fit_markdown(url)
     except crawler.CrawlError as e:
         ms = int((time.monotonic() - t0) * 1000)
         label = e.status_label()
@@ -65,7 +65,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
         raise
 
     try:
-        status, chunks_written = await store_page(url, md)
+        status, chunks_written = await store_page(url, md, title=title)
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
         await db.log_crawl(url, trigger, "error", ms, detail=f"store: {e!r}"[:500])

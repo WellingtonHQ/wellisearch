@@ -24,6 +24,27 @@ from typing import Any
 VALID_FORMATS = ("json", "markdown")
 
 
+def format_timing(timing: dict | None) -> str | None:
+    """Render a timing dict as a `Time:` header line, or None if absent.
+
+    `timing` carries `total_ms` plus whichever legs ran: `index_ms` (Postgres
+    index search), `provider_ms` (search gateway wait), `crawl_ms` (fetch
+    crawl wait). Only the legs that are present are listed, so a local-only
+    search shows `(index: N ms)`, an auto-mode provider search shows
+    `(index: N ms, provider: M ms)`, and provider mode (index leg skipped)
+    shows `(provider: M ms)`. Legs are per-leg critical paths (the max of the
+    pages that ran that leg); when different pages dominate different legs the
+    legs' sum can approach or slightly exceed the total.
+    """
+    if not timing:
+        return None
+    total = timing.get("total_ms", 0)
+    parts = [f"{key[:-3]}: {timing[key]} ms" for key in ("index_ms", "provider_ms", "crawl_ms") if key in timing]
+    if parts:
+        return f"Time: {total} ms ({', '.join(parts)})"
+    return f"Time: {total} ms"
+
+
 def _json_default(o: Any) -> Any:
     if isinstance(o, (dt.datetime, dt.date, dt.time)):
         return o.isoformat()

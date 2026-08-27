@@ -183,9 +183,19 @@ async def api_search(
     num_results: int | None = None,  # alias for k (MCP tool + OWUI tool surface name)
     max_crawl: int | None = None,
     max_age_days: float | None = None,
+    search_mode: str = "auto",  # "auto" | "local" | "provider"
     format: str | None = None,  # "json" | "markdown" (default markdown)
 ) -> Any:
-    out = await search_web_pipeline(query, num_results=num_results or k, max_crawl=max_crawl, max_age_days=max_age_days)
+    try:
+        out = await search_web_pipeline(
+            query,
+            num_results=num_results or k,
+            max_crawl=max_crawl,
+            max_age_days=max_age_days,
+            search_mode=search_mode,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     status = 502 if out.get("source") == "error" else 200
     return _respond(out, _negotiate(format, request), render_search_markdown, status)
 
