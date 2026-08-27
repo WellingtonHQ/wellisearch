@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS crawl_log (
   id BIGSERIAL PRIMARY KEY,
   ts TIMESTAMPTZ NOT NULL DEFAULT now(),
   url TEXT NOT NULL,
-  trigger TEXT NOT NULL, -- 'search' | 'fetch' | 'refresh' | 'manual'
+  trigger TEXT NOT NULL, -- 'search' | 'fetch' | 'refresh' | 'manual' | 'recrawl'
   status TEXT NOT NULL, -- 'ok' | 'unchanged' | 'error' | 'http_<code>'
   ms INT,
   chunks_written INT,

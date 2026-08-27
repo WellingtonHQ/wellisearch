@@ -25,6 +25,7 @@ images/indexing.svg
 | Worker watchlist refresh | `refresh` | no (direct) | `worker._refresh_watchlist` |
 | On-demand read of an unindexed URL | `fetch` | no (direct) | `fetch_page` / `fetch_pages` |
 | Force re-crawl | `manual` | no (direct) | `refresh_page` tool / `POST /api/refresh` |
+| One-shot re-crawl of all indexed pages (refresh crawl-time values) | `recrawl` | no (direct) | `python -m wellisearch.recrawl` |
 
 ## The queue (durable, deduped)
 

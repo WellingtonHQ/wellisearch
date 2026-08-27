@@ -109,4 +109,4 @@ Config: temperature 0, max 2048 output tokens, 20 pages × 5 models per machine.
 - Harness: `benchmarks/llm_md_cleanup_bench.py`, `benchmarks/Dockerfile.fit-markdown-cleanup`, `benchmarks/docker-compose.yml`, `benchmarks/README.md`
 - Runs: 2026-08-27T17:46:28Z (desktop i13700K), 2026-08-27T18:24:10Z (2019 MacBook Pro)
 - Per-machine files: `benchmarks/results/llm-cleanup.{sample,results,report}` (gitignored)
-- Related: `benchmarks/FINDINGS.md` (embedding model findings)
+- Related: `benchmarks/EMBEDDING_FINDINGS.md` (embedding model findings)

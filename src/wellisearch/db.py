@@ -172,10 +172,15 @@ class Database:
             (n, url),
         )
 
-    async def mark_search_hit(self, url: str) -> None:
+    async def mark_search_hits(self, urls: list[str]) -> None:
+        """Bump search_hit_count for every served result in one statement
+        (one round-trip instead of one per row — k sequential UPDATEs on the
+        hot path)."""
+        if not urls:
+            return
         await self.execute(
-            "UPDATE pages SET search_hit_count = search_hit_count + 1 WHERE url = %s",
-            (url,),
+            "UPDATE pages SET search_hit_count = search_hit_count + 1 WHERE url = ANY(%s)",
+            (urls,),
         )
 
     # -------------------------------------------------------------- quota

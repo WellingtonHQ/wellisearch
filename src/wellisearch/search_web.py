@@ -162,8 +162,7 @@ async def search_web(
         if local_rows:
             source = "local"
             results = [_local_result(r) for r in local_rows[:k]]
-            for r in results:
-                await db.mark_search_hit(r["url"])
+            await db.mark_search_hits([r["url"] for r in results])
         else:
             source = "error"
             results = []
@@ -171,8 +170,7 @@ async def search_web(
         # local hit — zero provider credits (the quota-preservation layer)
         source = "local"
         results = [_local_result(r) for r in local_rows[:k]]
-        for r in results:
-            await db.mark_search_hit(r["url"])
+        await db.mark_search_hits([r["url"] for r in results])
     else:
         # ---- provider gateway (auto: no good local hit; provider: always)
         gw = get_gateway()
@@ -202,8 +200,7 @@ async def search_web(
                 degraded = True
                 source = "local"
                 results = [_local_result(r) for r in local_rows[:k]]
-                for r in results:
-                    await db.mark_search_hit(r["url"])
+                await db.mark_search_hits([r["url"] for r in results])
             else:
                 # provider mode has no local fallback; auto only reaches here
                 # when the index returned nothing

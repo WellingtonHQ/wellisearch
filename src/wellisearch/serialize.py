@@ -32,8 +32,9 @@ def format_timing(timing: dict | None) -> str | None:
     crawl wait). Only the legs that are present are listed, so a local-only
     search shows `(index: N ms)`, an auto-mode provider search shows
     `(index: N ms, provider: M ms)`, and provider mode (index leg skipped)
-    shows `(provider: M ms)`. Legs are the critical path of what ran, so the
-    split never exceeds the total.
+    shows `(provider: M ms)`. Legs are per-leg critical paths (the max of the
+    pages that ran that leg); when different pages dominate different legs the
+    legs' sum can approach or slightly exceed the total.
     """
     if not timing:
         return None

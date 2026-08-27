@@ -72,7 +72,8 @@ calibration data.
 
 - `source = "local"`, `degraded = false`
 - results truncated to `k`, each with the snippet capped at 400 chars
-- every served page gets `mark_search_hit(url)` → `search_hit_count += 1`
+- every served page gets `search_hit_count += 1` — one batched
+  `mark_search_hits(urls)` UPDATE for all results
   (the hit-rate signal for the dashboard; the prominence counter
   `fetch_count` is bumped separately by the read path — `fetch_page` /
   `fetch_pages`)
