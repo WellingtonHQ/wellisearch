@@ -15,8 +15,9 @@ The sample is a stratified set of real URLs pulled from the index (Postgres),
 snapshotted to JSON so the run is reproducible and re-runnable offline.
 
 Models are self-contained: on ``run`` the bench checks Ollama for each model it
-will use and auto-downloads any that are missing (one-time). Just start Ollama
-(``docker compose -f benchmarks/ollama-compose.yml up -d``) and run.
+will use and auto-downloads any that are missing (one-time). Just start the
+stack (``docker compose --env-file .env -f benchmarks/docker-compose.yml up -d``)
+and run.
 
 Usage
 -----
@@ -582,7 +583,7 @@ async def ensure_models(client: httpx.AsyncClient, cfg: Config, tags: list[str])
     except Exception as e:
         raise SystemExit(
             f"could not reach Ollama at {base} to check models: {e}\n"
-            "Start it with: docker compose -f benchmarks/ollama-compose.yml up -d"
+            "Start it with: docker compose --env-file .env -f benchmarks/docker-compose.yml up -d"
         )
 
     for tag in tags:

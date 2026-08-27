@@ -228,8 +228,8 @@ The bench is a thin HTTP client — no local weights. It needs:
 #### Ollama (candidate models)
 
 ```sh
-# bring up Ollama (see ollama-compose.yml)
-docker compose -f benchmarks/ollama-compose.yml up -d
+# the full stack brings up Ollama itself (see docker-compose.yml)
+docker compose --env-file .env -f benchmarks/docker-compose.yml up -d
 ```
 
 That's it for setup. **The bench auto-downloads the models it will use** on
@@ -240,7 +240,7 @@ first run is slow (it fetches the weights, ~17 GB for all five into the
 
 Ollama exposes an OpenAI-compatible API at `http://127.0.0.1:11434/v1` (the
 default `--ollama-url`). To pre-warm the cache manually, you can still run
-`docker compose -f benchmarks/ollama-compose.yml exec ollama ollama pull <tag>`.
+`docker compose --env-file .env -f benchmarks/docker-compose.yml exec ollama ollama pull <tag>`.
 
  #### Docker (all-in — run the whole pipeline on any tailnet machine)
 
@@ -290,7 +290,7 @@ Notes:
 - **Reproducible input:** `sample` writes `results/llm-cleanup.sample.json`;
   that file is the shared input, so every machine scores the *same* 5 docs.
 - The image + stack are defined in `Dockerfile.llm` and `docker-compose.yml`
-  (separate from the embedding bench's `Dockerfile` / `ollama-compose.yml`).
+  (separate from the embedding bench's `Dockerfile`, which uses no Ollama).
 
 #### Plain Python
 
