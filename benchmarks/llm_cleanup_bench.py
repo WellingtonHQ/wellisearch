@@ -695,10 +695,11 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     """Print a side-by-side model comparison to the console.
 
     Centred on the three ways the models are compared:
-      speed       wall_s  — total model time over all pages (Σ total_ms), and
-                            tok_s — tokens/sec generation rate
-      throughput  docs/s  — pages processed per second (pages / wall_s)
-      quality     judge   — faithfulness / noise-removal / preservation, 1-5
+      speed       wall_s   — total model time over all pages (Σ total_ms)
+                             secs/doc — average seconds per page (wall_s / pages)
+                             tok_s    — tokens/sec generation rate
+      throughput  docs/s   — pages processed per second (pages / wall_s)
+      quality     judge    — faithfulness / noise-removal / preservation, 1-5
 
     wall_s is model-only (excludes the judge), so it isolates how fast each
     model is. The Markdown/JSON report still carries the full per-page detail.
@@ -706,10 +707,10 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     c = payload["config"]
     judge = bool(c.get("judge_model"))
     log(f"[report] summary — {c['sample_size']} pages, judge={c['judge_model'] or 'off'}")
-    log("       speed: wall_s=total model time for all pages, tok_s=tokens/sec; "
+    log("       speed: wall_s=total model time, secs/doc=avg per page, tok_s=tokens/sec; "
         "docs/s=pages/wall_s; judge scores are 1-5 (5=best)")
 
-    cols = ["model", "pages", "wall_s", "docs/s", "tok_s"]
+    cols = ["model", "pages", "wall_s", "secs/doc", "docs/s", "tok_s"]
     if judge:
         cols += ["j:faith", "j:noise", "j:presv"]
 
@@ -717,6 +718,7 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     for label, recs in payload["results"].items():
         ok = [r for r in recs if "error" not in r and r.get("output")]
         wall_s = sum(r.get("total_ms", 0.0) for r in ok) / 1000.0
+        secs_doc = wall_s / len(ok) if (wall_s > 0 and len(ok) > 0) else 0.0
         docs_s = len(ok) / wall_s if wall_s > 0 else 0.0
         tok_s = _median([r["tok_s"] for r in ok if r.get("tok_s")])
 
@@ -724,6 +726,7 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
             label,
             f"{len(ok)}/{len(recs)}",
             f"{wall_s:.1f}" if wall_s > 0 else "—",
+            f"{secs_doc:.1f}" if secs_doc > 0 else "—",
             f"{docs_s:.3f}" if docs_s > 0 else "—",
             f"{tok_s:.2f}" if tok_s is not None else "—",
         ]
