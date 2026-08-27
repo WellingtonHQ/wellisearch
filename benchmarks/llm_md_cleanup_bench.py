@@ -356,7 +356,7 @@ def save_sample(cfg: Config, pages: list[dict[str, Any]]) -> None:
 
 def load_sample(cfg: Config) -> list[dict[str, Any]]:
     if not cfg.sample_file.exists():
-        raise SystemExit(f"no sample at {cfg.sample_file} — run `python bench.py sample` first")
+        raise SystemExit(f"no sample at {cfg.sample_file} — run `python llm_md_cleanup_bench.py sample` first")
     payload = json.loads(cfg.sample_file.read_text(encoding="utf-8"))
     pages = payload["pages"]
     if cfg.smoke:
@@ -564,7 +564,7 @@ async def run_model(
     sem = asyncio.Semaphore(cfg.concurrency)
     results: list[dict[str, Any]] = []
 
-    async def one(page: dict[str, Any]) -> dict[str, Any]:
+    async def one(page: dict[str, Any], idx: int) -> dict[str, Any]:
         async with sem:
             rec: dict[str, Any] = {
                 "model": label,
@@ -572,6 +572,7 @@ async def run_model(
                 "domain": page["domain"],
                 "input_chars": page["input_chars"],
             }
+            who = f"[run] {label} · page {idx + 1}/{len(pages)} · {page['url']}"
             try:
                 out = await stream_chat(
                     client, cfg, cfg.ollama_base_url, cfg.ollama_api_key, tag,
@@ -583,13 +584,22 @@ async def run_model(
                 rec.update({k: out[k] for k in ("ttft_ms", "total_ms", "prompt_tokens", "completion_tokens", "tok_s")})
                 rec["output"] = out["text"]
                 rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
+                stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
+                         f"(ttft {out['ttft_ms'] or 0:.0f}ms, {out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
                 if cfg.use_judge and out["text"].strip():
+                    log(f"{who} — {stats} → awaiting judge …")
                     rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
+                    sc = rec["judge"].get("scores") or {}
+                    log(f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
+                        f"(faith={sc.get('faithfulness')} noise={sc.get('noise_removal')} presv={sc.get('preservation')})")
+                else:
+                    log(f"{who} — {stats}")
             except Exception as e:
                 rec["error"] = f"{type(e).__name__}: {e}"
+                log(f"{who} — ERROR: {rec['error']}")
             return rec
 
-    return list(await asyncio.gather(*(one(p) for p in pages)))
+    return list(await asyncio.gather(*(one(p, i) for i, p in enumerate(pages))))
 
 
 async def ensure_models(client: httpx.AsyncClient, cfg: Config, tags: list[str]) -> None:
@@ -874,7 +884,7 @@ def write_report(cfg: Config, payload: dict[str, Any]) -> None:
 
 def report_from_disk(cfg: Config) -> None:
     if not cfg.results_file.exists():
-        raise SystemExit(f"no results at {cfg.results_file} — run `python bench.py run` first")
+        raise SystemExit(f"no results at {cfg.results_file} — run `python llm_md_cleanup_bench.py run` first")
     payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
     write_report(cfg, payload)
 

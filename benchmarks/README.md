@@ -280,6 +280,17 @@ you can see when each step happened. The container's `TZ` is pinned to
 `America/Los_Angeles` by default (override with the `TZ` env var) so the
 timestamps match the clock you read them against.
 
+Per-page progress is logged as it happens, so you can see where time goes:
+
+```
+[… 23:40:12] [run] qwen3-8b · page 2/5 · https://example.com/a — model done in 41s (ttft 2900ms, 590 tok @ 15.2 tok/s) → awaiting judge …
+[… 23:41:47] [run] qwen3-8b · page 2/5 · https://example.com/a — judge done in 95s (faith=4 noise=5 presv=4)
+```
+
+The judge's wait time is logged separately (its own `ms`), and it is **not**
+counted in any model performance metric — `ttft_ms` / `total_ms` / `tok_s`
+only cover the model's own stream, so a busy judge never skews the numbers.
+
 Notes:
 - **Shared Ollama instead of per-machine pulls:** point the client at an
   existing server and skip the bundled one —
@@ -314,6 +325,23 @@ python benchmarks/llm_md_cleanup_bench.py all
 # quick sanity check (2 pages x first 2 models):
 python benchmarks/llm_md_cleanup_bench.py run --smoke
 ```
+
+#### Subcommands
+
+- **`sample`** — pulls a stratified set of real pages from the index (Postgres;
+  default 5) and snapshots their stored `fit_markdown` to
+  `results/llm-cleanup.sample.json`. That file is the shared, reproducible input:
+  build it once on any machine with Postgres access and every machine scores the
+  *same* docs. Needs Postgres; no models, no judge.
+- **`run`** — the inference step. Checks Ollama for the five models (auto-pulls
+  any missing, one-time), warms each model up, runs every model over every page
+  in the sample, computes the deterministic metrics, and scores each page with
+  the 27B judge (skip with `--no-judge`). Reads `llm-cleanup.sample.json`,
+  writes `results/llm-cleanup.results.json`.
+- **`report`** — re-renders the last run: reads `llm-cleanup.results.json`,
+  (re)writes `results/llm-cleanup.report.md`, and prints the side-by-side
+  console summary. Pure formatting — no inference, no Postgres, no judge.
+- **`all`** — `sample` → `run` → `report` in sequence; the whole pipeline.
 
 #### Options
 

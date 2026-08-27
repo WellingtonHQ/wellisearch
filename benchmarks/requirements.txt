@@ -18,7 +18,7 @@ einops>=0.7
 # matching the app's runtime.
 fastembed>=0.4
 
-# --- LLM fit-markdown cleanup benchmark (llm_cleanup_bench.py) ---
+# --- LLM fit-markdown cleanup benchmark (llm_md_cleanup_bench.py) ---
 # A thin HTTP client: httpx for the OpenAI-compatible calls, psycopg to read
 # the sample from Postgres. Both are already app deps (pyproject.toml); listed
 # here so the bench is self-contained.
