@@ -1,4 +1,4 @@
-"""llm-cleanup-bench: benchmark small LLMs on the fit-markdown cleanup task.
+"""llm-md-cleanup-bench: benchmark small LLMs on the fit-markdown cleanup task.
 
 Task
 ----
@@ -20,11 +20,11 @@ will use and auto-downloads any that are missing (one-time). Just start Ollama
 
 Usage
 -----
-  python benchmarks/llm_cleanup_bench.py sample   # build the sample snapshot from Postgres
-  python benchmarks/llm_cleanup_bench.py run      # run all models (+ judge) over the sample
-  python benchmarks/llm_cleanup_bench.py report   # (re)generate the Markdown/JSON report
-  python benchmarks/llm_cleanup_bench.py all      # sample + run + report
-  python benchmarks/llm_cleanup_bench.py run --smoke  # 2 pages x first 2 models, quick sanity check
+  python benchmarks/llm_md_cleanup_bench.py sample   # build the sample snapshot from Postgres
+  python benchmarks/llm_md_cleanup_bench.py run      # run all models (+ judge) over the sample
+  python benchmarks/llm_md_cleanup_bench.py report   # (re)generate the Markdown/JSON report
+  python benchmarks/llm_md_cleanup_bench.py all      # sample + run + report
+  python benchmarks/llm_md_cleanup_bench.py run --smoke  # 2 pages x first 2 models, quick sanity check
 
 Each run writes to benchmarks/results/:
   llm-cleanup.sample.json    the stratified input snapshot (reproducible)
@@ -234,6 +234,12 @@ def load_config(args: argparse.Namespace) -> Config:
 # No single domain may contribute more than this many pages to the sample.
 PER_DOMAIN_CAP = 3
 
+# Cap on candidate rows pulled from Postgres for the sample (stratified_pick
+# then selects within it). Keeps the snapshot step light on a big index and
+# bounds the fit_markdown payload; the ordering spreads the cap across
+# domains and lengths so the pool stays representative.
+SAMPLE_POOL_LIMIT = 200
+
 
 def stratified_pick(
     by_domain: dict[str, list[dict[str, Any]]], target: int
@@ -282,12 +288,19 @@ async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     try:
         cur = await conn.execute(
             """
-            SELECT url, title, domain, fit_markdown, length(fit_markdown) AS n
-            FROM pages
-            WHERE fit_markdown IS NOT NULL
-              AND disabled = false
-              AND length(fit_markdown) BETWEEN 500 AND 20000
-            """
+            SELECT url, title, domain, fit_markdown, n FROM (
+                SELECT url, title, domain, fit_markdown, length(fit_markdown) AS n,
+                       row_number() OVER (PARTITION BY domain
+                                         ORDER BY length(fit_markdown)) AS rn
+                FROM pages
+                WHERE fit_markdown IS NOT NULL
+                  AND disabled = false
+                  AND length(fit_markdown) BETWEEN 500 AND 20000
+            ) p
+            ORDER BY rn, domain
+            LIMIT %s
+            """,
+            (SAMPLE_POOL_LIMIT,),
         )
         rows = list(await cur.fetchall())
     finally:
@@ -753,34 +766,37 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
         print(line(r), flush=True)
 
 
-def write_report(cfg: Config, payload: dict[str, Any]) -> None:
-    agg = aggregate(payload)
-    labels = list(payload["results"].keys())
-    judge = bool(payload["config"].get("judge_model"))
-
-    lines: list[str] = []
-    lines.append("# LLM fit-markdown cleanup benchmark")
-    lines.append("")
-    lines.append(f"- ran: {payload['ran_at']}")
+def _report_meta_lines(payload: dict[str, Any]) -> list[str]:
+    """Title, run config, and the metric legend."""
     c = payload["config"]
-    lines.append(f"- models: {', '.join(c['models'])}")
-    lines.append(f"- sample: {c['sample_size']} pages (smoke={c['smoke']})")
-    lines.append(f"- ollama: {c['ollama_base_url']}")
-    lines.append(f"- judge: {c['judge_model'] or 'off'} @ {c['judge_base_url'] or '—'}")
-    lines.append(f"- temperature={c['temperature']}, max_output_tokens={c['max_output_tokens']}")
-    lines.append("")
-    lines.append("Quality: `no_addition` = share of output 8-grams already in the input (≈1 = nothing fabricated). "
-                 "`preservation` = share of input content-words kept (≈1 = not over-trimmed). "
-                 "`boilerplate_removed` = fraction of boilerplate patterns removed. "
-                 "Judge scores are 1-5 (5 = best).")
-    lines.append("")
+    lines = [
+        "# LLM fit-markdown cleanup benchmark",
+        "",
+        f"- ran: {payload['ran_at']}",
+        f"- models: {', '.join(c['models'])}",
+        f"- sample: {c['sample_size']} pages (smoke={c['smoke']})",
+        f"- ollama: {c['ollama_base_url']}",
+        f"- judge: {c['judge_model'] or 'off'} @ {c['judge_base_url'] or '—'}",
+        f"- temperature={c['temperature']}, max_output_tokens={c['max_output_tokens']}",
+        "",
+        "Quality: `no_addition` = share of output 8-grams already in the input (≈1 = nothing fabricated). "
+        "`preservation` = share of input content-words kept (≈1 = not over-trimmed). "
+        "`boilerplate_removed` = fraction of boilerplate patterns removed. "
+        "Judge scores are 1-5 (5 = best).",
+        "",
+    ]
+    return lines
 
+
+def _report_table_lines(
+    agg: dict[str, dict[str, Any]], labels: list[str], judge: bool
+) -> list[str]:
+    """The side-by-side per-model summary table."""
     header = ["model", "pages", "no_addition", "preservation", "boilerplate_rm", "len_ratio"]
     if judge:
         header += ["judge_faith", "judge_noise", "judge_preserve"]
     header += ["ttft_ms", "total_ms", "tok_s", "out_tokens"]
-    lines.append("| " + " | ".join(header) + " |")
-    lines.append("|" + "---|" * len(header))
+    lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     for label in labels:
         a = agg[label]
         row = [
@@ -801,9 +817,12 @@ def write_report(cfg: Config, payload: dict[str, Any]) -> None:
         ]
         lines.append("| " + " | ".join(row) + " |")
     lines.append("")
+    return lines
 
-    lines.append("## Per-page detail")
-    lines.append("")
+
+def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str]:
+    """The per-page detail tables (one per model)."""
+    lines = ["## Per-page detail", ""]
     for label in labels:
         lines.append(f"### {label}")
         lines.append("")
@@ -822,7 +841,18 @@ def write_report(cfg: Config, payload: dict[str, Any]) -> None:
                 f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
             )
         lines.append("")
+    return lines
 
+
+def write_report(cfg: Config, payload: dict[str, Any]) -> None:
+    agg = aggregate(payload)
+    labels = list(payload["results"].keys())
+    judge = bool(payload["config"].get("judge_model"))
+    lines = (
+        _report_meta_lines(payload)
+        + _report_table_lines(agg, labels, judge)
+        + _report_detail_lines(payload, labels)
+    )
     cfg.report_file.write_text("\n".join(lines), encoding="utf-8")
 
 

@@ -20,18 +20,11 @@ k       = num_results or SEARCH_K          # default 5
 crawl_n = SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)  # default 5
 ```
 
-> **`search_mode`** selects the source (default `auto`):
-> - `auto` — the default flow below: local index first, provider gateway on a
->   miss, degraded local fallback if every provider fails.
-> - `local` — steps 2–4 only; the index serves whatever it has (the coverage
->   gate does not apply). No provider; an empty index yields `source: error`.
->   There is no `provider_ms`.
-> - `provider` — bypasses steps 2–4 entirely: the local index is not touched
->   (no embed, no `fn_search_local`), `local_rows` stays empty, and the
->   pipeline goes straight to the provider gateway (§5b). Use it when the
->   caller was unsatisfied with a prior local result and wants a live provider
->   answer. In this mode `index_ms` is `0`, `provider_ms` is always present,
->   and a provider failure yields `source: error` (no degraded local fallback).
+> **`search_mode`** selects the source (default `auto`): `auto` — the default
+> flow below; `local` — steps 2–4 only, no provider; `provider` — bypasses
+> steps 2–4, the local index is not touched. Full semantics (degraded
+> fallback, empty index → `source: error`) are in
+> [api.md](api.md#get-apisearch).
 
 ### 2. Embed the query
 
@@ -164,7 +157,7 @@ Header lines (response-level):
 |---|---|
 | `Source:` | `local` \| `tavily` \| `brave` \| `searxng` \| `error` |
 | `Degraded:` | `true` \| `false` — true only in §6 degraded mode |
-| `Time:` | total ms, split into `index:` (Postgres search) and — only when a provider was used — `provider:` (gateway wait). With `search_mode=provider`, `index:` is `0` and `provider:` is always present; with `search_mode=local` there is no `provider:` |
+| `Time:` | total ms, split into `index:` (Postgres search) and — only when a provider was used — `provider:` (gateway wait). |
 | `Provider Errors:` | `{provider}: {error}` pairs joined by `;` — present only when providers failed |
 
 Result blocks:

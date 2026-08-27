@@ -61,6 +61,46 @@ def render_search_markdown(out: dict) -> str:
     return "\n\n".join(["\n".join(lines), "\n---\n".join(blocks)])
 
 
+async def _local_index_search(query: str, k: int, max_age_days: float | None) -> tuple[list[dict], int]:
+    """The local-index leg: embed the query, rank via fn_search_local, apply
+    the optional freshness filter. Returns (rows, index_ms).
+
+    Failures degrade to an empty row set (a bad query embedding → FTS+trigram
+    only; a failed fn_search_local — e.g. statement timeout → the caller serves
+    the request from the provider gateway instead of stalling).
+    """
+    s = get_settings()
+    t_index = time.monotonic()
+    try:
+        qvec = await asyncio.to_thread(embed_one, query)
+    except Exception as e:
+        log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
+        qvec = None
+
+    # Fetch a bit more than we'll return so the coverage gate can see a
+    # full-coverage page that ranks just outside the top-k by score. The extra
+    # rows cost nothing — the legs/fusion are the same; only the final LIMIT
+    # differs.
+    gate_k = max(k, 10)
+    try:
+        rows = await db.fetch_all(
+            "SELECT * FROM fn_search_local(%s, %s::vector, %s)",
+            (query, qvec if qvec is not None else None, gate_k),
+            timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
+        )
+    except Exception:
+        log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
+        rows = []
+
+    if max_age_days is not None:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
+        rows = [
+            r for r in rows
+            if r.get("last_crawled") is None or r["last_crawled"] >= cutoff
+        ]
+    return rows, int((time.monotonic() - t_index) * 1000)
+
+
 async def search_web(
     query: str,
     num_results: int | None = None,
@@ -84,37 +124,7 @@ async def search_web(
     local_rows: list[dict] = []
     index_ms = 0
     if search_mode != "provider":
-        t_index = time.monotonic()
-        try:
-            qvec = await asyncio.to_thread(embed_one, query)
-        except Exception as e:
-            log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
-            qvec = None
-
-        # Fetch a bit more than we'll return so the coverage gate (below) can
-        # see a full-coverage page that ranks just outside the top-k by score.
-        # The extra rows cost nothing — the legs/fusion are the same; only the
-        # final LIMIT differs.
-        gate_k = max(k, 10)
-        try:
-            local_rows = await db.fetch_all(
-                "SELECT * FROM fn_search_local(%s, %s::vector, %s)",
-                (query, qvec if qvec is not None else None, gate_k),
-                timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
-            )
-        except Exception:
-            # includes QueryCanceled (statement timeout) — the gateway below
-            # serves the request instead of stalling on the local index
-            log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
-            local_rows = []
-
-        if max_age_days is not None:
-            cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
-            local_rows = [
-                r for r in local_rows
-                if r.get("last_crawled") is None or r["last_crawled"] >= cutoff
-            ]
-        index_ms = int((time.monotonic() - t_index) * 1000)
+        local_rows, index_ms = await _local_index_search(query, k, max_age_days)
 
     # Gate: does any top local result cover the query enough? `coverage` is
     # computed in fn_search_local (see docs/ranking.md). In provider mode the

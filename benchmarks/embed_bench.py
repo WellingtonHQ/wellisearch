@@ -48,8 +48,8 @@ Backends:
   - all-MiniLM*  -> FastEmbed (ONNX Runtime), matching production.
   - everything else -> sentence-transformers (PyTorch), on CPU.
 
-Docker (reproducible environment, see benchmarks/Dockerfile):
-  docker build -f benchmarks/Dockerfile -t embedbench benchmarks/
+Docker (reproducible environment, see benchmarks/Dockerfile.embed-bench):
+  docker build -f benchmarks/Dockerfile.embed-bench -t embedbench benchmarks/
   docker run --rm -v "$PWD/benchmarks/results:/results" embedbench
 
 Dependencies (not part of the app):  pip install -r benchmarks/requirements.txt

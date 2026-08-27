@@ -5,7 +5,7 @@ Two CPU-only benchmarks for wellisearch, both fixed and reproducible:
 | Benchmark | Script | What it measures |
 |---|---|---|
 | **Embedding model** | `embed_bench.py` | retrieval quality (Recall@k, MRR) + speed (tok/s, ms/doc) |
-| **LLM fit-markdown cleanup** | `llm_cleanup_bench.py` | how well small LLMs clean stored markdown — quality + TTFT / latency / tok-s |
+| **LLM fit-markdown cleanup** | `llm_md_cleanup_bench.py` | how well small LLMs clean stored markdown — quality + TTFT / latency / tok-s |
 
 Both write results to `benchmarks/results/`. The embedding bench needs a Docker
 image (or a venv) with PyTorch. The LLM cleanup bench is a thin HTTP client: it
@@ -69,7 +69,7 @@ speed/quality comparison.
 
 ```sh
 # build once (context = the benchmarks/ directory). Rebuild after adding test data.
-docker build -f benchmarks/Dockerfile -t embedbench benchmarks/
+docker build -f benchmarks/Dockerfile.embed-bench -t embedbench benchmarks/
 
 # 1) default set (142 chunks) — the general quality + speed comparison
 docker run --rm \
@@ -255,18 +255,18 @@ The credentials (Postgres Tailscale host, judge URL + key) live in the repo
 root `.env`, so pass it with `--env-file .env` (Compose won't auto-find it,
 because the compose file sits in `benchmarks/`).
 
- ```sh
+```sh
 # From the repo root:
 #   - full pipeline (sample + run + report) in one shot:
 docker compose --env-file .env -f benchmarks/docker-compose.yml \
-  run --build --rm bench python llm_cleanup_bench.py all
+  run --build --rm bench python llm_md_cleanup_bench.py all
 
 #   - or just the inference run over the existing sample:
 docker compose --env-file .env -f benchmarks/docker-compose.yml up --build
 ```
 
 `--build` is included on the one-shot command so it always picks up the latest
-`llm_cleanup_bench.py` (Compose reuses the existing image otherwise). The
+`llm_md_cleanup_bench.py` (Compose reuses the existing image otherwise). The
 rebuild is cheap — it just re-COPYs the script and reuses the pip cache.
 
 `up --build` starts `ollama` (auto-pulls the five models on first run) +
@@ -289,8 +289,9 @@ Notes:
   bench command for deterministic-metrics-only runs.
 - **Reproducible input:** `sample` writes `results/llm-cleanup.sample.json`;
   that file is the shared input, so every machine scores the *same* 5 docs.
-- The image + stack are defined in `Dockerfile.llm` and `docker-compose.yml`
-  (separate from the embedding bench's `Dockerfile` / `ollama-compose.yml`).
+- The image + stack are defined in `Dockerfile.fit-markdown-cleanup` and
+  `docker-compose.yml` (separate from the embedding bench's
+  `Dockerfile.embed-bench` / `ollama-compose.yml`).
 
 #### Plain Python
 
@@ -299,19 +300,19 @@ Notes:
 pip install httpx 'psycopg[binary]'
 
 # 1) build the sample snapshot from the index (default 5 pages; needs Postgres)
-python benchmarks/llm_cleanup_bench.py sample
+python benchmarks/llm_md_cleanup_bench.py sample
 
 # 2) run all five models (+ judge) over the sample
-python benchmarks/llm_cleanup_bench.py run
+python benchmarks/llm_md_cleanup_bench.py run
 
 # 3) (re)generate the Markdown report from the last run
-python benchmarks/llm_cleanup_bench.py report
+python benchmarks/llm_md_cleanup_bench.py report
 
 # or do all three at once:
-python benchmarks/llm_cleanup_bench.py all
+python benchmarks/llm_md_cleanup_bench.py all
 
 # quick sanity check (2 pages x first 2 models):
-python benchmarks/llm_cleanup_bench.py run --smoke
+python benchmarks/llm_md_cleanup_bench.py run --smoke
 ```
 
 #### Options
