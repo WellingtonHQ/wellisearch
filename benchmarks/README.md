@@ -242,37 +242,43 @@ Ollama exposes an OpenAI-compatible API at `http://127.0.0.1:11434/v1` (the
 default `--ollama-url`). To pre-warm the cache manually, you can still run
 `docker compose -f benchmarks/ollama-compose.yml exec ollama ollama pull <tag>`.
 
-#### Docker (portable — run on multiple machines)
+ #### Docker (all-in — run the whole pipeline on any tailnet machine)
 
-The bench is a thin HTTP client, so it ships as a slim image (no torch — that's
-the embedding bench's footprint) that you can bring up on any machine. Ollama
-does the heavy inference locally, so **each machine measures its own
-hardware**; diff the reports to compare.
+Everything runs in containers: the `sample` step reaches Postgres over
+Tailscale, the judge is reached over Tailscale, and Ollama does the heavy
+inference locally. No bare Python, no host routing tricks — bring up the stack
+on any machine on the tailnet that can reach the Postgres + judge Tailscale
+addresses. Ollama is local, so **each machine measures its own hardware**;
+diff the reports to compare.
+
+The credentials (Postgres Tailscale host, judge URL + key) live in the repo
+root `.env`, so pass it with `--env-file .env` (Compose won't auto-find it,
+because the compose file sits in `benchmarks/`).
 
 ```sh
-# 1) Build the sample ONCE on a machine that can reach Postgres (needs the
-#    live index). This writes results/llm-cleanup.sample.json.
-POSTGRES_HOST=127.0.0.1 python benchmarks/llm_cleanup_bench.py sample
+# From the repo root:
+#   - full pipeline (sample + run + report) in one shot:
+docker compose --env-file .env -f benchmarks/docker-compose.yml \
+  run --rm bench python llm_cleanup_bench.py all
 
-# 2) On each machine you want to benchmark, copy that sample file into
-#    benchmarks/results/ (it's the shared, reproducible input), then:
-docker compose -f benchmarks/docker-compose.yml up --build
+#   - or just the inference run over the existing sample:
+docker compose --env-file .env -f benchmarks/docker-compose.yml up --build
 ```
 
-That starts `ollama` (auto-pulls the five models on first run) + `bench`
-(runs all five models over the 5-doc sample, with the judge). The sample goes
-in and the results come out through the `./results` mount, so
+`up --build` starts `ollama` (auto-pulls the five models on first run) +
+`bench` (runs all five models over the 5-doc sample, with the judge). The
+sample goes in and the results come out through the `./results` mount, so
 `llm-cleanup.report.md` lands on the host.
 
 Notes:
 - **Shared Ollama instead of per-machine pulls:** point the client at an
   existing server and skip the bundled one —
-  `OLLAMA_BASE_URL=http://<host>:11434/v1 docker compose -f benchmarks/docker-compose.yml up bench`.
-- **Judge:** `JUDGE_BASE_URL` / `JUDGE_API_KEY` must be routable from the
-  machine (set them in the repo `.env` or export them). Add `--no-judge` to the
+  `OLLAMA_BASE_URL=http://<host>:11434/v1 docker compose --env-file .env -f benchmarks/docker-compose.yml up bench`.
+- **Judge / Postgres** must be routable from the machine — both are Tailscale
+  addresses in `.env`, so any tailnet member works. Add `--no-judge` to the
   bench command for deterministic-metrics-only runs.
-- **Full pipeline in one shot** (rebuild sample + run + report, needs Postgres):
-  `docker compose -f benchmarks/docker-compose.yml run --rm bench python llm_cleanup_bench.py all`.
+- **Reproducible input:** `sample` writes `results/llm-cleanup.sample.json`;
+  that file is the shared input, so every machine scores the *same* 5 docs.
 - The image + stack are defined in `Dockerfile.llm` and `docker-compose.yml`
   (separate from the embedding bench's `Dockerfile` / `ollama-compose.yml`).
 
