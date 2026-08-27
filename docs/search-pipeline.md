@@ -16,7 +16,7 @@ images/search-pipeline.svg
 ### 1. Resolve defaults
 
 ```python
-k       = num_results or SEARCH_K          # default 5
+k       = max(1, num_results or SEARCH_K)  # default 5; clamped so negative k can't slice rows off the end
 crawl_n = SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)  # default 5
 ```
 
@@ -42,8 +42,12 @@ SELECT * FROM fn_search_local(%s, %s::vector, %s)
 See [ranking.md](ranking.md) for the full algorithm. Returns at most
 `max(k, 10)` rows with `url, title, snippet, score, coverage, last_crawled,
 fetch_count` (the extra rows let the gate below see past the top-k by
-score). If the function itself errors, `local_rows = []` and the pipeline
-continues to the gateway.
+score). If the function itself errors, `local_rows = []` **and** the failure
+is returned as `index_error`: auto mode continues to the gateway (the error
+stays hidden behind the fallback), local mode surfaces it in the error
+envelope (`index_error` field in JSON, `Index Error:` header line in
+Markdown) so "the index is empty" and "the index is down" are
+distinguishable.
 
 **Optional freshness filter**: if `max_age_days` is given, rows with
 `last_crawled` older than the cutoff are dropped (rows never crawled are
@@ -157,8 +161,9 @@ Header lines (response-level):
 |---|---|
 | `Source:` | `local` \| `tavily` \| `brave` \| `searxng` \| `error` |
 | `Degraded:` | `true` \| `false` — true only in §6 degraded mode |
-| `Time:` | total ms, split into `index:` (Postgres search) and — only when a provider was used — `provider:` (gateway wait). |
+| `Time:` | total ms, split into `index:` (Postgres search) and — only when a provider was used — `provider:` (gateway wait); in `search_mode=provider` the `index:` part is omitted (the index leg never ran) |
 | `Provider Errors:` | `{provider}: {error}` pairs joined by `;` — present only when providers failed |
+| `Index Error:` | the index-leg failure (exception text) — present only when `search_mode=local` and the index leg itself failed (mirrors `provider_errors`; the `index_error` JSON field) |
 
 Result blocks:
 

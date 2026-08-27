@@ -323,20 +323,24 @@ python benchmarks/llm_md_cleanup_bench.py run --smoke
 --no-judge          skip the 27B LLM judge (deterministic metrics only)
 --concurrency N     parallel pages per model (default 1 = fair CPU timing)
 --ollama-url URL    Ollama OpenAI-compatible base URL (default http://127.0.0.1:11434/v1)
---judge-url URL     judge OpenAI-compatible base URL (default: the LM Studio Tailscale node)
+--judge-url URL     judge OpenAI-compatible base URL (required unless --no-judge; JUDGE_BASE_URL works too)
 --out-dir DIR       output dir (default benchmarks/results)
 --smoke             2 pages x first 2 models, quick sanity check
 ```
 
 Environment variables (all optional, sensible defaults): `POSTGRES_*`,
-`OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `JUDGE_BASE_URL`, `JUDGE_MODEL`
-(default `qwen3.8-27b`), `JUDGE_API_KEY`, `BENCH_TEMPERATURE` (default `0.0`),
+`OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `JUDGE_BASE_URL` (required when the
+judge runs), `JUDGE_MODEL` (default `qwen3.8-27b`), `JUDGE_API_KEY` (required
+when the judge runs), `BENCH_TEMPERATURE` (default `0.0`),
 `BENCH_MAX_OUTPUT_TOKENS` (default `2048`), `BENCH_SAMPLE_SIZE` (default `5`),
 `BENCH_OUT_DIR`.
 
 The judge is configured in the repo-root `.env` (gitignored) — `JUDGE_BASE_URL`,
 `JUDGE_MODEL`, `JUDGE_API_KEY` — and the bench loads it automatically (explicit
-env vars / flags override). Put your LM Studio key there, not in source.
+env vars / flags override). Put your LM Studio key there, not in source. There
+is no built-in default endpoint or key: a `run` without the judge configured
+exits with a clear "set JUDGE_BASE_URL / JUDGE_API_KEY" error (or pass
+`--no-judge`).
 
 ### Reading the results
 

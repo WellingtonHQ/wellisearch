@@ -36,10 +36,11 @@ Env (all optional, sensible defaults)
   POSTGRES_HOST / POSTGRES_PORT / POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
   OLLAMA_BASE_URL          default http://127.0.0.1:11434/v1
   OLLAMA_API_KEY           default "ollama" (Ollama accepts any key)
-  JUDGE_BASE_URL           the 27B judge endpoint (default: the LM Studio
-                           Tailscale node; override with this or --judge-url)
+  JUDGE_BASE_URL           the 27B judge endpoint (required unless --no-judge;
+                           or --judge-url)
   JUDGE_MODEL              default qwen3.8-27b
-  JUDGE_API_KEY            LM Studio key (put it in the repo-root .env)
+  JUDGE_API_KEY            judge API key (required unless --no-judge; put it
+                           in the repo-root .env, not in source)
   BENCH_TEMPERATURE        default 0.0
   BENCH_MAX_OUTPUT_TOKENS  default 2048
   BENCH_SAMPLE_SIZE        default 5
@@ -210,19 +211,33 @@ def load_config(args: argparse.Namespace) -> Config:
 
     out_dir = Path(args.out_dir or os.environ.get("BENCH_OUT_DIR") or (HERE / "results"))
 
+    judge_base_url = (args.judge_url or os.environ.get("JUDGE_BASE_URL") or "").rstrip("/")
+    judge_api_key = os.environ.get("JUDGE_API_KEY") or ""
+    use_judge = not args.no_judge
+    # only `run`/`all` call the judge — `sample`/`report` must work without it
+    if use_judge and args.command in ("run", "all") and (not judge_base_url or not judge_api_key):
+        missing = " and ".join(
+            name for name, val in (("JUDGE_BASE_URL (or --judge-url)", judge_base_url),
+                                   ("JUDGE_API_KEY", judge_api_key)) if not val
+        )
+        raise SystemExit(
+            f"the LLM judge is enabled but not configured: set {missing} "
+            "(repo-root .env works) — or pass --no-judge for deterministic metrics only"
+        )
+
     return Config(
         postgres_dsn=dsn,
         ollama_base_url=(args.ollama_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1").rstrip("/"),
         ollama_api_key=os.environ.get("OLLAMA_API_KEY", "ollama"),
-        judge_base_url=(args.judge_url or os.environ.get("JUDGE_BASE_URL") or "https://desktop-7n8a289.tailc2fbf4.ts.net:1234/v1").rstrip("/"),
+        judge_base_url=judge_base_url,
         judge_model=os.environ.get("JUDGE_MODEL", "qwen3.8-27b"),
-        judge_api_key=os.environ.get("JUDGE_API_KEY", "lm-studio"),
+        judge_api_key=judge_api_key,
         models=models,
         sample_size=args.sample_size or int(os.environ.get("BENCH_SAMPLE_SIZE", "5")),
         temperature=float(os.environ.get("BENCH_TEMPERATURE", "0.0")),
         max_output_tokens=int(os.environ.get("BENCH_MAX_OUTPUT_TOKENS", "2048")),
         timeout_s=int(os.environ.get("BENCH_TIMEOUT_S", "300")),
-        use_judge=not args.no_judge,
+        use_judge=use_judge,
         concurrency=max(1, args.concurrency),
         out_dir=out_dir,
         smoke=args.smoke,

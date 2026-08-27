@@ -332,8 +332,10 @@ async def fetch_pages(
             "from_index": p["from_index"],
         })
 
-    index_ms = sum(p.get("index_ms", 0) for p in resolved)
-    crawl_ms = sum(p.get("crawl_ms", 0) for p in resolved)
+    # Pages resolved in parallel, so each leg is the critical path (max), not
+    # the sum — the split must stay a partition of the total, never exceed it.
+    index_ms = max(p.get("index_ms", 0) for p in resolved)
+    crawl_ms = max(p.get("crawl_ms", 0) for p in resolved)
     timing = _timing(index_ms=index_ms)
     if crawl_ms:
         timing["crawl_ms"] = crawl_ms

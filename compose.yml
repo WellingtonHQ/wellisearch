@@ -14,10 +14,6 @@
 #
 # No depends_on on postgres: cross-project ordering is handled by the app's
 # startup DB retry (~10 x 3 s) + self-creating the `wellisearch` DB.
-#
-# Crawl4AI version-pinned patches live in ./tools (moved here from
-# open-webui/wellington/tools): bumping the image tag requires re-diffing
-# /app/monitor.py and /app/supervisord.conf against the new image.
 name: wellisearch
 
 services:
