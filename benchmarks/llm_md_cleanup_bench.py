@@ -253,14 +253,15 @@ def load_config(args: argparse.Namespace) -> Config:
 # No single domain may contribute more than this many pages to the sample.
 PER_DOMAIN_CAP = 3
 
-# Cap on candidate rows pulled from Postgres for the sample (stratified_pick
-# then selects within it). Keeps the snapshot step light on a big index and
-# bounds the fit_markdown payload; rows are drawn at random (ORDER BY
-# random()), so the pool spans domains in proportion to the index.
+# Cap on candidate rows pulled from Postgres for the sample
+# (select_random_pages then picks within it). Keeps the snapshot step light
+# on a big index and bounds the fit_markdown payload; rows are drawn at
+# random (ORDER BY random()), so the pool spans domains in proportion to the
+# index.
 SAMPLE_POOL_LIMIT = 200
 
 
-def stratified_pick(
+def select_random_pages(
     by_domain: dict[str, list[dict[str, Any]]], target: int
 ) -> list[dict[str, Any]]:
     """Round-robin across domains; within a domain take pages in arrival order.
@@ -323,7 +324,7 @@ async def build_sample(cfg: Config) -> list[dict[str, Any]]:
         by_domain.setdefault(r["domain"] or "_", []).append(r)
 
     target = min(2, cfg.sample_size) if cfg.smoke else cfg.sample_size
-    picked = stratified_pick(by_domain, target)
+    picked = select_random_pages(by_domain, target)
     return [
         {
             "url": r["url"],
