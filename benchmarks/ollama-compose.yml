@@ -26,7 +26,9 @@ services:
       - OLLAMA_NUM_PARALLEL=1
       - OLLAMA_KEEP_ALIVE=10m
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:11434/api/tags"]
+      # The official ollama image ships no curl/wget; use bash's /dev/tcp to
+      # confirm the server is listening on 11434.
+      test: ["CMD", "bash", "-c", "(exec 3<>/dev/tcp/127.0.0.1/11434) 2>/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

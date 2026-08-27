@@ -194,9 +194,10 @@ Five models run by default (served by Ollama):
 | `qwen3-1.7b` | `qwen3:1.7b` | 1.7B |
 | `qwen3-0.6b` | `qwen3:0.6b` | 0.6B |
 
-The sample is a stratified set of **30 real URLs** pulled from the index
-(Postgres) — spread across domains and content-length quantiles — and snapshotted
-to JSON so the run is reproducible and re-runnable offline.
+The sample is a stratified set of **5 real URLs** (default; override with
+`--sample-size`) pulled from the index (Postgres) — spread across domains and
+content-length quantiles — and snapshotted to JSON so the run is reproducible
+and re-runnable offline.
 
 ### Metrics
 
@@ -227,18 +228,53 @@ The bench is a thin HTTP client — no local weights. It needs:
 #### Ollama (candidate models)
 
 ```sh
-# bring up Ollama with the five models (see ollama-compose.yml)
+# bring up Ollama (see ollama-compose.yml)
 docker compose -f benchmarks/ollama-compose.yml up -d
-# pull the models once (Ollama also auto-pulls on first request)
-docker exec -it <ollama> ollama pull qwen3:8b
-docker exec -it <ollama> ollama pull qwen3:4b
-docker exec -it <ollama> ollama pull gemma3:12b
-docker exec -it <ollama> ollama pull qwen3:1.7b
-docker exec -it <ollama> ollama pull qwen3:0.6b
 ```
 
+That's it for setup. **The bench auto-downloads the models it will use** on
+first `run` — it checks Ollama (`GET /api/tags`) and pulls any missing ones
+(`POST /api/pull`). So you do **not** have to `ollama pull` them yourself. The
+first run is slow (it fetches the weights, ~17 GB for all five into the
+`ollama-models` volume); later runs reuse them.
+
 Ollama exposes an OpenAI-compatible API at `http://127.0.0.1:11434/v1` (the
-default `--ollama-url`).
+default `--ollama-url`). To pre-warm the cache manually, you can still run
+`docker compose -f benchmarks/ollama-compose.yml exec ollama ollama pull <tag>`.
+
+#### Docker (portable — run on multiple machines)
+
+The bench is a thin HTTP client, so it ships as a slim image (no torch — that's
+the embedding bench's footprint) that you can bring up on any machine. Ollama
+does the heavy inference locally, so **each machine measures its own
+hardware**; diff the reports to compare.
+
+```sh
+# 1) Build the sample ONCE on a machine that can reach Postgres (needs the
+#    live index). This writes results/llm-cleanup.sample.json.
+POSTGRES_HOST=127.0.0.1 python benchmarks/llm_cleanup_bench.py sample
+
+# 2) On each machine you want to benchmark, copy that sample file into
+#    benchmarks/results/ (it's the shared, reproducible input), then:
+docker compose -f benchmarks/docker-compose.yml up --build
+```
+
+That starts `ollama` (auto-pulls the five models on first run) + `bench`
+(runs all five models over the 5-doc sample, with the judge). The sample goes
+in and the results come out through the `./results` mount, so
+`llm-cleanup.report.md` lands on the host.
+
+Notes:
+- **Shared Ollama instead of per-machine pulls:** point the client at an
+  existing server and skip the bundled one —
+  `OLLAMA_BASE_URL=http://<host>:11434/v1 docker compose -f benchmarks/docker-compose.yml up bench`.
+- **Judge:** `JUDGE_BASE_URL` / `JUDGE_API_KEY` must be routable from the
+  machine (set them in the repo `.env` or export them). Add `--no-judge` to the
+  bench command for deterministic-metrics-only runs.
+- **Full pipeline in one shot** (rebuild sample + run + report, needs Postgres):
+  `docker compose -f benchmarks/docker-compose.yml run --rm bench python llm_cleanup_bench.py all`.
+- The image + stack are defined in `Dockerfile.llm` and `docker-compose.yml`
+  (separate from the embedding bench's `Dockerfile` / `ollama-compose.yml`).
 
 #### Plain Python
 
@@ -246,7 +282,7 @@ default `--ollama-url`).
 # deps: httpx + psycopg (both already in the app's pyproject.toml)
 pip install httpx 'psycopg[binary]'
 
-# 1) build the 30-page sample snapshot from the index (needs Postgres)
+# 1) build the sample snapshot from the index (default 5 pages; needs Postgres)
 python benchmarks/llm_cleanup_bench.py sample
 
 # 2) run all five models (+ judge) over the sample
@@ -266,11 +302,11 @@ python benchmarks/llm_cleanup_bench.py run --smoke
 
 ```
 --models L=T,...    comma list label=ollama_tag (default: the five models above)
---sample-size N     number of pages in the sample (default 30)
+--sample-size N     number of pages in the sample (default 5)
 --no-judge          skip the 27B LLM judge (deterministic metrics only)
 --concurrency N     parallel pages per model (default 1 = fair CPU timing)
 --ollama-url URL    Ollama OpenAI-compatible base URL (default http://127.0.0.1:11434/v1)
---judge-url URL     judge OpenAI-compatible base URL (default http://127.0.0.1:1234/v1)
+--judge-url URL     judge OpenAI-compatible base URL (default: the LM Studio Tailscale node)
 --out-dir DIR       output dir (default benchmarks/results)
 --smoke             2 pages x first 2 models, quick sanity check
 ```
@@ -278,8 +314,12 @@ python benchmarks/llm_cleanup_bench.py run --smoke
 Environment variables (all optional, sensible defaults): `POSTGRES_*`,
 `OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `JUDGE_BASE_URL`, `JUDGE_MODEL`
 (default `qwen3.8-27b`), `JUDGE_API_KEY`, `BENCH_TEMPERATURE` (default `0.0`),
-`BENCH_MAX_OUTPUT_TOKENS` (default `4096`), `BENCH_SAMPLE_SIZE` (default `30`),
+`BENCH_MAX_OUTPUT_TOKENS` (default `2048`), `BENCH_SAMPLE_SIZE` (default `5`),
 `BENCH_OUT_DIR`.
+
+The judge is configured in the repo-root `.env` (gitignored) — `JUDGE_BASE_URL`,
+`JUDGE_MODEL`, `JUDGE_API_KEY` — and the bench loads it automatically (explicit
+env vars / flags override). Put your LM Studio key there, not in source.
 
 ### Reading the results
 

@@ -1,0 +1,31 @@
+# Slim client image for the LLM fit-markdown cleanup benchmark
+# (llm_cleanup_bench.py). Unlike the embedding bench (see Dockerfile), this
+# needs no torch — it's a thin HTTP client that talks to Ollama (models) and
+# the judge, and reads/writes the sample + results under BENCH_OUT_DIR.
+#
+# Build (context = the repo root, so `COPY benchmarks/...` resolves):
+#   docker build -f benchmarks/Dockerfile.llm -t llm-cleanup-bench .
+#
+# Config is passed as env vars (see docker-compose.yml). The shared sample
+# goes in and the results come out via the BENCH_OUT_DIR mount.
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    BENCH_OUT_DIR=/results
+
+WORKDIR /bench
+
+# Only the LLM-bench deps (httpx for the API calls, psycopg for the sample
+# step). Deliberately no torch — that's the embedding bench's footprint.
+RUN pip install --no-cache-dir "httpx>=0.27" "psycopg[binary]>=3.1"
+
+COPY benchmarks/llm_cleanup_bench.py ./
+
+RUN mkdir -p /results
+
+# Default: run the benchmark over the shared sample (no Postgres needed).
+# Override per-invocation, e.g. `... run --rm bench python llm_cleanup_bench.py all`
+CMD ["python", "llm_cleanup_bench.py", "run"]

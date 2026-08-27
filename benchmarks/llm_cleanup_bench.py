@@ -14,6 +14,10 @@ five local models (served by Ollama) on:
 The sample is a stratified set of real URLs pulled from the index (Postgres),
 snapshotted to JSON so the run is reproducible and re-runnable offline.
 
+Models are self-contained: on ``run`` the bench checks Ollama for each model it
+will use and auto-downloads any that are missing (one-time). Just start Ollama
+(``docker compose -f benchmarks/ollama-compose.yml up -d``) and run.
+
 Usage
 -----
   python benchmarks/llm_cleanup_bench.py sample   # build the sample snapshot from Postgres
@@ -32,12 +36,13 @@ Env (all optional, sensible defaults)
   POSTGRES_HOST / POSTGRES_PORT / POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
   OLLAMA_BASE_URL          default http://127.0.0.1:11434/v1
   OLLAMA_API_KEY           default "ollama" (Ollama accepts any key)
-  JUDGE_BASE_URL           the 27B judge endpoint (default LM Studio :1234)
+  JUDGE_BASE_URL           the 27B judge endpoint (default: the LM Studio
+                           Tailscale node; override with this or --judge-url)
   JUDGE_MODEL              default qwen3.8-27b
-  JUDGE_API_KEY            default "lm-studio"
+  JUDGE_API_KEY            LM Studio key (put it in the repo-root .env)
   BENCH_TEMPERATURE        default 0.0
-  BENCH_MAX_OUTPUT_TOKENS  default 4096
-  BENCH_SAMPLE_SIZE        default 30
+  BENCH_MAX_OUTPUT_TOKENS  default 2048
+  BENCH_SAMPLE_SIZE        default 5
   BENCH_OUT_DIR            default <this dir>/results
 """
 from __future__ import annotations
@@ -59,9 +64,34 @@ import psycopg
 
 HERE = Path(__file__).resolve().parent
 
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from the repo-root ``.env`` into ``os.environ``.
+
+    Values already present in the environment win, so explicit exports
+    (e.g. ``POSTGRES_HOST=127.0.0.1``) override the file. Dependency-free and
+    best-effort: a missing/malformed file is simply ignored. This is what lets
+    the judge key (kept in the gitignored ``.env``) be picked up automatically.
+    """
+    env_file = HERE.parent / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
 DEFAULT_MODELS: list[tuple[str, str]] = [
     ("qwen3-8b", "qwen3:8b"),
-    ("qwen3-4b", "qwen3:4b"),
+    # qwen3-4b (thinking) narrates its reasoning into the content (weak
+    # instruction-following) -> verbose, slow, wrong output. Use the non-thinking
+    # instruct variant instead.
+    ("qwen3-4b-instruct", "qwen3:4b-instruct"),
     ("gemma3-12b", "gemma3:12b"),
     ("qwen3-1.7b", "qwen3:1.7b"),
     ("qwen3-0.6b", "qwen3:0.6b"),
@@ -69,9 +99,9 @@ DEFAULT_MODELS: list[tuple[str, str]] = [
 
 CLEANUP_SYSTEM_PROMPT = (
     "You are a precise markdown cleaner. Rewrite the markdown provided by the "
-    "user into clean, well-structured markdown.\n\n"
+    "crawling engine into clean, well-structured markdown.\n\n"
     "Rules:\n"
-    "- Remove navigation, menus, footers, cookie/consent text, ads, "
+    "- Remove navigation, menus, footers, cookie/consent text, ads, sponsor content (3rd party products)"
     "'sign in'/'subscribe' prompts, social links, and other boilerplate.\n"
     "- Do NOT add, infer, or paraphrase any facts, numbers, names, or claims. "
     "Only restate what is already present.\n"
@@ -96,7 +126,7 @@ JUDGE_SYSTEM_PROMPT = (
     "1 = major content lost)\n"
     "Respond with ONLY a JSON object: "
     '{"faithfulness": <int>, "noise_removal": <int>, "preservation": <int>, '
-    '"note": "<one short sentence>"}'
+    '"note": "<2-3 sentences>"}'
 )
 
 _BOILERPLATE_PATTERNS = [
@@ -175,13 +205,13 @@ def load_config(args: argparse.Namespace) -> Config:
         postgres_dsn=dsn,
         ollama_base_url=(args.ollama_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1").rstrip("/"),
         ollama_api_key=os.environ.get("OLLAMA_API_KEY", "ollama"),
-        judge_base_url=(args.judge_url or os.environ.get("JUDGE_BASE_URL") or "http://127.0.0.1:1234/v1").rstrip("/"),
+        judge_base_url=(args.judge_url or os.environ.get("JUDGE_BASE_URL") or "https://desktop-7n8a289.tailc2fbf4.ts.net:1234/v1").rstrip("/"),
         judge_model=os.environ.get("JUDGE_MODEL", "qwen3.8-27b"),
         judge_api_key=os.environ.get("JUDGE_API_KEY", "lm-studio"),
         models=models,
-        sample_size=args.sample_size or int(os.environ.get("BENCH_SAMPLE_SIZE", "30")),
+        sample_size=args.sample_size or int(os.environ.get("BENCH_SAMPLE_SIZE", "5")),
         temperature=float(os.environ.get("BENCH_TEMPERATURE", "0.0")),
-        max_output_tokens=int(os.environ.get("BENCH_MAX_OUTPUT_TOKENS", "4096")),
+        max_output_tokens=int(os.environ.get("BENCH_MAX_OUTPUT_TOKENS", "2048")),
         timeout_s=int(os.environ.get("BENCH_TIMEOUT_S", "300")),
         use_judge=not args.no_judge,
         concurrency=max(1, args.concurrency),
@@ -237,7 +267,9 @@ def stratified_pick(
 
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     """Pull a stratified set of real pages (spanning domains + lengths) from the index."""
-    conn = await psycopg.AsyncConnection.connect(cfg.postgres_dsn)
+    conn = await psycopg.AsyncConnection.connect(
+        cfg.postgres_dsn, row_factory=psycopg.rows.dict_row
+    )
     try:
         cur = await conn.execute(
             """
@@ -291,6 +323,10 @@ def load_sample(cfg: Config) -> list[dict[str, Any]]:
     pages = payload["pages"]
     if cfg.smoke:
         pages = pages[:2]
+    else:
+        # Cap at the configured sample size so a default run uses `sample_size`
+        # documents even if the stored sample is larger.
+        pages = pages[: cfg.sample_size]
     return pages
 
 
@@ -300,48 +336,63 @@ def _headers(api_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
 
+def _native_base(base_url: str) -> str:
+    """Ollama native-API root (``/api/...``) from a base URL that may be the
+    OpenAI-compatible one (``.../v1``)."""
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+    return base
+
+
 async def stream_chat(
     client: httpx.AsyncClient, cfg: Config, base_url: str, api_key: str,
     model: str, messages: list[dict[str, str]],
 ) -> dict[str, Any]:
-    """One streaming chat completion. Returns text + timing + token usage."""
+    """One streaming chat completion via Ollama's native API (``/api/chat``).
+
+    Sends ``think: false`` so thinking models (Qwen3) answer directly instead of
+    spending the whole token budget on reasoning. (The OpenAI-compatible shim
+    ignores ``think``; the native API honors it.) Returns text + timing + usage.
+    """
+    base = _native_base(base_url)
     payload = {
         "model": model,
         "messages": messages,
-        "temperature": cfg.temperature,
-        "max_tokens": cfg.max_output_tokens,
+        "think": False,
         "stream": True,
-        "stream_options": {"include_usage": True},
+        "options": {
+            "num_predict": cfg.max_output_tokens,
+            "temperature": cfg.temperature,
+        },
     }
     t0 = time.perf_counter()
     ttft_ms: float | None = None
     parts: list[str] = []
-    usage: dict[str, Any] = {}
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
     async with client.stream(
-        "POST", f"{base_url}/chat/completions", json=payload, headers=_headers(api_key)
+        "POST", f"{base}/api/chat", json=payload, headers=_headers(api_key)
     ) as resp:
         resp.raise_for_status()
         async for line in resp.aiter_lines():
-            if not line or not line.startswith("data:"):
+            if not line:
                 continue
-            data = line[5:].strip()
-            if data == "[DONE]":
-                break
             try:
-                chunk = json.loads(data)
+                chunk = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if chunk.get("usage"):
-                usage = chunk["usage"]
-            for choice in chunk.get("choices", []):
-                content = (choice.get("delta") or {}).get("content")
-                if content:
-                    if ttft_ms is None:
-                        ttft_ms = (time.perf_counter() - t0) * 1000
-                    parts.append(content)
+            msg = chunk.get("message") or {}
+            content = msg.get("content")
+            if content:
+                if ttft_ms is None:
+                    ttft_ms = (time.perf_counter() - t0) * 1000
+                parts.append(content)
+            if chunk.get("done"):
+                prompt_tokens = chunk.get("prompt_eval_count")
+                completion_tokens = chunk.get("eval_count")
     total_ms = (time.perf_counter() - t0) * 1000
     text = "".join(parts)
-    completion_tokens = usage.get("completion_tokens")
     if completion_tokens is None and text:
         completion_tokens = max(1, len(text) // 4)
     gen_ms = max(0.0, (total_ms - (ttft_ms or 0.0)))
@@ -350,7 +401,7 @@ async def stream_chat(
         "text": text,
         "ttft_ms": round(ttft_ms, 1) if ttft_ms is not None else None,
         "total_ms": round(total_ms, 1),
-        "prompt_tokens": usage.get("prompt_tokens"),
+        "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "tok_s": round(tok_s, 2),
     }
@@ -503,11 +554,52 @@ async def run_model(
     return list(await asyncio.gather(*(one(p) for p in pages)))
 
 
+async def ensure_models(client: httpx.AsyncClient, cfg: Config, tags: list[str]) -> None:
+    """Auto-download any missing Ollama models before running.
+
+    ``tags`` are the Ollama model names that will actually be used. Uses
+    Ollama's native API (derived from the OpenAI-compatible base URL), so the
+    benchmark is self-contained: it pulls whatever it needs on first run.
+    """
+    base = cfg.ollama_base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+
+    existing: set[str] = set()
+    try:
+        r = await client.get(f"{base}/api/tags", timeout=15.0)
+        r.raise_for_status()
+        existing = {m.get("name", "") for m in r.json().get("models", [])}
+    except Exception as e:
+        raise SystemExit(
+            f"could not reach Ollama at {base} to check models: {e}\n"
+            "Start it with: docker compose -f benchmarks/ollama-compose.yml up -d"
+        )
+
+    for tag in tags:
+        if tag in existing:
+            print(f"[models] {tag} already present", flush=True)
+            continue
+        print(f"[models] downloading {tag} … (one-time, can take a while)", flush=True)
+        t0 = time.perf_counter()
+        try:
+            r = await client.post(
+                f"{base}/api/pull",
+                json={"name": tag},
+                timeout=httpx.Timeout(3600.0, connect=15.0),
+            )
+            r.raise_for_status()
+        except Exception as e:
+            raise SystemExit(f"failed to pull {tag}: {e}")
+        print(f"[models] {tag} ready in {time.perf_counter() - t0:.0f}s", flush=True)
+
+
 async def run_all(cfg: Config) -> dict[str, Any]:
     pages = load_sample(cfg)
     models = cfg.models[:2] if cfg.smoke else cfg.models
     timeout = httpx.Timeout(cfg.timeout_s, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
+        await ensure_models(client, cfg, [tag for _, tag in models])
         all_results: dict[str, list[dict[str, Any]]] = {}
         for label, tag in models:
             print(f"[run] {label} ({tag}) over {len(pages)} pages …", flush=True)
@@ -667,10 +759,11 @@ def report_from_disk(cfg: Config) -> None:
 # --------------------------------------------------------------------- main
 
 def main() -> None:
+    _load_dotenv()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("command", choices=["sample", "run", "report", "all"])
     p.add_argument("--models", help="comma list label=ollama_tag (default: the 5 benchmark models)")
-    p.add_argument("--sample-size", type=int, help="number of pages (default 30)")
+    p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
     p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
     p.add_argument("--concurrency", type=int, default=1, help="parallel pages per model (default 1 = fair CPU timing)")
     p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")
