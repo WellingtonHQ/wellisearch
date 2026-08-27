@@ -1,4 +1,4 @@
-"""index: store_page(url, markdown) — hash → chunk → embed → upsert.
+"""index: store_page(url, markdown, title=None) — hash → chunk → embed → upsert.
 
 Transactional. The `unchanged` short-circuit (same content hash AND same
 embedding model) skips chunking/embedding entirely. A model change
@@ -38,10 +38,14 @@ async def store_page(url: str, markdown: str, title: str | None = None) -> tuple
     # unchanged? (hash + model must both match, else re-embed is required)
     existing = await db.page_get(url)
     if existing and existing.get("content_hash") == digest and existing.get("embedding_model") == s.EMBED_MODEL:
+        # Backfill the title too: pages crawled before titles were stored have
+        # title IS NULL, and recrawl/refresh must refresh crawl-time values
+        # even when the content hash matches. COALESCE keeps the stored title
+        # when no fresh one was crawled (title=None passes NULL through).
         await db.execute(
-            "UPDATE pages SET last_status = 'unchanged', last_crawled = now(), "
-            "crawl_count = crawl_count + 1 WHERE url = %s",
-            (url,),
+            "UPDATE pages SET title = COALESCE(%s, title), last_status = 'unchanged', "
+            "last_crawled = now(), crawl_count = crawl_count + 1 WHERE url = %s",
+            (title, url),
         )
         return "unchanged", 0
 

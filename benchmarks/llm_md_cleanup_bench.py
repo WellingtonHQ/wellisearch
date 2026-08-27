@@ -11,8 +11,8 @@ five local models (served by Ollama) on:
                faithfulness / noise-removal / preservation on a 1-5 rubric.
   performance  time-to-first-token, total latency, completion tok/s, tokens.
 
-The sample is a stratified set of real URLs pulled from the index (Postgres),
-snapshotted to JSON so the run is reproducible and re-runnable offline.
+The sample is a random set of real URLs (spread across domains) pulled from the
+index (Postgres), snapshotted to JSON so the run is reproducible and re-runnable offline.
 
 Models are self-contained: on ``run`` the bench checks Ollama for each model it
 will use and auto-downloads any that are missing (one-time). Just start the
@@ -28,7 +28,7 @@ Usage
   python benchmarks/llm_md_cleanup_bench.py run --smoke  # 2 pages x first 2 models, quick sanity check
 
 Each run writes to benchmarks/results/:
-  llm-cleanup.sample.json    the stratified input snapshot (reproducible)
+  llm-cleanup.sample.json    the random input snapshot (reproducible)
   llm-cleanup.results.json   full per-page results (metrics + judge + timing)
   llm-cleanup.report.md      the side-by-side Markdown report
 
@@ -216,10 +216,13 @@ def load_config(args: argparse.Namespace) -> Config:
     judge_api_key = os.environ.get("JUDGE_API_KEY") or ""
     use_judge = not args.no_judge
     # only `run`/`all` call the judge — `sample`/`report` must work without it
-    if use_judge and args.command in ("run", "all") and (not judge_base_url or not judge_api_key):
+    should_use_judge = use_judge and args.command in ("run", "all")
+    if should_use_judge and (not judge_base_url or not judge_api_key):
         missing = " and ".join(
-            name for name, val in (("JUDGE_BASE_URL (or --judge-url)", judge_base_url),
-                                   ("JUDGE_API_KEY", judge_api_key)) if not val
+            name for name, val in (
+                ("JUDGE_BASE_URL (or --judge-url)", judge_base_url),
+                ("JUDGE_API_KEY", judge_api_key),
+            ) if not val
         )
         raise SystemExit(
             f"the LLM judge is enabled but not configured: set {missing} "
@@ -252,30 +255,24 @@ PER_DOMAIN_CAP = 3
 
 # Cap on candidate rows pulled from Postgres for the sample (stratified_pick
 # then selects within it). Keeps the snapshot step light on a big index and
-# bounds the fit_markdown payload; the ordering spreads the cap across
-# domains and lengths so the pool stays representative.
+# bounds the fit_markdown payload; rows are drawn at random (ORDER BY
+# random()), so the pool spans domains in proportion to the index.
 SAMPLE_POOL_LIMIT = 200
 
 
 def stratified_pick(
     by_domain: dict[str, list[dict[str, Any]]], target: int
 ) -> list[dict[str, Any]]:
-    """Round-robin across domains; within a domain pick length-quantile pages.
+    """Round-robin across domains; within a domain take pages in arrival order.
 
-    Each domain is sorted by length; in round ``r`` a domain contributes its
-    ``r``-th length quantile (up to PER_DOMAIN_CAP). Result spans domains and
-    the short/medium/long length range, deterministically.
+    build_sample draws the pool with ORDER BY random(), so the per-domain
+    order is already random — this spreads the pick across domains with no
+    length bias (document length is effectively random).
     """
     domains = sorted(by_domain, key=lambda d: -len(by_domain[d]))
     # Keep domains diverse, but relax the cap when there are few domains so the
     # target is still reachable.
     cap = max(PER_DOMAIN_CAP, math.ceil(target / max(1, len(domains))))
-    order: dict[str, list[int]] = {}
-    for d, pages in by_domain.items():
-        n = len(pages)
-        k = min(cap, n)
-        order[d] = [n // 2] if k == 1 else [round(i * (n - 1) / (k - 1)) for i in range(k)]
-
     picked: list[dict[str, Any]] = []
     seen: set[str] = set()
     round_idx = 0
@@ -284,8 +281,8 @@ def stratified_pick(
         for d in domains:
             if len(picked) >= target:
                 break
-            if round_idx < len(order[d]):
-                row = by_domain[d][order[d][round_idx]]
+            if round_idx < min(cap, len(by_domain[d])):
+                row = by_domain[d][round_idx]
                 if row["url"] not in seen:
                     seen.add(row["url"])
                     picked.append(row)
@@ -297,23 +294,19 @@ def stratified_pick(
 
 
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
-    """Pull a stratified set of real pages (spanning domains + lengths) from the index."""
+    """Pull a random set of real pages (spread across domains) from the index."""
     conn = await psycopg.AsyncConnection.connect(
         cfg.postgres_dsn, row_factory=psycopg.rows.dict_row
     )
     try:
         cur = await conn.execute(
             """
-            SELECT url, title, domain, fit_markdown, n FROM (
-                SELECT url, title, domain, fit_markdown, length(fit_markdown) AS n,
-                       row_number() OVER (PARTITION BY domain
-                                         ORDER BY length(fit_markdown)) AS rn
-                FROM pages
-                WHERE fit_markdown IS NOT NULL
-                  AND disabled = false
-                  AND length(fit_markdown) BETWEEN 500 AND 20000
-            ) p
-            ORDER BY rn, domain
+            SELECT url, title, domain, fit_markdown, length(fit_markdown) AS n
+            FROM pages
+            WHERE fit_markdown IS NOT NULL
+              AND disabled = false
+              AND length(fit_markdown) BETWEEN 500 AND 20000
+            ORDER BY random()
             LIMIT %s
             """,
             (SAMPLE_POOL_LIMIT,),
@@ -328,8 +321,6 @@ async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     by_domain: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
         by_domain.setdefault(r["domain"] or "_", []).append(r)
-    for d in by_domain.values():
-        d.sort(key=lambda x: x["n"])
 
     target = min(2, cfg.sample_size) if cfg.smoke else cfg.sample_size
     picked = stratified_pick(by_domain, target)

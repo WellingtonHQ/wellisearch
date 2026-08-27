@@ -194,9 +194,9 @@ Five models run by default (served by Ollama):
 | `qwen3-1.7b` | `qwen3:1.7b` | 1.7B |
 | `qwen3-0.6b` | `qwen3:0.6b` | 0.6B |
 
-The sample is a stratified set of **5 real URLs** (default; override with
-`--sample-size`) pulled from the index (Postgres) — spread across domains and
-content-length quantiles — and snapshotted to JSON so the run is reproducible
+The sample is a random set of **5 real URLs** (default; override with
+`--sample-size`) pulled from the index (Postgres) — random pages spread
+across domains — and snapshotted to JSON so the run is reproducible
 and re-runnable offline.
 
 ### Metrics
@@ -328,8 +328,8 @@ python benchmarks/llm_md_cleanup_bench.py run --smoke
 
 #### Subcommands
 
-- **`sample`** — pulls a stratified set of real pages from the index (Postgres;
-  default 5) and snapshots their stored `fit_markdown` to
+- **`sample`** — pulls a random set of real pages from the index (Postgres;
+  default 5, spread across domains) and snapshots their stored `fit_markdown` to
   `results/llm-cleanup.sample.json`. That file is the shared, reproducible input:
   build it once on any machine with Postgres access and every machine scores the
   *same* docs. Needs Postgres; no models, no judge.
@@ -374,7 +374,7 @@ exits with a clear "set JUDGE_BASE_URL / JUDGE_API_KEY" error (or pass
 
 Each run writes to `benchmarks/results/`:
 
-- `llm-cleanup.sample.json` — the stratified input snapshot (reproducible).
+- `llm-cleanup.sample.json` — the random input snapshot (reproducible).
 - `llm-cleanup.results.json` — full per-page results (metrics + judge + timing).
 - `llm-cleanup.report.md` — the side-by-side Markdown report (median / p95 per
   metric, plus a per-page detail table). This is the file to read.
