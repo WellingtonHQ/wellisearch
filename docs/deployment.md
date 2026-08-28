@@ -24,7 +24,7 @@
 - **two external networks**:
   - `wellington_default` — the OWUI/agent stack network: reach `crawl4ai`
     and `searxng` by service name, and be reachable as
-    `wellisearch:8780` for the MCP SSE endpoint.
+    `wellisearch:8780` for the MCP endpoints.
   - `postgres-net` — the infra project network: reach the shared Postgres
     container by the `postgres` alias.
 
@@ -189,7 +189,7 @@ curl -H "Authorization: Bearer $KEY" http://localhost:8780/api/providers
   It gates `/api/*` and `/mcp/*`; the dashboard and `/health` stay open.
 - Keep provider API keys and the Postgres password only in `.env` (gitignored).
   `.env.example` holds placeholders.
-- The API-key comparison is constant-time; the MCP SSE endpoint enforces the
+- The API-key comparison is constant-time; the MCP endpoint enforces the
   same auth via the shared middleware.
 
 ## Testing

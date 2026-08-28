@@ -1,10 +1,17 @@
-"""MCP server (mcp 2.0.0 high-level MCPServer) — SSE at /mcp/sse (BLUEPRINT §7).
+"""MCP server (high-level MCPServer) — one transport, one tool surface (§7).
 
-Mount `mcp_asgi()` into the FastAPI app; the tool handlers live in tools.py
-and share the exact same pipeline code as the REST routes (one implementation,
-two surfaces).
+  * Streamable HTTP (stateless):   /mcp/http
+
+Mount `mcp_asgi()` into the FastAPI app and drive `mcp_http_lifespan()` from
+the app's lifespan (Starlette does not run a mounted sub-app's lifespan, so
+the streamable session manager's task group must be entered by the outer
+app). The tool handlers live in tools.py and share the exact same pipeline
+code as the REST routes (one implementation, three surfaces).
 """
 from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -35,40 +42,75 @@ re-search. If the header carries Degraded: true, results are local-only
 (all providers failed — see the Provider Errors line).
 """
 
+# Explicit transport security: the default auto-allowlist only covers loopback,
+# which 421-rejects in-network clients (openwebui via the ``wellisearch``
+# docker hostname, opencode via the Tailscale host). Used by the transport.
+TRANSPORT_SECURITY = TransportSecuritySettings(
+    enable_dns_rebinding_protection=True,
+    allowed_hosts=[
+        "127.0.0.1:*",
+        "localhost:*",
+        "[::1]:*",
+        "wellisearch:*",
+        # bare + :port forms — the SDK's ":*" wildcard requires a port suffix
+        "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
+        "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
+    ],
+    allowed_origins=[
+        "http://127.0.0.1:*",
+        "http://localhost:*",
+        "http://[::1]:*",
+        "http://wellisearch:*",
+        "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
+        "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
+    ],
+)
 
-def build_server() -> MCPServer:
+_SERVER: MCPServer | None = None
+_HTTP_APP: Starlette | None = None
+
+
+def _build() -> None:
+    """One MCPServer backing the transport (idempotent).
+
+    The streamable app is stateless: no server-side session map, so a
+    container restart kills nothing.
+    """
+    global _SERVER, _HTTP_APP
+    if _SERVER is not None:
+        return
     server = MCPServer("wellisearch", instructions=INSTRUCTIONS)
     register_tools(server)
-    return server
+    _HTTP_APP = server.streamable_http_app(
+        streamable_http_path="/http",
+        stateless_http=True,
+        json_response=False,
+        transport_security=TRANSPORT_SECURITY,
+    )
+    _SERVER = server
+
+
+_build()
 
 
 def mcp_asgi() -> Starlette:
-    """ASGI app exposing the MCP SSE endpoint.
+    """Stateless streamable HTTP ASGI app: /mcp/http.
 
-    Mount at "/mcp" → endpoints become /mcp/sse and /mcp/messages/ (§7).
-
-    Explicit transport security: the default auto-allowlist only covers
-    loopback, which 421-rejects in-network clients (e.g. openwebui connecting via
-    the ``wellisearch`` docker hostname).
+    Mount at "/mcp" (§7); the auth middleware's startswith("/mcp") prefix
+    covers the endpoint.
     """
-    return build_server().sse_app(
-        sse_path="/sse",
-        message_path="/messages/",
-        transport_security=TransportSecuritySettings(
-            enable_dns_rebinding_protection=True,
-            allowed_hosts=[
-                "127.0.0.1:*",
-                "localhost:*",
-                "[::1]:*",
-                "wellisearch:*",
-                "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
-            ],
-            allowed_origins=[
-                "http://127.0.0.1:*",
-                "http://localhost:*",
-                "http://[::1]:*",
-                "http://wellisearch:*",
-                "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
-            ],
-        ),
-    )
+    assert _HTTP_APP is not None
+    return _HTTP_APP
+
+
+@asynccontextmanager
+async def mcp_http_lifespan() -> AsyncIterator[None]:
+    """Hold the streamable-HTTP session manager's task group for app lifetime.
+
+    Starlette does not run lifespans of mounted sub-apps, and without an
+    entered task group the first POST to /mcp/http 500s with
+    "Task group is not initialized. Make sure to use run()".
+    """
+    assert _SERVER is not None
+    async with _SERVER.session_manager.run():
+        yield

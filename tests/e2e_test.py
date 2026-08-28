@@ -307,87 +307,78 @@ async def main() -> None:
               isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
               json.dumps(j.get("timing")))
 
-        # 11. MCP over SSE --------------------------------------------------------------------
-        await mcp_pass()
+        # 11. MCP over stateless streamable HTTP (opencode's transport) ----
+        await mcp_http_pass()
 
     print(f"\n===== E2E RESULT: {PASS} passed, {FAIL} failed =====")
     sys.exit(1 if FAIL else 0)
 
 
-async def mcp_pass() -> None:
+async def mcp_http_pass() -> None:
     from mcp import ClientSession
-    from mcp.client.sse import sse_client
+    from mcp.client.streamable_http import streamable_http_client
 
-    url = f"{BASE}/mcp/sse"
+    url = f"{BASE}/mcp/http"
     try:
-        async with sse_client(url, headers={"X-API-Key": KEY}) as (read, write):
-            async with ClientSession(read, write) as session:
-                init = await session.initialize()
-                check("mcp: initialize (server name)", "wellisearch" in (init.server_info.name if init.server_info else ""), str(init.server_info))
-                tools = await session.list_tools()
-                names = {t.name for t in tools.tools}
-                expect = {"fetch_page", "fetch_pages", "index_stats", "refresh_page", "seed_url", "search_web"}
-                check("mcp: exactly 6 tools", names == expect, str(sorted(names)))
+        # auth: keyless POST must 401 (middleware's startswith("/mcp") prefix)
+        async with httpx.AsyncClient(base_url=BASE, timeout=30) as open_c:
+            r = await open_c.post(
+                f"{BASE}/mcp/http",
+                json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+            check("mcp/http auth: missing key -> 401", r.status_code == 401, str(r.status_code))
 
-                res = await session.call_tool("index_stats", {})
-                j = json.loads(res.content[0].text if res.content else "{}")
-                check("mcp: index_stats shape", isinstance(j, dict) and "index" in j and "quota_this_month" in j, json.dumps(j)[:150])
+        # the SSE transport is gone: authenticated requests must 404
+        # (auth middleware passes, routing finds no route)
+        async with httpx.AsyncClient(base_url=BASE, headers={"X-API-Key": KEY}, timeout=30) as gone_c:
+            r = await gone_c.get("/mcp/sse", headers={"Accept": "text/event-stream"})
+            check("mcp/sse: removed -> 404", r.status_code == 404, str(r.status_code))
+            r = await gone_c.post("/mcp/messages/", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+            check("mcp/messages/: removed -> 404", r.status_code == 404, str(r.status_code))
 
-                res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3})
-                md = res.content[0].text if res.content else ""
-                check("mcp: search_web Markdown + header",
-                      "Source:" in md and "Title:" in md and "URL:" in md and "Snippet:" in md
-                      and len(re.findall(r"^URL: ", md, re.M)) >= 1,
-                      md[:120].replace("\n", " | "))
-                check("mcp: search_web Time line",
-                      re.search(r"^Time: \d+ ms \(index: \d+ ms", md, re.M) is not None,
-                      (re.search(r"^Time: .*", md, re.M) or [None, "MISSING"])[0])
+        # the SDK's streamable client takes its own httpx2 client (for headers)
+        import httpx2
 
-                # search_mode=provider over MCP: forces a provider answer
-                res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3, "search_mode": "provider", "format": "json"})
-                txt = res.content[0].text if res.content else ""
-                try:
-                    j = json.loads(txt)
-                    t = j.get("timing", {})
-                    check("mcp: search_web search_mode=provider -> non-local + provider_ms",
-                          isinstance(j, dict) and j.get("source") not in (None, "local", "error")
-                          and "index_ms" not in t and "provider_ms" in t,
-                          f"source={j.get('source') if isinstance(j, dict) else '-'} timing={json.dumps(t)}")
-                except Exception as e:
-                    check("mcp: search_web search_mode=provider -> non-local + provider_ms", False, f"not JSON: {type(e).__name__} {txt[:80]!r}")
+        async with httpx2.AsyncClient(headers={"X-API-Key": KEY}) as http:
+            async with streamable_http_client(url, http_client=http) as (read, write):
+                async with ClientSession(read, write) as session:
+                    init = await session.initialize()
+                    check("mcp/http: initialize (server name)",
+                          "wellisearch" in (init.server_info.name if init.server_info else ""),
+                          str(init.server_info))
+                    tools = await session.list_tools()
+                    names = {t.name for t in tools.tools}
+                    expect = {"fetch_page", "fetch_pages", "index_stats", "refresh_page", "seed_url", "search_web"}
+                    check("mcp/http: exactly 6 tools", names == expect, str(sorted(names)))
 
-                res = await session.call_tool(
-                    "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"})
-                md = res.content[0].text if res.content else ""
-                check("mcp: fetch_page Markdown + header",
-                      all(k in md for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
-                      and len(md) > 200,
-                      md[:120].replace("\n", " | "))
+                    res = await session.call_tool("index_stats", {})
+                    j = json.loads(res.content[0].text if res.content else "{}")
+                    check("mcp/http: index_stats shape",
+                          isinstance(j, dict) and "index" in j and "quota_this_month" in j,
+                          json.dumps(j)[:150])
 
-                # ---- format=json over MCP ---------------------------------------------
-                res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3, "format": "json"})
-                txt = res.content[0].text if res.content else ""
-                try:
-                    j = json.loads(txt)
-                    check("mcp: search_web format=json envelope",
-                          isinstance(j, dict) and all(k in j for k in ("source", "degraded", "count", "results"))
-                          and isinstance(j["results"], list),
-                          txt[:120].replace("\n", " | "))
-                except Exception as e:
-                    check("mcp: search_web format=json envelope", False, f"not JSON: {type(e).__name__} {txt[:80]!r}")
+                    res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3})
+                    md = res.content[0].text if res.content else ""
+                    check("mcp/http: search_web Markdown + header",
+                          "Source:" in md and "Title:" in md and "URL:" in md and "Snippet:" in md
+                          and len(re.findall(r"^URL: ", md, re.M)) >= 1,
+                          md[:120].replace("\n", " | "))
 
-                res = await session.call_tool("fetch_page", {
-                    "url": "https://python.langchain.com/docs/introduction/", "format": "json"})
-                txt = res.content[0].text if res.content else ""
-                try:
-                    j = json.loads(txt)
-                    check("mcp: fetch_page format=json envelope",
-                          isinstance(j, dict) and all(k in j for k in ("ok", "url", "title", "markdown", "chars", "truncated", "from_index")),
-                          txt[:120].replace("\n", " | "))
-                except Exception as e:
-                    check("mcp: fetch_page format=json envelope", False, f"not JSON: {type(e).__name__} {txt[:80]!r}")
+                    # stateless: a second request must work in the same
+                    # "session" (each POST gets a fresh transport server-side)
+                    res = await session.call_tool(
+                        "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"})
+                    md = res.content[0].text if res.content else ""
+                    check("mcp/http: fetch_page Markdown + header (2nd stateless request)",
+                          all(k in md for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
+                          and len(md) > 200,
+                          md[:120].replace("\n", " | "))
     except Exception as e:
-        check("mcp: SSE session", False, f"{type(e).__name__}: {e}")
+        check("mcp/http: stateless streamable session", False, f"{type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":

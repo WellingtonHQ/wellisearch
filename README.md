@@ -62,13 +62,17 @@ Then open the dashboard at **http://localhost:8780/**.
 
 ## Connect your LLM (MCP)
 
-Point any MCP client (Open WebUI, Claude Desktop, …) at the SSE endpoint:
+Point any MCP client (Open WebUI, Claude Desktop, opencode, …) at the
+endpoint:
 
 ```
-http://localhost:8780/mcp/sse
+http://localhost:8780/mcp/http
 ```
 
-That's it — your agent gets six tools:
+That's **Streamable HTTP** (stateless — a server restart can't strand a
+client).
+
+Either way, your agent gets six tools:
 
 | Tool | What it does |
 |---|---|
@@ -98,7 +102,7 @@ Snippet: ...
 
 The header tells the story: `Source: local` means it came from the library (free); `Source: tavily` (or `brave` / `searxng`) means a provider answered and the pages are being filed away for next time.
 
-**Example — Open WebUI:** add a new MCP server, transport **SSE**, URL `http://wellisearch:8780/mcp/sse` (or `http://127.0.0.1:8780/mcp/sse` from the host).
+**Examples:** opencode / Claude Desktop (Streamable HTTP) — `http://wellisearch:8780/mcp/http` (or `http://127.0.0.1:8780/mcp/http`). Open WebUI — use wellisearch's OpenAPI tool server: add wellisearch as an OpenAPI tool server with URL `http://wellisearch:8780/owui/openapi.json` (or `http://127.0.0.1:8780/owui/openapi.json` from the host), sending the same API key as the bearer token.
 
 ## The dashboard
 

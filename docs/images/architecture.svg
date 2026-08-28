@@ -9,7 +9,7 @@
   <!-- LLM client -->
   <rect x="330" y="24" width="300" height="64" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="1.5"/>
   <text x="480" y="49" text-anchor="middle" font-size="14" font-weight="600" fill="#1e1b4b">LLM client</text>
-  <text x="480" y="68" text-anchor="middle" font-size="12" fill="#4338ca">OWUI / opencode — MCP SSE + REST (API key)</text>
+  <text x="480" y="68" text-anchor="middle" font-size="12" fill="#4338ca">OWUI / opencode — MCP (Streamable HTTP) + REST (API key)</text>
 
   <!-- wellisearch container -->
   <rect x="230" y="140" width="500" height="240" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
@@ -20,7 +20,7 @@
   <text x="365" y="224" text-anchor="middle" font-size="11" fill="#475569">search · fetch · seed · pages · logs</text>
 
   <rect x="495" y="184" width="215" height="56" rx="8" fill="#ffffff" stroke="#93c5fd"/>
-  <text x="602" y="207" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e3a8a">MCP server  /mcp/sse</text>
+  <text x="602" y="207" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e3a8a">MCP server  /mcp/http</text>
   <text x="602" y="224" text-anchor="middle" font-size="11" fill="#475569">exactly 6 tools, same pipeline</text>
 
   <rect x="250" y="252" width="230" height="56" rx="8" fill="#ffffff" stroke="#93c5fd"/>
@@ -70,7 +70,7 @@
   <line x1="560" y1="380" x2="490" y2="458" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
 
   <!-- arrow labels -->
-  <text x="492" y="120" font-size="11" fill="#475569">SSE / REST + API key</text>
+  <text x="492" y="120" font-size="11" fill="#475569">MCP / REST + API key</text>
   <text x="742" y="252" font-size="11" fill="#475569">SQL · vectors</text>
   <text x="196" y="446" font-size="11" fill="#475569">crawl: POST /md (45 s timeout)</text>
   <text x="568" y="432" font-size="11" fill="#475569">only on local miss</text>

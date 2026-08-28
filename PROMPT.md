@@ -57,7 +57,7 @@ You are building **wellisearch** — a self-hosted search gateway + web-index se
 
 - [ ] [ ] 
 
-MCP server over SSE at `/mcp/sse` exposing exactly the six §7 tools.
+MCP server over stateless Streamable HTTP (`/mcp/http`) exposing exactly the six §7 tools.
 
 - [ ] [ ] 
 
