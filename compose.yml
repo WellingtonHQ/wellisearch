@@ -65,6 +65,13 @@ services:
       - LLM_TEMPERATURE=0.1
       # Qwen3.8 thinking control, injected by the c4ai_llm_thinking.py hook (baked into the image; low = faster f:llm; none = off)
       - LLM_REASONING_EFFORT=low
+    # text_mode: false (JavaScript ON) — the image's baked config.yml has
+    # text_mode: true, which adds --disable-javascript and makes Cloudflare
+    # JS challenges unpassable. Mounted read-only over /app/config.yml.
+    # Keep in sync with the fork's deploy/docker/config.yml (see the header
+    # in the file itself).
+    volumes:
+      - ./crawl4ai/config.yml:/app/config.yml:ro
     ports:
       - "11235:11235"
     healthcheck:
