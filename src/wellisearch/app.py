@@ -51,7 +51,7 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await _shutdown()
 
 
-app = FastAPI(title="wellisearch", version="1.0.0", lifespan=_lifespan)
+app = FastAPI(title="wellisearch", version="1.2.0", lifespan=_lifespan)
 
 _worker_task: asyncio.Task | None = None
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wellisearch"
-version = "0.1.0"
+version = "1.2.0"
 description = "Self-hosted search gateway + web-index service for the OWUI agent"
 readme = "README.md"
 requires-python = ">=3.12"
