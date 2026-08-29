@@ -79,13 +79,15 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 ### Search providers
 | Var | Default | Notes |
 |---|---|---|
-| `SEARCH_PROVIDERS` | `tavily,brave,exa` | ordered; first non-empty success serves |
+| `SEARCH_PROVIDERS` | `tavily,brave,exa,youcom` | ordered; first non-empty success serves |
 | `TAVILY_API_KEY` | *(empty)* | |
 | `TAVILY_QUOTA_MONTHLY` | `1000` | `0`/unset = unknown; still fails over on 429 |
 | `BRAVE_API_KEY` | *(empty)* | |
 | `BRAVE_QUOTA_MONTHLY` | `1000` | |
 | `EXA_API_KEY` | *(empty)* | |
 | `EXA_QUOTA_MONTHLY` | `1000` | |
+| `YOUCOM_API_KEY` | *(empty)* | |
+| `YOUCOM_QUOTA_MONTHLY` | `1000` | |
 | `PROVIDER_TIMEOUT_S` | `20` | per-provider HTTP timeout |
 
 ### Embeddings (load-bearing)

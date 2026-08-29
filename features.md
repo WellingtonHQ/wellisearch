@@ -77,9 +77,9 @@ The way it works is as follows.
 This will help rotate search engines to prevent burning one API limit, and then moving to burn the next one.
 
 ## Add new providers:
-1. Exa
+1. Exa — Done 2026-08-29
 2. ddgs (duck duck go custom crawler)
-3. you.com
+3. you.com — Done 2026-08-29
 
 ## Provider auto-ranking
 Rather than having the user manually select the tiers, the system itself

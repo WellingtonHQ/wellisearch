@@ -80,7 +80,7 @@
   <text x="732" y="99" font-size="11" fill="#b45309" font-weight="700">PK</text><text x="760" y="99" font-size="11.5" fill="#0f172a">id (BIGSERIAL)</text>
   <text x="760" y="119" font-size="11.5" fill="#334155">ts</text>
   <text x="760" y="139" font-size="11.5" fill="#334155">query</text>
-  <text x="760" y="159" font-size="11.5" fill="#334155">source (local|tavily|brave|exa|error)</text>
+  <text x="760" y="159" font-size="11.5" fill="#334155">source (local|tavily|brave|exa|youcom|error)</text>
   <text x="760" y="179" font-size="11.5" fill="#334155">local_hits</text>
   <text x="760" y="199" font-size="11.5" fill="#334155">results (jsonb)</text>
 
