@@ -92,7 +92,7 @@ jobs:
           PROMPT: |
             Before pushing any changes, fetch and rebase from origin just before pushing to avoid diverged history conflicts.
             Read this pull request comment and implement the suggestion in the codebase.
-            If there are multiple comments, handle only the one this job is attached to. Don't respond to all comments.
+            If there are multiple comments, try to handle only the one this job is attached to. But if there are previous comments that have been unaddressed, address them.
             Test and verify changes to make sure they compile and work as expected.
             If no changes are currently pending, do not post a new comment.
             If the comment is not a suggestion or is a question, respond to the thread and give your response or explanation. Do not make code changes unless told to do so.
