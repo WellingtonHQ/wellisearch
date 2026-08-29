@@ -23,3 +23,6 @@ jobs:
 
       - name: Run unit tests
         run: python tests/test_units.py
+
+      - name: Run provider adapter tests
+        run: python tests/test_providers.py
