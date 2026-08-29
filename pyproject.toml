@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wellisearch"
-version = "1.2.0"
+dynamic = ["version"]
 description = "Self-hosted search gateway + web-index service for the OWUI agent"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,6 +21,9 @@ dependencies = [
 
 [project.scripts]
 wellisearch = "wellisearch.app:main"
+
+[tool.hatch.version]
+path = "src/wellisearch/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wellisearch"]

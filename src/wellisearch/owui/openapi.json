@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "wellisearch",
-    "version": "1.2.0",
+    "version": "0.0.0",
     "description": "Web search backed by a local crawl index with live provider fallback, plus clean Markdown page fetching."
   },
   "paths": {

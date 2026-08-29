@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import crawler, queue
+from . import __version__, crawler, queue
 from .config import get_settings
 from .db import db
 from .fetch import _OMITTED, _valid_url, fetch_page, fetch_pages
@@ -51,7 +51,7 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await _shutdown()
 
 
-app = FastAPI(title="wellisearch", version="1.2.0", lifespan=_lifespan)
+app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
 
 _worker_task: asyncio.Task | None = None
 
@@ -531,7 +531,9 @@ _OWUI_SPEC_PATH = pathlib.Path(__file__).resolve().parent / "owui" / "openapi.js
 
 def _load_owui_spec() -> dict[str, Any]:
     with _OWUI_SPEC_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+        spec = json.load(f)
+    spec["info"]["version"] = __version__  # single source of truth (0.0.0 placeholder on disk)
+    return spec
 
 
 @app.get("/owui/openapi.json")

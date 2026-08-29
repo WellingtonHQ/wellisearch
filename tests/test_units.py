@@ -148,4 +148,19 @@ md = render_fetch_pages_markdown(out)
 assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")
 
+# --- version single-source-of-truth ----------------------------------------
+# installed package metadata (pyproject, via hatch) must equal the source
+# of truth (wellisearch.__version__). Skipped for source-tree dev runs where
+# the package is not installed.
+import importlib.metadata as _im
+import wellisearch as _ws
+
+try:
+    _meta_ver = _im.version("wellisearch")
+except _im.PackageNotFoundError:
+    print("SKIP version consistency (package not installed)")
+else:
+    assert _meta_ver == _ws.__version__, f"metadata {_meta_ver} != __version__ {_ws.__version__}"
+    print("OK version consistency:", _meta_ver)
+
 print("ALL UNIT TESTS PASSED")
