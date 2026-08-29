@@ -4,7 +4,7 @@ Session summary comparing five small local LLMs on the fit-markdown cleanup task
 rewriting a page's stored `fit_markdown` into clean, faithful, noise-free markdown —
 with a recommendation.
 
-- **Hardware:** desktop (Intel i13700K) and 2019 MacBook Pro (i9-9980HK), both macOS, CPU-only (Ollama).
+- **Hardware:** windows desktop (Intel i13700K) and 2019 MacBook Pro (i9-9980HK), both macOS, CPU-only (Ollama).
 - **Harness:** `benchmarks/llm_md_cleanup_bench.py` (see `README.md`), run in Docker.
 - **Sample:** 20 pages, stratified across length, `fit_markdown` 500–20,000 chars.
 - **Judge:** Qwen3.8-27B (OpenAI-compatible, via Tailscale), scored 1–5 on faithfulness, noise removal, and preservation.

@@ -89,6 +89,17 @@ It will periodically reorder the providers to put the highest quality one at the
 ## Remove searxng
 It is no longer needed or useful.
 
+## Ability to specify specific provider in search
+Currently we have the search_mode param that lets you pick between local, provider, and auto modes. 
+When you pick provider, you currently don't have any option to specify which specific provider you want to use.
+This would give the LLM flexibility in choosing its own provider depending on the context.
+And it opens the door for....
+
+## Domain specific searching
+Imagine if wellisearch allowed the caller to search Amazon's inventory, or Home Depot's inventory.
+How would it do that? Simple. Crawl the site's "search?query=x" pages as a normal user does.
+Wellisearch would then return markdown as normal and it would look like any other web result.
+
 ---
 
 # Dashboard

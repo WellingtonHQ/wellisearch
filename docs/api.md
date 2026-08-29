@@ -208,9 +208,12 @@ never shadows `/api/*` or `/mcp/*`.
 
 ## MCP tools (6)
 
-Transport: **SSE**, mounted at `/mcp` → `GET /mcp/sse` (event stream) +
-`POST /mcp/messages/` (JSON-RPC). Connect an MCP client to
-`http://localhost:8780/mcp/sse`.
+One transport, one tool surface (auth-gated, mounted under `/mcp`):
+
+- **Streamable HTTP (stateless)** — `POST /mcp/http` (JSON-RPC; responses
+  ride an SSE stream). One request per call, no server-side session map, so
+  a server restart never strands a client. Connect an MCP client to
+  `http://localhost:8780/mcp/http`.
 
 All six tools call the same code as their REST counterparts.
 

@@ -1,4 +1,5 @@
-"""FastAPI app: REST routes + MCP (SSE) + static dashboard + worker (§2/§7/§9).
+"""FastAPI app: REST routes + MCP (stateless streamable HTTP) +
+static dashboard + worker (§2/§7/§9).
 
 The endpoint surface, request/response contracts, and auth rules live in
 docs/api.md — that file is the single source of truth (kept in sync with the
@@ -12,19 +13,20 @@ import hmac
 import json
 import logging
 import pathlib
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import crawler, queue
+from . import __version__, crawler, queue
 from .config import get_settings
 from .db import db
 from .fetch import _OMITTED, _valid_url, fetch_page, fetch_pages
 from .fetch import render_fetch_page_markdown, render_fetch_pages_markdown
-from .mcp import mcp_asgi
+from .mcp import mcp_asgi, mcp_http_lifespan
 from .providers import get_gateway
 from .search_web import render_search_markdown
 from .search_web import search_web as search_web_pipeline
@@ -38,7 +40,18 @@ log = logging.getLogger("wellisearch.app")
 # static/ ships inside the package (works in dev layout and installed wheel)
 STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title="wellisearch", version="1.0.0")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """App lifespan: the streamable-HTTP session manager's task group must be
+    live before the first request (Starlette does not run lifespans of
+    mounted sub-apps), then the worker + DB for the app's lifetime."""
+    async with mcp_http_lifespan():
+        await _startup()
+        yield
+        await _shutdown()
+
+
+app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
 
 _worker_task: asyncio.Task | None = None
 
@@ -53,7 +66,6 @@ async def _ev(message: str, info: dict | None = None) -> None:
         log.warning("event logging failed: %s", e)
 
 
-@app.on_event("startup")
 async def _startup() -> None:
     global _worker_task
     logging.basicConfig(
@@ -70,7 +82,6 @@ async def _startup() -> None:
     )
 
 
-@app.on_event("shutdown")
 async def _shutdown() -> None:
     global _worker_task
     if _worker_task is not None:
@@ -520,7 +531,9 @@ _OWUI_SPEC_PATH = pathlib.Path(__file__).resolve().parent / "owui" / "openapi.js
 
 def _load_owui_spec() -> dict[str, Any]:
     with _OWUI_SPEC_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+        spec = json.load(f)
+    spec["info"]["version"] = __version__  # single source of truth (0.0.0 placeholder on disk)
+    return spec
 
 
 @app.get("/owui/openapi.json")
@@ -529,7 +542,8 @@ async def owui_openapi() -> Any:
 
 
 # ------------------------------------------------------------------------ MCP
-# mounted before the catch-all static mount; endpoints: /mcp/sse + /mcp/messages/
+# mounted before the catch-all static mount; endpoint: /mcp/http
+# (stateless streamable HTTP)
 
 app.mount("/mcp", mcp_asgi(), name="mcp")
 

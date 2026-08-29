@@ -26,8 +26,9 @@ repo** — wellisearch self-creates its app database at startup
 
 One uvicorn worker process runs, in a single asyncio event loop:
 
-1. **FastAPI app** — REST routes, the mounted MCP ASGI app (`/mcp/sse`),
-   and the static dashboard (mounted last, catch-all).
+1. **FastAPI app** — REST routes, the mounted MCP ASGI app (`/mcp/http`
+   stateless Streamable HTTP), and the static dashboard (mounted last,
+   catch-all).
 2. **The background worker** — an `asyncio.Task` started in the startup
    hook (`app.py:_startup`): sleeps `WORKER_INTERVAL_MIN` (30 min) between
    ticks, and also reacts to **debounced kicks** whenever the crawl queue
@@ -48,7 +49,7 @@ psycopg pool released. At boot, any `crawl_queue` rows stuck in
 | Component | File(s) | Responsibility |
 |---|---|---|
 | REST API | `app.py` | routes; thin wrappers over the shared pipeline |
-| MCP server | `mcp.py`, `tools.py` | six tools over the same handlers; SSE transport |
+| MCP server | `mcp.py`, `tools.py` | six tools over the same handlers; stateless Streamable HTTP transport |
 | Search pipeline | `search_web.py` | local-first search, threshold, gateway, logging, enqueue |
 | Provider gateway | `providers/__init__.py` + adapters | ordered failover, availability gates, quota ledger |
 | Ranking core | `schema.sql` → `fn_search_local` | hybrid FTS/trigram/vector RRF in Postgres |
@@ -65,7 +66,7 @@ psycopg pool released. At boot, any `crawl_queue` rows stuck in
 
 ```
 LLM client
-   │  MCP SSE (/mcp/sse)          REST (GET /api/search)
+    │  MCP (/mcp/http) REST (GET /api/search)
    ▼
 tools.py::search_web ──────────── app.py::api_search
    └──────────────┬──────────────────┘
