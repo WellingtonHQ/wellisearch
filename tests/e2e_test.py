@@ -10,8 +10,12 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
+
+if TYPE_CHECKING:
+    from mcp import ClientSession
 
 BASE = "http://127.0.0.1:8780"
 
@@ -315,70 +319,89 @@ async def main() -> None:
 
 
 async def mcp_http_pass() -> None:
+    """Section 11: MCP over stateless Streamable HTTP (auth, 404s, session)."""
+    try:
+        await _mcp_http_auth_checks()
+        await _mcp_http_session_checks()
+    except Exception as e:
+        check("mcp/http: stateless streamable session", False, f"{type(e).__name__}: {e}")
+
+
+async def _mcp_http_auth_checks() -> None:
+    """Keyless requests must 401; the removed SSE endpoints must 404."""
+    # auth: keyless POST must 401 (middleware's startswith("/mcp") prefix)
+    async with httpx.AsyncClient(base_url=BASE, timeout=30) as open_c:
+        r = await open_c.post(
+            f"{BASE}/mcp/http",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            },
+        )
+        check("mcp/http auth: missing key -> 401", r.status_code == 401, str(r.status_code))
+
+    # the SSE transport is gone: authenticated requests must 404
+    # (auth middleware passes, routing finds no route)
+    async with httpx.AsyncClient(base_url=BASE, headers={"X-API-Key": KEY}, timeout=30) as gone_c:
+        r = await gone_c.get("/mcp/sse", headers={"Accept": "text/event-stream"})
+        check("mcp/sse: removed -> 404", r.status_code == 404, str(r.status_code))
+        r = await gone_c.post("/mcp/messages/", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+        check("mcp/messages/: removed -> 404", r.status_code == 404, str(r.status_code))
+
+
+async def _mcp_http_session_checks() -> None:
+    """Open one Streamable-HTTP session; drive the handshake + tool checks."""
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
-    url = f"{BASE}/mcp/http"
-    try:
-        # auth: keyless POST must 401 (middleware's startswith("/mcp") prefix)
-        async with httpx.AsyncClient(base_url=BASE, timeout=30) as open_c:
-            r = await open_c.post(
-                f"{BASE}/mcp/http",
-                json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream",
-                },
-            )
-            check("mcp/http auth: missing key -> 401", r.status_code == 401, str(r.status_code))
+    # the SDK's streamable client takes its own httpx2 client (for headers)
+    import httpx2
 
-        # the SSE transport is gone: authenticated requests must 404
-        # (auth middleware passes, routing finds no route)
-        async with httpx.AsyncClient(base_url=BASE, headers={"X-API-Key": KEY}, timeout=30) as gone_c:
-            r = await gone_c.get("/mcp/sse", headers={"Accept": "text/event-stream"})
-            check("mcp/sse: removed -> 404", r.status_code == 404, str(r.status_code))
-            r = await gone_c.post("/mcp/messages/", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
-            check("mcp/messages/: removed -> 404", r.status_code == 404, str(r.status_code))
+    async with httpx2.AsyncClient(headers={"X-API-Key": KEY}) as http:
+        async with streamable_http_client(f"{BASE}/mcp/http", http_client=http) as (read, write):
+            async with ClientSession(read, write) as session:
+                await _mcp_http_handshake_checks(session)
+                await _mcp_http_tool_call_checks(session)
 
-        # the SDK's streamable client takes its own httpx2 client (for headers)
-        import httpx2
 
-        async with httpx2.AsyncClient(headers={"X-API-Key": KEY}) as http:
-            async with streamable_http_client(url, http_client=http) as (read, write):
-                async with ClientSession(read, write) as session:
-                    init = await session.initialize()
-                    check("mcp/http: initialize (server name)",
-                          "wellisearch" in (init.server_info.name if init.server_info else ""),
-                          str(init.server_info))
-                    tools = await session.list_tools()
-                    names = {t.name for t in tools.tools}
-                    expect = {"fetch_page", "fetch_pages", "index_stats", "refresh_page", "seed_url", "search_web"}
-                    check("mcp/http: exactly 6 tools", names == expect, str(sorted(names)))
+async def _mcp_http_handshake_checks(session: ClientSession) -> None:
+    """initialize + tools/list: the session contract."""
+    init = await session.initialize()
+    check("mcp/http: initialize (server name)",
+          "wellisearch" in (init.server_info.name if init.server_info else ""),
+          str(init.server_info))
 
-                    res = await session.call_tool("index_stats", {})
-                    j = json.loads(res.content[0].text if res.content else "{}")
-                    check("mcp/http: index_stats shape",
-                          isinstance(j, dict) and "index" in j and "quota_this_month" in j,
-                          json.dumps(j)[:150])
+    tools = await session.list_tools()
+    names = {t.name for t in tools.tools}
+    expect = {"fetch_page", "fetch_pages", "index_stats", "refresh_page", "seed_url", "search_web"}
+    check("mcp/http: exactly 6 tools", names == expect, str(sorted(names)))
 
-                    res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3})
-                    md = res.content[0].text if res.content else ""
-                    check("mcp/http: search_web Markdown + header",
-                          "Source:" in md and "Title:" in md and "URL:" in md and "Snippet:" in md
-                          and len(re.findall(r"^URL: ", md, re.M)) >= 1,
-                          md[:120].replace("\n", " | "))
 
-                    # stateless: a second request must work in the same
-                    # "session" (each POST gets a fresh transport server-side)
-                    res = await session.call_tool(
-                        "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"})
-                    md = res.content[0].text if res.content else ""
-                    check("mcp/http: fetch_page Markdown + header (2nd stateless request)",
-                          all(k in md for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
-                          and len(md) > 200,
-                          md[:120].replace("\n", " | "))
-    except Exception as e:
-        check("mcp/http: stateless streamable session", False, f"{type(e).__name__}: {e}")
+async def _mcp_http_tool_call_checks(session: ClientSession) -> None:
+    """index_stats, search_web, then a 2nd request to prove statelessness."""
+    res = await session.call_tool("index_stats", {})
+    j = json.loads(res.content[0].text if res.content else "{}")
+    check("mcp/http: index_stats shape",
+          isinstance(j, dict) and "index" in j and "quota_this_month" in j,
+          json.dumps(j)[:150])
+
+    res = await session.call_tool("search_web", {"query": "fastapi", "num_results": 3})
+    md = res.content[0].text if res.content else ""
+    check("mcp/http: search_web Markdown + header",
+          "Source:" in md and "Title:" in md and "URL:" in md and "Snippet:" in md
+          and len(re.findall(r"^URL: ", md, re.M)) >= 1,
+          md[:120].replace("\n", " | "))
+
+    # stateless: a second request must work in the same
+    # "session" (each POST gets a fresh transport server-side)
+    res = await session.call_tool(
+        "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"})
+    md = res.content[0].text if res.content else ""
+    check("mcp/http: fetch_page Markdown + header (2nd stateless request)",
+          all(k in md for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
+          and len(md) > 200,
+          md[:120].replace("\n", " | "))
 
 
 if __name__ == "__main__":
