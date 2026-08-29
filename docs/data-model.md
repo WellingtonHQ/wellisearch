@@ -105,7 +105,7 @@ One row per search request (all sources). Powers the local-hit-rate metric.
 | `id` | `bigserial` **PK** | |
 | `ts` | `timestamptz` | indexed `DESC` |
 | `query` | `text` | |
-| `source` | `text` | `local` \| `tavily` \| `brave` |
+| `source` | `text` | `local` \| `tavily` \| `brave` \| `exa` |
 | `local_hits` | `int` | good-local count (or all-local in degraded mode) |
 | `results` | `jsonb` | full result set |
 
@@ -145,14 +145,14 @@ Monthly usage ledger, one row per provider per calendar month.
 
 | Column | Type | Notes |
 |---|---|---|
-| `provider` | `text` **PK** | `tavily` \| `brave` |
+| `provider` | `text` **PK** | `tavily` \| `brave` \| `exa` |
 | `month` | `text` **PK** | `YYYY-MM` (UTC) |
 | `used` | `int` | incremented by `quota_bump` on every served request |
 | `quota_limit` | `int` | `NULL` = unknown; gateway still fails over on HTTP 429 |
 
 `quota_used_limit(provider)` returns `(used, limit)` where `limit` is the
 runtime `provider_state.limit_override` if set, else the env default
-(`TAVILY_QUOTA_MONTHLY` / `BRAVE_QUOTA_MONTHLY`).
+(`TAVILY_QUOTA_MONTHLY` / `BRAVE_QUOTA_MONTHLY` / `EXA_QUOTA_MONTHLY`).
 
 ## provider_state
 

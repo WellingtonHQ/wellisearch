@@ -126,7 +126,7 @@ def register_tools(server: MCPServer) -> None:
         description=(
             "Search the web (local index first, provider gateway on a miss). "
             "Returns a Markdown document: a header with Source "
-            "(local|tavily|brave|error), Degraded (true|false), and a "
+            "(local|tavily|brave|exa|error), Degraded (true|false), and a "
             "Time line (total ms, split into index: ms and — when a provider "
             "was used — provider: ms), then result blocks of Title/URL/Snippet "
             "separated by --- lines. Local hits include a Last Crawled line per "

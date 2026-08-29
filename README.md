@@ -8,7 +8,7 @@
 
 wellisearch gives your AI agent a **self-hosted way to search the web and read web pages** — and it keeps a growing library of every page it has seen, so the second time you ask about the same topic, the answer comes from your own shelf: **instant, and it costs zero API credits**.
 
-Think of it as a personal, always-learning search box for your LLM. Ask a question, it answers from its own library if it can; otherwise it goes out to the search providers (Tavily, Brave) — and quietly files the results away so next time it's free.
+Think of it as a personal, always-learning search box for your LLM. Ask a question, it answers from its own library if it can; otherwise it goes out to the search providers (Tavily, Brave, EXA) — and quietly files the results away so next time it's free.
 
 ![wellisearch dashboard — live index, hit-rate, provider quotas, and recent activity](docs/images/dashboard.png)
 
@@ -24,7 +24,7 @@ Think of it as a personal, always-learning search box for your LLM. Ask a questi
 
 1. **You ask a question.** Your LLM calls `search_web`.
 2. **Local first.** If the answer is already in the library, it's served instantly — free.
-3. **Otherwise, out to the providers.** Tavily → Brave, in order, until one answers.
+3. **Otherwise, out to the providers.** Tavily → Brave → EXA, in order, until one answers.
 4. **It files the results away.** In the background, the pages it just found are saved into the library, so the next similar question is free.
 5. **Read the pages.** `fetch_page` / `fetch_pages` hand the LLM the page content as clean Markdown.
 
@@ -100,7 +100,7 @@ URL: https://www.postgresql.org/docs/current/
 Snippet: ...
 ```
 
-The header tells the story: `Source: local` means it came from the library (free); `Source: tavily` (or `brave`) means a provider answered and the pages are being filed away for next time.
+The header tells the story: `Source: local` means it came from the library (free); `Source: tavily` (or `brave` / `exa`) means a provider answered and the pages are being filed away for next time.
 
 **Examples:** opencode / Claude Desktop (Streamable HTTP) — `http://wellisearch:8780/mcp/http` (or `http://127.0.0.1:8780/mcp/http`). Open WebUI — use wellisearch's OpenAPI tool server: add wellisearch as an OpenAPI tool server with URL `http://wellisearch:8780/owui/openapi.json` (or `http://127.0.0.1:8780/owui/openapi.json` from the host), sending the same API key as the bearer token.
 
@@ -125,6 +125,7 @@ wellisearch works with no keys at all — without provider keys it serves from i
 |---|---|---|---|
 | **Tavily** | `TAVILY_API_KEY` | ~1,000 credits/mo, no card | primary |
 | **Brave** | `BRAVE_API_KEY` | ~1,000 queries/mo | secondary |
+| **EXA** | `EXA_API_KEY` | ~1,000 credits/mo, no card | third (fallback) |
 
 \* Free tiers change over time — check with the provider. The exact numbers barely matter: wellisearch keeps a monthly quota ledger per provider, skips exhausted ones *before* making any API call, and fails over automatically.
 
@@ -166,7 +167,7 @@ All knobs are environment variables in `.env` (annotated in [`.env.example`](.en
 
 ### Troubleshooting
 
-- **`Source: brave` when Tavily should serve** — check `GET /api/providers` (or the dashboard) for `last_error` per provider; the gateway always fails over and captures the error chain.
+- **`Source: exa` when Tavily/Brave should serve** — check `GET /api/providers` (or the dashboard) for `last_error` per provider; the gateway always fails over and captures the error chain.
 - **Search works but the index stays empty** — the worker may not be draining; check the queue depth in the dashboard, run `worker --once` manually, and read the logs.
 - **Crawl4AI 401** — the auth header is `Authorization: Bearer <CRAWL4AI_API_KEY>`; make sure it matches what the bundled crawler expects.
 - **Slow first search** — the embedding model loads on first use (pre-downloaded into the Docker image at build time).
@@ -180,7 +181,7 @@ src/wellisearch/
   search_web.py     the search pipeline (shared by REST + MCP)
   fetch.py          fetch_page / fetch_pages (stored-first, budgeted)
   tools.py          the six MCP tools
-  providers/        gateway: tavily, brave adapters + failover
+  providers/        gateway: tavily, brave, exa adapters + failover
   index.py          store_page: chunk → embed → upsert
   crawler.py        Crawl4AI client (the single crawling path)
   queue.py          crawl queue: enqueue/dedupe + worker kick

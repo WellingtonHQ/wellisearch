@@ -88,7 +88,7 @@ It will periodically reorder the providers to put the highest quality one at the
 
 ## Remove searxng
 It is no longer needed or useful.
-— Done 2026-08-29 (SearXNG removed).
+— Done 2026-08-29 (SearXNG removed; EXA added as third provider).
 
 ## Ability to specify specific provider in search
 Currently we have the search_mode param that lets you pick between local, provider, and auto modes. 

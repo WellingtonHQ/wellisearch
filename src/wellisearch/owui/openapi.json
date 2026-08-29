@@ -10,7 +10,7 @@
       "get": {
         "operationId": "search_web",
         "summary": "Search the web",
-        "description": "Searches the wellisearch local index first (fast, cached), then falls back to the live provider gateway (Tavily, Brave) in order. By default returns a Markdown document (text/markdown): a header with Source (local|tavily|brave|error) and Degraded (true|false), then result blocks of Title/URL/Snippet separated by --- lines. Local hits carry a Last Crawled line per result. After a non-local hit, result URLs are queued for background indexing. Set format=json (or send Accept: application/json) for the structured JSON envelope instead — the format param wins over the Accept header.",
+        "description": "Searches the wellisearch local index first (fast, cached), then falls back to the live provider gateway (Tavily, Brave, EXA) in order. By default returns a Markdown document (text/markdown): a header with Source (local|tavily|brave|exa|error) and Degraded (true|false), then result blocks of Title/URL/Snippet separated by --- lines. Local hits carry a Last Crawled line per result. After a non-local hit, result URLs are queued for background indexing. Set format=json (or send Accept: application/json) for the structured JSON envelope instead — the format param wins over the Accept header.",
         "parameters": [
           {
             "name": "query",

@@ -15,7 +15,7 @@ talking to **three external services**:
 |---|---|---|
 | shared Postgres 18 | index, logs, queue, quota ledger, ranking function | `POSTGRES_*` (defaults host `postgres`, db `wellisearch`, admin db `postgres`) |
 | Crawl4AI server | the only crawling path (`POST /md` → fit markdown) | `CRAWL4AI_URL` (default `http://crawl4ai:11235`), `CRAWL4AI_API_KEY` |
-| search providers | fallback web search, ordered failover | `SEARCH_PROVIDERS`, `TAVILY_API_KEY`, `BRAVE_API_KEY` |
+| search providers | fallback web search, ordered failover | `SEARCH_PROVIDERS`, `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY` |
 
 All three are reachable via the shared Docker network (hostnames `postgres`,
 `crawl4ai`). Postgres is **shared infrastructure outside this
@@ -76,7 +76,7 @@ tools.py::search_web ──────────── app.py::api_search
      ┌────────────┴─────────────┐
      ▼                          ▼
  fn_search_local (PG)      gateway (providers/)
-  hybrid ranking            tavily → brave
+  hybrid ranking            tavily → brave → exa
      │                          │
      └────────────┬─────────────┘
                   ▼
@@ -103,10 +103,10 @@ Notes:
 ## Deployment topology (typical stack)
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│ wellisearch  │────▶│ shared PG 18 │     │ Crawl4AI     │
-│ (this repo)  │     │ (infra)      │     │ (infra)      │
-└──────────────┘     └──────────────┘     └──────────────┘
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│ wellisearch  │────▶│ shared PG 18 │     │ Crawl4AI     │     │ EXA          │
+│ (this repo)  │     │ (infra)      │     │ (infra)      │     │ (api.exa.ai) │
+└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
       │  (optional: Tavily/Brave APIs — outbound HTTPS)
 ```
 
