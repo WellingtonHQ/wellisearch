@@ -53,7 +53,7 @@ async def _drain_queue(deadline: float) -> dict: ...
 
 Sort lists of equal elements alphabetically — imports, enum members, list
 literals, provider lists, and comment enumerations — unless business logic
-dictates a specific order (e.g. `SEARCH_PROVIDERS = "tavily,brave,searxng"` is
+dictates a specific order (e.g. `SEARCH_PROVIDERS = "tavily,brave"` is
 priority order, not alphabetical).
 
 **Do:**

@@ -2,8 +2,8 @@
 
 wellisearch is a **self-hosted web-search gateway for LLMs**: a single FastAPI
 container that keeps a local, embeddable index of web pages and serves search
-results from it first, falling back to paid search providers (Tavily → Brave →
-SearXNG) only on a local miss. It exposes the same pipeline as a **REST API**
+results from it first, falling back to paid search providers (Tavily → Brave)
+only on a local miss. It exposes the same pipeline as a **REST API**
 and an **MCP server** (Streamable HTTP), with a built-in static dashboard.
 
 Design goals (see `BLUEPRINT.md` for the full plan):
@@ -51,7 +51,7 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
    `0.75`) of the query's content words, the local rows are served
    immediately — **zero provider credits**.
 3. Otherwise the **provider gateway** (`providers/`) tries
-   `SEARCH_PROVIDERS` in order (default `tavily,brave,searxng`), gated by
+   `SEARCH_PROVIDERS` in order (default `tavily,brave`), gated by
    runtime toggles, configuration, and a monthly quota ledger. First
    non-empty result serves; the top result URLs are **enqueued for
    background indexing** so the next identical query is free.
@@ -75,7 +75,7 @@ src/wellisearch/
   fetch.py          fetch_page / fetch_pages (stored-first, budgeted)
   tools.py          the six MCP tools
   mcp.py            MCP server setup (Streamable HTTP)
-  providers/        gateway: tavily, brave, searxng adapters + failover
+  providers/        gateway: tavily, brave adapters + failover
   index.py          store_page: hash → chunk → embed → upsert
   chunk.py          markdown chunker (≤ MAX_CHUNK_TOKENS)
   embed.py          fastembed singleton (EMBED_MODEL / EMBED_DIMS)

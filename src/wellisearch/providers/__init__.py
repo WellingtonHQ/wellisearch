@@ -1,6 +1,6 @@
 """Provider gateway: ordered failover + monthly quota ledger + normalization.
 
-Order comes from SEARCH_PROVIDERS (default tavily → brave → searxng).
+Order comes from SEARCH_PROVIDERS (default tavily → brave).
 First provider that (a) is enabled, (b) is configured, (c) is not quota-
 exhausted, and (d) returns a non-empty result set — serves. Every failure
 is captured per provider (last_error in provider_state, visible in the
@@ -18,7 +18,6 @@ from ..config import get_settings
 from ..db import db
 from .base import Provider, ProviderError, Result
 from .brave import Brave
-from .searxng import SearxNG
 from .tavily import Tavily
 
 log = logging.getLogger("wellisearch.providers")
@@ -26,7 +25,6 @@ log = logging.getLogger("wellisearch.providers")
 REGISTRY: dict[str, type[Provider]] = {
     "tavily": Tavily,
     "brave": Brave,
-    "searxng": SearxNG,
 }
 
 

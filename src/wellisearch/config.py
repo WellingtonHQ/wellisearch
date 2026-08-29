@@ -31,12 +31,11 @@ class Settings(BaseSettings):
     CRAWL4AI_API_KEY: str = "change-me"
 
     # --- search providers (ordered priority; first success serves) ---
-    SEARCH_PROVIDERS: str = "tavily,brave,searxng"
+    SEARCH_PROVIDERS: str = "tavily,brave"
     TAVILY_API_KEY: str = ""
     TAVILY_QUOTA_MONTHLY: int = 1000
     BRAVE_API_KEY: str = ""
     BRAVE_QUOTA_MONTHLY: int = 1000
-    SEARXNG_URL: str = "http://searxng:8080"
     PROVIDER_TIMEOUT_S: int = 20
 
     # --- embeddings (single source of truth; load-bearing) ---
@@ -95,7 +94,6 @@ class Settings(BaseSettings):
         raw = {
             "tavily": self.TAVILY_QUOTA_MONTHLY,
             "brave": self.BRAVE_QUOTA_MONTHLY,
-            "searxng": 0,
         }.get(provider)
         if raw is None or raw <= 0:
             return None

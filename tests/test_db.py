@@ -5,7 +5,6 @@ import os
 # host-local endpoints (container aliases don't resolve on the host)
 os.environ.setdefault("POSTGRES_HOST", "127.0.0.1")
 os.environ.setdefault("CRAWL4AI_URL", "http://127.0.0.1:11235")
-os.environ.setdefault("SEARXNG_URL", "http://127.0.0.1:8081")
 
 from wellisearch.db import db  # noqa: E402
 

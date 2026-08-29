@@ -23,7 +23,7 @@
 - a `healthcheck` (Python `urllib` probe of `/health`, 60 s start period).
 - **two external networks**:
   - `wellington_default` — the OWUI/agent stack network: reach `crawl4ai`
-    and `searxng` by service name, and be reachable as
+    by service name, and be reachable as
     `wellisearch:8780` for the MCP endpoints.
   - `postgres-net` — the infra project network: reach the shared Postgres
     container by the `postgres` alias.
@@ -79,12 +79,11 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 ### Search providers
 | Var | Default | Notes |
 |---|---|---|
-| `SEARCH_PROVIDERS` | `tavily,brave,searxng` | ordered; first non-empty success serves |
+| `SEARCH_PROVIDERS` | `tavily,brave` | ordered; first non-empty success serves |
 | `TAVILY_API_KEY` | *(empty)* | |
 | `TAVILY_QUOTA_MONTHLY` | `1000` | `0`/unset = unknown; still fails over on 429 |
 | `BRAVE_API_KEY` | *(empty)* | |
 | `BRAVE_QUOTA_MONTHLY` | `1000` | |
-| `SEARXNG_URL` | `http://searxng:8080` | keyless last-resort (JSON format on) |
 | `PROVIDER_TIMEOUT_S` | `20` | per-provider HTTP timeout |
 
 ### Embeddings (load-bearing)
@@ -180,8 +179,8 @@ curl -H "Authorization: Bearer $KEY" http://localhost:8780/api/providers
   (`wellisearch.loopfix:loop_factory`) because uvicorn 0.36+ defaults to the
   proactor loop, which psycopg's async driver needs the selector loop for.
   `db.py` also sets `WindowsSelectorEventLoopPolicy` early as a backstop.
-- The shared Postgres / Crawl4AI / SearXNG hosts must be reachable from the
-  host (adjust `CRAWL4AI_URL`, `SEARXNG_URL`, `POSTGRES_HOST` accordingly).
+- The shared Postgres / Crawl4AI hosts must be reachable from the
+  host (adjust `CRAWL4AI_URL`, `POSTGRES_HOST` accordingly).
 
 ## Security notes
 

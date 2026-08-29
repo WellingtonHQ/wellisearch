@@ -105,7 +105,7 @@ One row per search request (all sources). Powers the local-hit-rate metric.
 | `id` | `bigserial` **PK** | |
 | `ts` | `timestamptz` | indexed `DESC` |
 | `query` | `text` | |
-| `source` | `text` | `local` \| `tavily` \| `brave` \| `searxng` |
+| `source` | `text` | `local` \| `tavily` \| `brave` |
 | `local_hits` | `int` | good-local count (or all-local in degraded mode) |
 | `results` | `jsonb` | full result set |
 
@@ -145,7 +145,7 @@ Monthly usage ledger, one row per provider per calendar month.
 
 | Column | Type | Notes |
 |---|---|---|
-| `provider` | `text` **PK** | `tavily` \| `brave` (searxng is self-hosted, no quota) |
+| `provider` | `text` **PK** | `tavily` \| `brave` |
 | `month` | `text` **PK** | `YYYY-MM` (UTC) |
 | `used` | `int` | incremented by `quota_bump` on every served request |
 | `quota_limit` | `int` | `NULL` = unknown; gateway still fails over on HTTP 429 |

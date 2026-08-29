@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS search_log (
   id BIGSERIAL PRIMARY KEY,
   ts TIMESTAMPTZ NOT NULL DEFAULT now(),
   query TEXT NOT NULL,
-  source TEXT NOT NULL, -- 'local' | 'tavily' | 'brave' | 'searxng'
+  source TEXT NOT NULL, -- 'local' | 'tavily' | 'brave'
   local_hits INT,
   results JSONB
 );
