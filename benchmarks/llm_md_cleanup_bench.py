@@ -376,8 +376,12 @@ def _native_base(base_url: str) -> str:
 
 
 async def stream_chat(
-    client: httpx.AsyncClient, cfg: Config, base_url: str, api_key: str,
-    model: str, messages: list[dict[str, str]],
+    client: httpx.AsyncClient,
+    cfg: Config,
+    base_url: str,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, str]],
 ) -> dict[str, Any]:
     """One streaming chat completion via Ollama's native API (``/api/chat``).
 
@@ -437,7 +441,11 @@ async def stream_chat(
     }
 
 
-async def warmup(client: httpx.AsyncClient, cfg: Config, model: str) -> None:
+async def warmup(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    model: str,
+) -> None:
     """Load the model into RAM so measured runs exclude one-time load latency."""
     try:
         await stream_chat(
@@ -449,7 +457,10 @@ async def warmup(client: httpx.AsyncClient, cfg: Config, model: str) -> None:
 
 
 async def judge_call(
-    client: httpx.AsyncClient, cfg: Config, original: str, cleaned: str
+    client: httpx.AsyncClient,
+    cfg: Config,
+    original: str,
+    cleaned: str,
 ) -> dict[str, Any]:
     user = f"=== ORIGINAL ===\n{original}\n\n=== CLEANED ===\n{cleaned}"
     payload = {
@@ -549,7 +560,10 @@ def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
 # --------------------------------------------------------------------- run
 
 async def run_model(
-    client: httpx.AsyncClient, cfg: Config, label: str, tag: str,
+    client: httpx.AsyncClient,
+    cfg: Config,
+    label: str,
+    tag: str,
     pages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     await warmup(client, cfg, tag)
@@ -594,7 +608,11 @@ async def run_model(
     return list(await asyncio.gather(*(one(p, i) for i, p in enumerate(pages))))
 
 
-async def ensure_models(client: httpx.AsyncClient, cfg: Config, tags: list[str]) -> None:
+async def ensure_models(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    tags: list[str],
+) -> None:
     """Auto-download any missing Ollama models before running.
 
     ``tags`` are the Ollama model names that will actually be used. Uses
@@ -807,7 +825,9 @@ def _report_meta_lines(payload: dict[str, Any]) -> list[str]:
 
 
 def _report_table_lines(
-    agg: dict[str, dict[str, Any]], labels: list[str], judge: bool
+    agg: dict[str, dict[str, Any]],
+    labels: list[str],
+    judge: bool,
 ) -> list[str]:
     """The side-by-side per-model summary table."""
     header = ["model", "pages", "no_addition", "preservation", "boilerplate_rm", "len_ratio"]

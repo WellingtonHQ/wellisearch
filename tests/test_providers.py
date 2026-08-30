@@ -22,7 +22,12 @@ from wellisearch.providers.youcom import YouCom
 QUERY = "query here"
 
 
-def make_client(status=200, payload=None, text="", raise_exc=None):
+def make_client(
+    status=200,
+    payload=None,
+    text="",
+    raise_exc=None,
+):
     """Build an AsyncClient backed by a MockTransport.
 
     Returns (client, captured) where captured records the last request's
@@ -46,14 +51,27 @@ def make_client(status=200, payload=None, text="", raise_exc=None):
     return client, captured
 
 
-async def run_search(cls, settings, status=200, payload=None, text="", num=3, query=QUERY):
+async def run_search(
+    cls,
+    settings,
+    status=200,
+    payload=None,
+    text="",
+    num=3,
+    query=QUERY,
+):
     client, captured = make_client(status=status, payload=payload, text=text)
     p = cls(settings, client)
     results = await p.search(query, num)
     return p, results, captured
 
 
-async def expect_provider_error(cls, settings, status, msg_substr):
+async def expect_provider_error(
+    cls,
+    settings,
+    status,
+    msg_substr,
+):
     client, _ = make_client(status=status, text="boom")
     p = cls(settings, client)
     try:

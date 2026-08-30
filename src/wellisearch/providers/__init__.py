@@ -87,7 +87,11 @@ class Gateway:
             return list(self._env_order), "env"
         return [n for n in order if n in self._by_name] or list(self._env_order), "runtime"
 
-    async def _ev(self, message: str, info: dict | None = None) -> None:
+    async def _ev(
+        self,
+        message: str,
+        info: dict | None = None,
+    ) -> None:
         """Best-effort event logging (dashboard log view)."""
         try:
             await db.log_event(message, info)
@@ -96,7 +100,11 @@ class Gateway:
 
     # ------------------------------------------------------------ queries
 
-    async def search(self, query: str, num: int) -> tuple[list[Result], str, list[dict]]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> tuple[list[Result], str, list[dict]]:
         """Try providers in the current failover order (see ordered_providers).
 
         Returns (results, provider_name, error_chain).
@@ -145,7 +153,11 @@ class Gateway:
         await self._ev("search failed — all providers exhausted", {"query": query[:200], "errors": errors})
         raise GatewayExhausted(errors)
 
-    async def _provider_available(self, p: Provider, errors: list[dict]) -> bool:
+    async def _provider_available(
+        self,
+        p: Provider,
+        errors: list[dict],
+    ) -> bool:
         state = await db.get_provider_state(p.name)
         if state and not state["enabled"]:
             errors.append({"provider": p.name, "error": "disabled (runtime toggle)"})

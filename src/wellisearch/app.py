@@ -183,7 +183,12 @@ def _negotiate(format_param: str | None, request: Request) -> str:
         raise HTTPException(400, str(e))
 
 
-def _respond(out: dict, fmt: str, render_md, status: int = 200) -> Response:
+def _respond(
+    out: dict,
+    fmt: str,
+    render_md,
+    status: int = 200,
+) -> Response:
     """The pipeline dict as the negotiated wire format (json | markdown)."""
     if fmt == "json":
         return Response(to_json(out), media_type="application/json", status_code=status)

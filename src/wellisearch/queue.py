@@ -29,7 +29,11 @@ class InFlight:
     def get(self, url: str) -> asyncio.Future | None:
         return self._m.get(url)
 
-    def register(self, url: str, fut: asyncio.Future) -> None:
+    def register(
+        self,
+        url: str,
+        fut: asyncio.Future,
+    ) -> None:
         self._m[url] = fut
 
     def forget(self, url: str) -> None:
@@ -45,7 +49,11 @@ class InFlight:
 INFLIGHT = InFlight()
 
 
-async def crawl_deduped(url: str, trigger: str, fn) -> object:
+async def crawl_deduped(
+    url: str,
+    trigger: str,
+    fn,
+) -> object:
     """Run `fn()` for url unless another crawl of the same URL is in flight;
     then await that crawl's result instead (no double-crawl).
 
@@ -75,7 +83,11 @@ async def crawl_deduped(url: str, trigger: str, fn) -> object:
         INFLIGHT.forget(url)
 
 
-async def enqueue(url: str, source: str = "search", kick: bool = True) -> bool:
+async def enqueue(
+    url: str,
+    source: str = "search",
+    kick: bool = True,
+) -> bool:
     """Enqueue a URL for background crawling. Returns True if newly inserted."""
     inserted = await db.queue_enqueue(url, source)
     if inserted:

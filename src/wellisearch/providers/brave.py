@@ -20,7 +20,11 @@ class Brave(Provider):
     def configured(self) -> bool:
         return bool(self.s.BRAVE_API_KEY)
 
-    async def search(self, query: str, num: int) -> list[Result]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> list[Result]:
         headers = {
             "X-Subscription-Token": self.s.BRAVE_API_KEY,
             "Accept": "application/json",

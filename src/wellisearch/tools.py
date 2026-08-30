@@ -35,7 +35,11 @@ def _clean(obj: Any) -> Any:
     return json.loads(json.dumps(obj, default=str))
 
 
-def _fmt(out: dict, format_param: str | None, render_md) -> str:
+def _fmt(
+    out: dict,
+    format_param: str | None,
+    render_md,
+) -> str:
     """Render the pipeline dict in the requested format (json | markdown).
 
     The explicit `format` param decides; markdown is the default. MCP has no
@@ -184,7 +188,11 @@ def register_tools(server: MCPServer) -> None:
             "instead of Markdown."
         ),
     )
-    async def fetch_page(url: str, max_chars: int | None = None, format: str = "markdown") -> str:
+    async def fetch_page(
+        url: str,
+        max_chars: int | None = None,
+        format: str = "markdown",
+    ) -> str:
         out = await _fetch_page(url, max_chars=max_chars)
         return _fmt(out, format, render_fetch_page_markdown)
 

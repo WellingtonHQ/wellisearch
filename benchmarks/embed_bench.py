@@ -165,7 +165,11 @@ def _l2_normalize(X: np.ndarray) -> np.ndarray:
     return (X / n).astype(np.float32)
 
 
-def _tok_len(tok, text: str, max_len: int) -> int:
+def _tok_len(
+    tok,
+    text: str,
+    max_len: int,
+) -> int:
     return len(tok(text, truncation=True, max_length=max_len, add_special_tokens=False)["input_ids"])
 
 
@@ -174,7 +178,11 @@ class TorchRunner:
 
     backend = "sentence-transformers (PyTorch)"
 
-    def __init__(self, model_id: str, args):
+    def __init__(
+        self,
+        model_id: str,
+        args,
+    ):
         import torch
         from sentence_transformers import SentenceTransformer
 
@@ -215,7 +223,11 @@ class FastEmbedRunner:
 
     backend = "fastembed (ONNX Runtime)"
 
-    def __init__(self, model_id: str, args):
+    def __init__(
+        self,
+        model_id: str,
+        args,
+    ):
         import fastembed
         import onnxruntime
         from fastembed import TextEmbedding
@@ -257,7 +269,14 @@ def make_runner(model_id: str, args):
     return TorchRunner(model_id, args)
 
 
-def score_quality(S: np.ndarray, queries, truth, chunks, order, topk: int) -> dict:
+def score_quality(
+    S: np.ndarray,
+    queries,
+    truth,
+    chunks,
+    order,
+    topk: int,
+) -> dict:
     nq, nd = S.shape
     topk = min(topk, nd)
     recall = {1: 0, 5: 0, 10: 0}
@@ -286,7 +305,12 @@ def score_quality(S: np.ndarray, queries, truth, chunks, order, topk: int) -> di
     }
 
 
-def measure_latency(encode_one, tok_count, doc_texts: list[str], sample_n: int):
+def measure_latency(
+    encode_one,
+    tok_count,
+    doc_texts: list[str],
+    sample_n: int,
+):
     n = len(doc_texts)
     if n == 0:
         return None
@@ -307,7 +331,13 @@ def measure_latency(encode_one, tok_count, doc_texts: list[str], sample_n: int):
     }
 
 
-def run_model(model_id: str, chunks, queries, truth, args) -> dict:
+def run_model(
+    model_id: str,
+    chunks,
+    queries,
+    truth,
+    args,
+) -> dict:
     runner = make_runner(model_id, args)
 
     order = sorted(range(len(chunks)), key=lambda i: len(chunks[i]["text"]))

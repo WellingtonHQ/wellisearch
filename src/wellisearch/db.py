@@ -123,7 +123,11 @@ class Database:
 
     # ------------------------------------------------------------- raw API
 
-    async def execute(self, sql: str, params: tuple | list | None = None) -> int:
+    async def execute(
+        self,
+        sql: str,
+        params: tuple | list | None = None,
+    ) -> int:
         async with self.pool.connection() as conn:
             cur = await conn.execute(sql, params or ())
             return cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
@@ -149,7 +153,11 @@ class Database:
             cur = await conn.execute(sql, params or ())
             return list(await cur.fetchall())
 
-    async def fetch_one(self, sql: str, params: tuple | list | None = None) -> dict[str, Any] | None:
+    async def fetch_one(
+        self,
+        sql: str,
+        params: tuple | list | None = None,
+    ) -> dict[str, Any] | None:
         async with self.pool.connection() as conn:
             cur = await conn.execute(sql, params or ())
             row = await cur.fetchone()
@@ -166,7 +174,11 @@ class Database:
     async def page_get(self, url: str) -> dict[str, Any] | None:
         return await self.fetch_one("SELECT * FROM pages WHERE url = %s", (url,))
 
-    async def bump_fetch_count(self, url: str, n: int = 1) -> None:
+    async def bump_fetch_count(
+        self,
+        url: str,
+        n: int = 1,
+    ) -> None:
         await self.execute(
             "UPDATE pages SET fetch_count = fetch_count + %s WHERE url = %s",
             (n, url),
@@ -330,7 +342,11 @@ class Database:
             (url, trigger, status, ms, chunks_written, detail),
         )
 
-    async def log_event(self, message: str, info: dict[str, Any] | None = None) -> None:
+    async def log_event(
+        self,
+        message: str,
+        info: dict[str, Any] | None = None,
+    ) -> None:
         """One operational event (worker, provider gateway, admin, lifecycle)."""
         import json
 
@@ -351,7 +367,11 @@ class Database:
 
     # ------------------------------------------------------------- queue
 
-    async def queue_enqueue(self, url: str, source: str) -> bool:
+    async def queue_enqueue(
+        self,
+        url: str,
+        source: str,
+    ) -> bool:
         """Enqueue unless already pending/in-flight. Returns True if inserted."""
         async with self.pool.connection() as conn:
             cur = await conn.execute(
@@ -378,7 +398,12 @@ class Database:
         )
         return cur_ok > 0
 
-    async def queue_done(self, url: str, ok: bool, error: str | None = None) -> None:
+    async def queue_done(
+        self,
+        url: str,
+        ok: bool,
+        error: str | None = None,
+    ) -> None:
         if ok:
             await self.execute(
                 "UPDATE crawl_queue SET status = 'done' WHERE url = %s AND status = 'in_flight'",

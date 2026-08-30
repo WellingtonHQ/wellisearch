@@ -27,7 +27,11 @@ def domain_of(url: str) -> str:
         return ""
 
 
-async def store_page(url: str, markdown: str, title: str | None = None) -> tuple[str, int]:
+async def store_page(
+    url: str,
+    markdown: str,
+    title: str | None = None,
+) -> tuple[str, int]:
     """Store one crawled page. Returns (status, chunks_written).
 
     status ∈ {'ok', 'unchanged'}.

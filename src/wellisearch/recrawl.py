@@ -37,7 +37,11 @@ from .worker import crawl_url
 BATCH = 100
 
 
-async def _run(limit: int, dry_run: bool, resume: bool = False) -> None:
+async def _run(
+    limit: int,
+    dry_run: bool,
+    resume: bool = False,
+) -> None:
     s = get_settings()
     conc = s.CRAWL_MAX_PARALLEL
     log = logging.getLogger("wellisearch.recrawl")

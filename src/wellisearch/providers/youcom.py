@@ -20,7 +20,11 @@ class YouCom(Provider):
     def configured(self) -> bool:
         return bool(self.s.YOUCOM_API_KEY)
 
-    async def search(self, query: str, num: int) -> list[Result]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> list[Result]:
         headers = {"X-API-Key": self.s.YOUCOM_API_KEY}
         body = {"query": query, "count": max(1, num)}
         try:

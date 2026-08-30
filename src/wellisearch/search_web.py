@@ -63,7 +63,11 @@ def render_search_markdown(out: dict) -> str:
     return "\n\n".join(["\n".join(lines), "\n---\n".join(blocks)])
 
 
-async def _search_local_index(query: str, k: int, max_age_days: float | None) -> tuple[list[dict], int, str | None]:
+async def _search_local_index(
+    query: str,
+    k: int,
+    max_age_days: float | None,
+) -> tuple[list[dict], int, str | None]:
     """The local-index leg: embed the query, rank via fn_search_local, apply
     the optional freshness filter. Returns (rows, index_ms, index_error).
 

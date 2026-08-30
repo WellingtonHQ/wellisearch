@@ -33,7 +33,12 @@ def crawl_semaphore() -> asyncio.Semaphore:
 
 
 class CrawlError(Exception):
-    def __init__(self, url: str, message: str, status: int | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        message: str,
+        status: int | None = None,
+    ) -> None:
         super().__init__(f"{url}: {message}")
         self.url = url
         self.message = message

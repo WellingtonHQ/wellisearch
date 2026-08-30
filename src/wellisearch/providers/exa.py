@@ -20,7 +20,11 @@ class Exa(Provider):
     def configured(self) -> bool:
         return bool(self.s.EXA_API_KEY)
 
-    async def search(self, query: str, num: int) -> list[Result]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> list[Result]:
         headers = {"x-api-key": self.s.EXA_API_KEY}
         body = {
             "query": query,

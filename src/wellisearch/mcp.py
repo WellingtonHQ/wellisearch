@@ -79,7 +79,11 @@ class _Runtime:
 
     __slots__ = ("app", "server")
 
-    def __init__(self, server: MCPServer, app: Starlette) -> None:
+    def __init__(
+        self,
+        server: MCPServer,
+        app: Starlette,
+    ) -> None:
         self.server = server
         self.app = app
 
@@ -129,7 +133,12 @@ class _MCPMount:
     def set_runtime(self, runtime: _Runtime | None) -> None:
         self._runtime = runtime
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
         runtime = self._runtime
         if runtime is None:
             await _respond_not_started(scope, send)

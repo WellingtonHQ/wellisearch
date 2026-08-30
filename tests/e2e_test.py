@@ -42,7 +42,11 @@ H = {"X-API-Key": KEY}
 PASS, FAIL = 0, 0
 
 
-def check(name: str, cond: bool, detail: str = "") -> None:
+def check(
+    name: str,
+    cond: bool,
+    detail: str = "",
+) -> None:
     global PASS, FAIL
     if cond:
         PASS += 1
@@ -63,7 +67,11 @@ async def _all_page_urls(c: httpx.AsyncClient) -> list[str]:
     return [p["url"] for p in rr.json().get("pages", [])]
 
 
-async def _set_pages_disabled(c: httpx.AsyncClient, urls: list[str], disabled: bool) -> None:
+async def _set_pages_disabled(
+    c: httpx.AsyncClient,
+    urls: list[str],
+    disabled: bool,
+) -> None:
     """PATCH each page's disabled flag (forces/undoes gateway failover)."""
     for u in urls:
         await c.patch(f"/api/pages/{quote(u, safe='')}", json={"disabled": disabled})

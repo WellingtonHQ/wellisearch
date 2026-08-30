@@ -27,7 +27,12 @@ class Result:
 class ProviderError(Exception):
     """A provider call failed (auth, quota, network, 5xx…). Gateway fails over."""
 
-    def __init__(self, provider: str, message: str, status: int | None = None) -> None:
+    def __init__(
+        self,
+        provider: str,
+        message: str,
+        status: int | None = None,
+    ) -> None:
         super().__init__(f"{provider}: {message}")
         self.provider = provider
         self.status = status
@@ -38,7 +43,11 @@ class Provider:
 
     name: str = "base"
 
-    def __init__(self, settings, client) -> None:
+    def __init__(
+        self,
+        settings,
+        client,
+    ) -> None:
         self.s = settings
         self.client = client
 
@@ -46,7 +55,11 @@ class Provider:
     def configured(self) -> bool:
         return True
 
-    async def search(self, query: str, num: int) -> list[Result]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> list[Result]:
         raise NotImplementedError
 
     # ------------------------------------------------------------ utilities
