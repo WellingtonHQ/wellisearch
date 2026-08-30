@@ -18,13 +18,9 @@ from mcp.server.mcpserver import MCPServer
 from . import queue
 from .config import get_settings
 from .db import db
+from .fetch import fetch_page as _fetch_page, fetch_pages as _fetch_pages, render_fetch_page_markdown, render_fetch_pages_markdown
 from .providers import get_gateway
-from .fetch import fetch_page as _fetch_page
-from .fetch import fetch_pages as _fetch_pages
-from .fetch import render_fetch_page_markdown
-from .fetch import render_fetch_pages_markdown
-from .search_web import render_search_markdown
-from .search_web import search_web as _search_web
+from .search_web import render_search_markdown, search_web as _search_web
 from .serialize import resolve_format, to_json
 from .truncation import STRATEGIES
 from .worker import crawl_url

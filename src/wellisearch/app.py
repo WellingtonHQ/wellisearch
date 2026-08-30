@@ -24,16 +24,13 @@ from pydantic import BaseModel, Field
 from . import __version__, crawler, queue
 from .config import get_settings
 from .db import db
-from .fetch import _OMITTED, _valid_url, fetch_page, fetch_pages
-from .fetch import render_fetch_page_markdown, render_fetch_pages_markdown
+from .fetch import _OMITTED, _valid_url, fetch_page, fetch_pages, render_fetch_page_markdown, render_fetch_pages_markdown
 from .mcp import mcp_asgi, mcp_http_lifespan
 from .providers import get_gateway
-from .search_web import render_search_markdown
-from .search_web import search_web as search_web_pipeline
+from .search_web import render_search_markdown, search_web as search_web_pipeline
 from .serialize import resolve_format, to_json
 from .tools import _index_stats_data
-from .worker import STATE as WORKER_STATE
-from .worker import crawl_url, run_forever
+from .worker import STATE as WORKER_STATE, crawl_url, run_forever
 
 log = logging.getLogger("wellisearch.app")
 

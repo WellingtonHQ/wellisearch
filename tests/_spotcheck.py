@@ -1,4 +1,4 @@
-import httpx, re, os
+import httpx, os, re
 
 env = open(os.path.join(os.path.dirname(__file__), "..", ".env"), encoding="utf-8").read()
 key = re.search(r"^WELLISEARCH_API_KEY=(.+)$", env, re.M).group(1).strip()

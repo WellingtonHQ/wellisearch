@@ -17,8 +17,8 @@ import logging
 
 from .config import get_settings
 from .db import db
-from .index import store_page
 from .embed import model_name
+from .index import store_page
 
 
 def main() -> None:

@@ -1,8 +1,8 @@
 """Unit tests: chunker + truncation + renderers (pure logic, no DB)."""
 from wellisearch.chunk import chunk_markdown
 from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_markdown
-from wellisearch.serialize import format_timing
 from wellisearch.search_web import render_search_markdown
+from wellisearch.serialize import format_timing
 from wellisearch.truncation import (
     allocate_budgets,
     boundary_cut_head,
