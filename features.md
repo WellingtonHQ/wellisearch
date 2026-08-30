@@ -1,5 +1,15 @@
 # Engine
 
+## Replace Crawl4AI with homegrown crawler.
+We've had to modift Crawl4ai quite a bit to fit our use cases, and even then
+we still have numerous issues with it. For example, the error messages that it kicks back
+are extremely opaque and don't tell you what happened.
+Crawl4ai also uses an excessive amount of memory and the usage does not come down during idle periods.
+
+### Native Crawler
+We can build a native crawler that is built on patchwright and scrapling. It gives us a level of control and visibility we cannot currently achieve with crawl4ai. It also reduces our service dependencies from 1 -> 0. wellisearch becomes a true all-in-one soution.
+
+
 ## Multi-crawl
 When seeding a URL, wellisearch should use crawl4ai to do a breadth/depth crawl and load adjacent URLs as well. 
 
