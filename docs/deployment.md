@@ -79,7 +79,7 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 ### Search providers
 | Var | Default | Notes |
 |---|---|---|
-| `SEARCH_PROVIDERS` | `tavily,brave,exa,youcom` | ordered; first non-empty success serves |
+| `SEARCH_PROVIDERS` | `tavily,brave,exa,youcom` | the providers + their default order (a dashboard override wins); first non-empty result serves |
 | `TAVILY_API_KEY` | *(empty)* | |
 | `TAVILY_QUOTA_MONTHLY` | `1000` | `0`/unset = unknown; still fails over on 429 |
 | `BRAVE_API_KEY` | *(empty)* | |
@@ -165,7 +165,13 @@ curl -X PATCH -H "Authorization: Bearer $KEY" \
 curl -X PATCH -H "Authorization: Bearer $KEY" \
      -d '{"limit": 200}' http://localhost:8780/api/providers/brave
 
-# inspect the ledger + state
+# reorder the failover order at runtime (must be a permutation of the pool);
+# {"order": null} resets to the SEARCH_PROVIDERS default
+curl -X PUT -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+     -d '{"order": ["brave","tavily","exa","youcom"]}' \
+     http://localhost:8780/api/providers/order
+
+# inspect the ledger + state + current order (order_source = "runtime"|"env")
 curl -H "Authorization: Bearer $KEY" http://localhost:8780/api/providers
 ```
 

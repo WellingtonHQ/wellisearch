@@ -2,8 +2,8 @@
 
 wellisearch is a **self-hosted web-search gateway for LLMs**: a single FastAPI
 container that keeps a local, embeddable index of web pages and serves search
-results from it first, falling back to paid search providers (Tavily → Brave →
-EXA → You.com) only on a local miss. It exposes the same pipeline as a **REST API**
+results from it first, falling back to one of the configured search
+providers (in the order currently set) only on a local miss. It exposes the same pipeline as a **REST API**
 and an **MCP server** (Streamable HTTP), with a built-in static dashboard.
 
 Design goals (see `BLUEPRINT.md` for the full plan):
@@ -50,11 +50,12 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
    vector, RRF-fused). If any result covers ≥ `LOCAL_MIN_COVERAGE` (default
    `0.75`) of the query's content words, the local rows are served
    immediately — **zero provider credits**.
-3. Otherwise the **provider gateway** (`providers/`) tries
-   `SEARCH_PROVIDERS` in order (default `tavily,brave,exa,youcom`), gated by
-   runtime toggles, configuration, and a monthly quota ledger. First
-   non-empty result serves; the top result URLs are **enqueued for
-   background indexing** so the next identical query is free.
+ 3. Otherwise the **provider gateway** (`providers/`) tries the providers one
+    by one, in the order currently set (a dashboard override via
+    `PUT /api/providers/order` when set, else the `SEARCH_PROVIDERS` default),
+    gated by runtime toggles, configuration, and a monthly quota ledger. First
+    non-empty result serves; the top result URLs are **enqueued for background
+    indexing** so the next identical query is free.
 4. **All paths are logged** to `search_log`; every crawl is logged to
    `crawl_log` with trigger, status, and timing.
 5. The **background worker** (one asyncio task) drains the crawl queue and

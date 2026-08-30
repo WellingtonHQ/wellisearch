@@ -156,14 +156,15 @@ runtime `provider_state.limit_override` if set, else the env default
 
 ## provider_state
 
-Runtime gateway state — persists across restarts, so a toggle you flip in the
-dashboard survives a redeploy.
+Per-provider gateway state. Persists across restarts, so changes made in the
+dashboard (toggles, failover order) stick.
 
 | Column | Type | Notes |
 |---|---|---|
 | `provider` | `text` **PK** | |
 | `enabled` | `bool` | default `true`; `false` = skip in failover (runtime toggle) |
 | `limit_override` | `int` | overrides the env monthly limit when non-NULL |
+| `sort_order` | `int` | runtime failover position (dashboard / `PUT /api/providers/order`); `NULL` = env default position. A non-NULL set on the pool's rows is the active runtime order; clearing it all resets to `SEARCH_PROVIDERS` |
 | `last_served` | `timestamptz` | when it last answered a search |
 | `last_error` | `text` | most recent failure reason (shown in dashboard + `/api/providers`) |
 | `updated_at` | `timestamptz` | |

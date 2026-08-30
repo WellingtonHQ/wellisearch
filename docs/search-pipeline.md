@@ -80,9 +80,10 @@ calibration data.
 
 ### 5b. No good local hit → provider gateway
 
-`gateway.search(query, k)` walks `SEARCH_PROVIDERS` in order
-(default `tavily → brave → exa → youcom`). A provider serves iff it passes all
-gates:
+`gateway.search(query, k)` tries the providers one by one, in the order
+currently set (a dashboard/API override via `PUT /api/providers/order` when
+set, else the `SEARCH_PROVIDERS` default). A provider serves iff it passes
+all gates:
 
 1. **enabled** — `provider_state.enabled` (runtime toggle, default true)
 2. **configured** — API key / base URL present in env

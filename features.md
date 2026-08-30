@@ -105,7 +105,7 @@ Wellisearch would then return markdown as normal and it would look like any othe
 
 # Dashboard
 
-- Ability to move/reorder the provider list
+- Ability to move/reorder the provider list — Done 2026-08-29 (dashboard ↑/↓ reorder + "reset to default order"; `PUT /api/providers/order`; persists in `provider_state.sort_order`, effective immediately)
 - Drop the "Top pages by search_hit_count"
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.

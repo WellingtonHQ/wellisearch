@@ -75,8 +75,8 @@ tools.py::search_web ──────────── app.py::api_search
                   │
      ┌────────────┴─────────────┐
      ▼                          ▼
- fn_search_local (PG)      gateway (providers/)
-  hybrid ranking            tavily → brave → exa → youcom
+   fn_search_local (PG)      gateway (providers/)
+    hybrid ranking            failover order
      │                          │
      └────────────┬─────────────┘
                   ▼

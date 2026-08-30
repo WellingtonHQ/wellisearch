@@ -24,7 +24,7 @@ Think of it as a personal, always-learning search box for your LLM. Ask a questi
 
 1. **You ask a question.** Your LLM calls `search_web`.
 2. **Local first.** If the answer is already in the library, it's served instantly — free.
-3. **Otherwise, out to the providers.** Tavily → Brave → EXA → You.com, in order, until one answers.
+3. **Otherwise, out to the providers.** It walks them in the configured priority order until one answers — and you can reorder that priority at runtime from the dashboard.
 4. **It files the results away.** In the background, the pages it just found are saved into the library, so the next similar question is free.
 5. **Read the pages.** `fetch_page` / `fetch_pages` hand the LLM the page content as clean Markdown.
 
@@ -121,12 +121,14 @@ If you set `WELLISEARCH_API_KEY`, paste it into the header bar once and it's rem
 
 wellisearch works with no keys at all — without provider keys it serves from its local index only. For the best results, add one or more providers to `.env`:
 
-| Provider | Env var | Free tier* | Role |
-|---|---|---|---|
-| **Tavily** | `TAVILY_API_KEY` | ~1,000 credits/mo, no card | primary |
-| **Brave** | `BRAVE_API_KEY` | ~1,000 queries/mo | secondary |
-| **EXA** | `EXA_API_KEY` | ~1,000 credits/mo, no card | third (fallback) |
-| **You.com** | `YOUCOM_API_KEY` | credit-based ($100 starter credits) | fourth (fallback) |
+| Provider | Env var | Free tier* |
+|---|---|---|
+| **Tavily** | `TAVILY_API_KEY` | ~1,000 credits/mo, no card |
+| **Brave** | `BRAVE_API_KEY` | ~1,000 queries/mo |
+| **EXA** | `EXA_API_KEY` | ~1,000 credits/mo, no card |
+| **You.com** | `YOUCOM_API_KEY` | credit-based ($100 starter credits) |
+
+All four are interchangeable — a search is answered by **one of** them, in whatever order is currently set. The default order is `tavily, brave, exa, youcom` (from `SEARCH_PROVIDERS`), and you can reorder it at any time from the dashboard or `PUT /api/providers/order`.
 
 \* Free tiers change over time — check with the provider. The exact numbers barely matter: wellisearch keeps a monthly quota ledger per provider, skips exhausted ones *before* making any API call, and fails over automatically.
 
@@ -168,7 +170,7 @@ All knobs are environment variables in `.env` (annotated in [`.env.example`](.en
 
 ### Troubleshooting
 
-- **`Source: exa` / `youcom` when Tavily/Brave should serve** — check `GET /api/providers` (or the dashboard) for `last_error` per provider; the gateway always fails over and captures the error chain.
+- **`Source:` shows a provider you didn't expect** — check the current order (`GET /api/providers` → `order` / `order_source`, or the dashboard) and the `last_error` per provider; the gateway always fails over in the active order and captures the error chain.
 - **Search works but the index stays empty** — the worker may not be draining; check the queue depth in the dashboard, run `worker --once` manually, and read the logs.
 - **Crawl4AI 401** — the auth header is `Authorization: Bearer <CRAWL4AI_API_KEY>`; make sure it matches what the bundled crawler expects.
 - **Slow first search** — the embedding model loads on first use (pre-downloaded into the Docker image at build time).
