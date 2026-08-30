@@ -123,64 +123,6 @@ def render_fetch_pages_markdown(out: dict) -> str:
     return "\n\n".join(["\n".join(lines), "\n\n".join(sections)])
 
 
-def _valid_url(url: str) -> bool:
-    try:
-        p = urlparse(url)
-        return p.scheme in ("http", "https") and bool(p.netloc)
-    except Exception:
-        return False
-
-
-def _title_from_markdown(md: str) -> str | None:
-    m = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
-    if m:
-        return m.group(1).strip()
-    for line in md.splitlines():
-        line = line.strip()
-        if line:
-            return line[:120]
-    return None
-
-
-async def _resolve_page(url: str) -> dict:
-    """Content for one URL: from index when present, else crawl on demand.
-
-    Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
-    (the crawl4ai round-trip + store) so callers can report the timing split.
-    """
-    t_index = time.monotonic()
-    page = await db.page_get(url)
-    index_ms = int((time.monotonic() - t_index) * 1000)
-    if page and not page.get("disabled") and page.get("fit_markdown"):
-        return {
-            "url": url,
-            "title": page.get("title") or _title_from_markdown(page["fit_markdown"]) or url,
-            "content": page["fit_markdown"],
-            "from_index": True,
-            "fetch_count": page.get("fetch_count") or 0,
-            "index_ms": index_ms,
-            "crawl_ms": 0,
-        }
-
-    # crawl on demand (in-flight-deduped inside crawl_url)
-    t_crawl = time.monotonic()
-    r = await crawl_url(url, trigger="fetch")
-    page = await db.page_get(url)
-    crawl_ms = int((time.monotonic() - t_crawl) * 1000)
-    md = (page or {}).get("fit_markdown") or ""
-    if not md:
-        raise RuntimeError(f"crawl succeeded but no content stored for {url}")
-    return {
-        "url": url,
-        "title": (page or {}).get("title") or _title_from_markdown(md) or url,
-        "content": md,
-        "from_index": False,
-        "fetch_count": (page or {}).get("fetch_count") or 0,
-        "index_ms": index_ms,
-        "crawl_ms": crawl_ms,
-    }
-
-
 async def fetch_page(url: str, max_chars: int | None = None) -> dict:
     """Single-URL read: stored or crawled-on-demand, fetch_count bumped."""
     t_start = time.monotonic()
@@ -351,4 +293,67 @@ async def fetch_pages(
         "budget": budget,
         "pages": pages_out + failed + bad,
         "timing": timing,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _valid_url(url: str) -> bool:
+    try:
+        p = urlparse(url)
+        return p.scheme in ("http", "https") and bool(p.netloc)
+    except Exception:
+        return False
+
+
+def _title_from_markdown(md: str) -> str | None:
+    m = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
+    if m:
+        return m.group(1).strip()
+    for line in md.splitlines():
+        line = line.strip()
+        if line:
+            return line[:120]
+    return None
+
+
+async def _resolve_page(url: str) -> dict:
+    """Content for one URL: from index when present, else crawl on demand.
+
+    Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
+    (the crawl4ai round-trip + store) so callers can report the timing split.
+    """
+    t_index = time.monotonic()
+    page = await db.page_get(url)
+    index_ms = int((time.monotonic() - t_index) * 1000)
+    if page and not page.get("disabled") and page.get("fit_markdown"):
+        return {
+            "url": url,
+            "title": page.get("title") or _title_from_markdown(page["fit_markdown"]) or url,
+            "content": page["fit_markdown"],
+            "from_index": True,
+            "fetch_count": page.get("fetch_count") or 0,
+            "index_ms": index_ms,
+            "crawl_ms": 0,
+        }
+
+    # crawl on demand (in-flight-deduped inside crawl_url)
+    t_crawl = time.monotonic()
+    r = await crawl_url(url, trigger="fetch")
+    page = await db.page_get(url)
+    crawl_ms = int((time.monotonic() - t_crawl) * 1000)
+    md = (page or {}).get("fit_markdown") or ""
+    if not md:
+        raise RuntimeError(f"crawl succeeded but no content stored for {url}")
+    return {
+        "url": url,
+        "title": (page or {}).get("title") or _title_from_markdown(md) or url,
+        "content": md,
+        "from_index": False,
+        "fetch_count": (page or {}).get("fetch_count") or 0,
+        "index_ms": index_ms,
+        "crawl_ms": crawl_ms,
     }

@@ -30,107 +30,6 @@ from .truncation import STRATEGIES
 from .worker import crawl_url
 
 
-def _clean(obj: Any) -> Any:
-    """JSON-safe: datetimes → ISO strings."""
-    return json.loads(json.dumps(obj, default=str))
-
-
-def _fmt(
-    out: dict,
-    format_param: str | None,
-    render_md,
-) -> str:
-    """Render the pipeline dict in the requested format (json | markdown).
-
-    The explicit `format` param decides; markdown is the default. MCP has no
-    HTTP Accept header, so only the param is consulted. An invalid format
-    yields a clear error string (MCP has no HTTP status code to signal it).
-    """
-    try:
-        resolved = resolve_format(format_param)
-    except ValueError as e:
-        return f"Error: {e}"
-    return to_json(out) if resolved == "json" else render_md(out)
-
-
-async def _index_stats_data() -> dict:
-    s = get_settings()
-    now = dt.datetime.now(dt.timezone.utc)
-
-    pages = await db.fetch_one(
-        "SELECT count(*) AS total, min(last_crawled) AS oldest, max(last_crawled) AS newest "
-        "FROM pages"
-    )
-    chunks = await db.fetch_one("SELECT count(*) AS total FROM chunks")
-
-    windows = {"24h": 1, "7d": 7, "30d": 30}
-    trends: dict[str, dict[str, Any]] = {}
-    for label, days in windows.items():
-        rows = await db.fetch_all(
-            "SELECT source, count(*) AS n FROM search_log "
-            "WHERE ts >= now() - make_interval(days => %s) GROUP BY source",
-            (days,),
-        )
-        total = sum(r["n"] for r in rows)
-        by = {r["source"]: r["n"] for r in rows}
-        trends[label] = {
-            "total": total,
-            "by_source": by,
-            "hit_rate": {k: (v / total if total else 0.0) for k, v in by.items()},
-        }
-
-    q = await db.fetch_all("SELECT status, count(*) AS n FROM crawl_queue GROUP BY status")
-    queue_depth = {
-        "pending": 0, "in_flight": 0, "done": 0, "failed": 0,
-        **{r["status"]: r["n"] for r in q},
-    }
-    oldest_pending = await db.fetch_one(
-        "SELECT min(enqueued_at) AS oldest FROM crawl_queue WHERE status = 'pending'"
-    )
-
-    quota_rows = await db.fetch_all(
-        "SELECT provider, used, quota_limit FROM provider_quota WHERE month = %s",
-        (now.strftime("%Y-%m"),),
-    )
-    quota = []
-    for r in quota_rows:
-        limit = r["quota_limit"]
-        if limit is None:
-            limit = s.env_quota_limit(r["provider"])
-        quota.append({
-            "provider": r["provider"],
-            "used": r["used"],
-            "limit": limit,
-            "pct": round(r["used"] / limit * 100, 1) if limit else None,
-        })
-
-    # crawl status mix (30d) for the trends panel
-    crawls = await db.fetch_all(
-        "SELECT status, count(*) AS n FROM crawl_log "
-        "WHERE ts >= now() - interval '30 days' GROUP BY status"
-    )
-
-    order, order_source = await get_gateway().order_names()
-
-    return {
-        "at": now.isoformat(),
-        "index": {
-            "pages": pages["total"],
-            "chunks": chunks["total"],
-            "oldest_crawl": pages["oldest"].isoformat() if pages["oldest"] else None,
-            "newest_crawl": pages["newest"].isoformat() if pages["newest"] else None,
-        },
-        "gateway": {
-            "provider_order": order,
-            "order_source": order_source,
-        },
-        "search_trends": trends,
-        "crawl_queue": {**queue_depth, "oldest_pending": oldest_pending["oldest"]},
-        "quota_this_month": quota,
-        "crawls_30d": {r["status"]: r["n"] for r in crawls},
-    }
-
-
 def register_tools(server: MCPServer) -> None:
     @server.tool(
         name="search_web",
@@ -304,3 +203,109 @@ def register_tools(server: MCPServer) -> None:
             "last_crawled": (page or {}).get("last_crawled"),
             "last_status": (page or {}).get("last_status"),
         })
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _clean(obj: Any) -> Any:
+    """JSON-safe: datetimes → ISO strings."""
+    return json.loads(json.dumps(obj, default=str))
+
+
+def _fmt(
+    out: dict,
+    format_param: str | None,
+    render_md,
+) -> str:
+    """Render the pipeline dict in the requested format (json | markdown).
+
+    The explicit `format` param decides; markdown is the default. MCP has no
+    HTTP Accept header, so only the param is consulted. An invalid format
+    yields a clear error string (MCP has no HTTP status code to signal it).
+    """
+    try:
+        resolved = resolve_format(format_param)
+    except ValueError as e:
+        return f"Error: {e}"
+    return to_json(out) if resolved == "json" else render_md(out)
+
+
+async def _index_stats_data() -> dict:
+    s = get_settings()
+    now = dt.datetime.now(dt.timezone.utc)
+
+    pages = await db.fetch_one(
+        "SELECT count(*) AS total, min(last_crawled) AS oldest, max(last_crawled) AS newest "
+        "FROM pages"
+    )
+    chunks = await db.fetch_one("SELECT count(*) AS total FROM chunks")
+
+    windows = {"24h": 1, "7d": 7, "30d": 30}
+    trends: dict[str, dict[str, Any]] = {}
+    for label, days in windows.items():
+        rows = await db.fetch_all(
+            "SELECT source, count(*) AS n FROM search_log "
+            "WHERE ts >= now() - make_interval(days => %s) GROUP BY source",
+            (days,),
+        )
+        total = sum(r["n"] for r in rows)
+        by = {r["source"]: r["n"] for r in rows}
+        trends[label] = {
+            "total": total,
+            "by_source": by,
+            "hit_rate": {k: (v / total if total else 0.0) for k, v in by.items()},
+        }
+
+    q = await db.fetch_all("SELECT status, count(*) AS n FROM crawl_queue GROUP BY status")
+    queue_depth = {
+        "pending": 0, "in_flight": 0, "done": 0, "failed": 0,
+        **{r["status"]: r["n"] for r in q},
+    }
+    oldest_pending = await db.fetch_one(
+        "SELECT min(enqueued_at) AS oldest FROM crawl_queue WHERE status = 'pending'"
+    )
+
+    quota_rows = await db.fetch_all(
+        "SELECT provider, used, quota_limit FROM provider_quota WHERE month = %s",
+        (now.strftime("%Y-%m"),),
+    )
+    quota = []
+    for r in quota_rows:
+        limit = r["quota_limit"]
+        if limit is None:
+            limit = s.env_quota_limit(r["provider"])
+        quota.append({
+            "provider": r["provider"],
+            "used": r["used"],
+            "limit": limit,
+            "pct": round(r["used"] / limit * 100, 1) if limit else None,
+        })
+
+    # crawl status mix (30d) for the trends panel
+    crawls = await db.fetch_all(
+        "SELECT status, count(*) AS n FROM crawl_log "
+        "WHERE ts >= now() - interval '30 days' GROUP BY status"
+    )
+
+    order, order_source = await get_gateway().order_names()
+
+    return {
+        "at": now.isoformat(),
+        "index": {
+            "pages": pages["total"],
+            "chunks": chunks["total"],
+            "oldest_crawl": pages["oldest"].isoformat() if pages["oldest"] else None,
+            "newest_crawl": pages["newest"].isoformat() if pages["newest"] else None,
+        },
+        "gateway": {
+            "provider_order": order,
+            "order_source": order_source,
+        },
+        "search_trends": trends,
+        "crawl_queue": {**queue_depth, "oldest_pending": oldest_pending["oldest"]},
+        "quota_this_month": quota,
+        "crawls_30d": {r["status"]: r["n"] for r in crawls},
+    }

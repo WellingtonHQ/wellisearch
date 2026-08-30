@@ -45,16 +45,6 @@ def format_timing(timing: dict | None) -> str | None:
     return f"Time: {total} ms"
 
 
-def _json_default(o: Any) -> Any:
-    if isinstance(o, (dt.datetime, dt.date, dt.time)):
-        return o.isoformat()
-    if isinstance(o, decimal.Decimal):
-        return float(o)
-    if isinstance(o, set):
-        return sorted(o)
-    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
-
-
 def to_json(obj: Any) -> str:
     """The structured pipeline dict as a uniform JSON envelope.
 
@@ -85,3 +75,18 @@ def resolve_format(format_param: str | None, accept_header: str | None = None) -
         if "application/json" in accept and "markdown" not in accept:
             return "json"
     return "markdown"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _json_default(o: Any) -> Any:
+    if isinstance(o, (dt.datetime, dt.date, dt.time)):
+        return o.isoformat()
+    if isinstance(o, decimal.Decimal):
+        return float(o)
+    if isinstance(o, set):
+        return sorted(o)
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")

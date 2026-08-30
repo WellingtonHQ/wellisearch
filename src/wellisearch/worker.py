@@ -42,7 +42,80 @@ STATE: dict = {
 _tick_lock = asyncio.Lock()
 
 
-# ------------------------------------------------------------------ single URL
+async def crawl_url(url: str, trigger: str) -> dict:
+    """Public entry: crawl one URL, never twice concurrently (shared set)."""
+    return await queue.crawl_deduped(url, trigger, lambda: _crawl_and_store(url, trigger))
+
+
+async def tick() -> dict:
+    """One worker tick: drain queue + budgeted refresh, wall-clock bounded.
+    Skipped (not queued) if a tick is already running."""
+    if _tick_lock.locked():
+        log.info("tick skipped (previous tick still running)")
+        return {"skipped": "tick already running"}
+    async with _tick_lock:
+        s = get_settings()
+        t0 = time.monotonic()
+        deadline = t0 + s.WORKER_TICK_BUDGET_MIN * 60
+        log.info("tick start (budget %ss)", int(deadline - t0))
+
+        stats = {
+            "queue": await _drain_queue(deadline),
+            "refresh": await _refresh_watchlist(deadline),
+            "ms": int((time.monotonic() - t0) * 1000),
+        }
+        STATE["last_tick_at"] = dt.datetime.now(dt.timezone.utc)
+        STATE["last_tick_stats"] = stats
+        log.info("tick done: %s", stats)
+        await _log_event("worker tick", stats)
+        await _retention_sweep()
+        return stats
+
+
+async def run_forever() -> None:
+    """Worker loop: periodic ticks + reacts to kicks (which call tick()
+    directly, so the loop only needs the interval timer)."""
+    s = get_settings()
+    STATE["started_at"] = dt.datetime.now(dt.timezone.utc)
+    log.info(
+        "worker started (interval=%sm budget/run=%d parallel=%d)",
+        s.WORKER_INTERVAL_MIN, s.WORKER_BUDGET_PER_RUN, s.CRAWL_MAX_PARALLEL,
+    )
+    while True:
+        await asyncio.sleep(s.WORKER_INTERVAL_MIN * 60)
+        try:
+            await tick()
+        except Exception as e:
+            log.exception("worker tick crashed")
+            await _log_event("worker tick crashed", {"error": repr(e)[:500]})
+
+
+async def run_once() -> dict:
+    """--once mode: drain queue + one refresh pass, then exit."""
+    await db.queue_reset_in_flight()
+    return await tick()
+
+
+def main() -> None:
+    import sys
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+    if "--once" in sys.argv:
+        result = asyncio.run(_once())
+        print(result)
+    else:
+        print("worker --once not given; run `python -m wellisearch.worker --once` "
+              "for a manual run (the app starts the worker itself).", file=sys.stderr)
+        sys.exit(2)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 
 async def _crawl_and_store(url: str, trigger: str) -> dict:
     """One crawl+store attempt (in-flight-deduped by the caller)."""
@@ -76,13 +149,6 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     log.info("crawl %s: %s (%d ms, %d chunks)", url, status, ms, chunks_written)
     return {"url": url, "status": status, "ms": ms, "chunks": chunks_written}
 
-
-async def crawl_url(url: str, trigger: str) -> dict:
-    """Public entry: crawl one URL, never twice concurrently (shared set)."""
-    return await queue.crawl_deduped(url, trigger, lambda: _crawl_and_store(url, trigger))
-
-
-# --------------------------------------------------------------------- ticks
 
 async def _drain_queue(deadline: float) -> dict:
     s = get_settings()
@@ -165,73 +231,6 @@ async def _retention_sweep() -> None:
             log.info("pruned %d old log rows", total)
     except Exception as e:
         log.warning("retention sweep failed: %s", e)
-
-
-async def tick() -> dict:
-    """One worker tick: drain queue + budgeted refresh, wall-clock bounded.
-    Skipped (not queued) if a tick is already running."""
-    if _tick_lock.locked():
-        log.info("tick skipped (previous tick still running)")
-        return {"skipped": "tick already running"}
-    async with _tick_lock:
-        s = get_settings()
-        t0 = time.monotonic()
-        deadline = t0 + s.WORKER_TICK_BUDGET_MIN * 60
-        log.info("tick start (budget %ss)", int(deadline - t0))
-
-        stats = {
-            "queue": await _drain_queue(deadline),
-            "refresh": await _refresh_watchlist(deadline),
-            "ms": int((time.monotonic() - t0) * 1000),
-        }
-        STATE["last_tick_at"] = dt.datetime.now(dt.timezone.utc)
-        STATE["last_tick_stats"] = stats
-        log.info("tick done: %s", stats)
-        await _log_event("worker tick", stats)
-        await _retention_sweep()
-        return stats
-
-
-# -------------------------------------------------------------------- runner
-
-async def run_forever() -> None:
-    """Worker loop: periodic ticks + reacts to kicks (which call tick()
-    directly, so the loop only needs the interval timer)."""
-    s = get_settings()
-    STATE["started_at"] = dt.datetime.now(dt.timezone.utc)
-    log.info(
-        "worker started (interval=%sm budget/run=%d parallel=%d)",
-        s.WORKER_INTERVAL_MIN, s.WORKER_BUDGET_PER_RUN, s.CRAWL_MAX_PARALLEL,
-    )
-    while True:
-        await asyncio.sleep(s.WORKER_INTERVAL_MIN * 60)
-        try:
-            await tick()
-        except Exception as e:
-            log.exception("worker tick crashed")
-            await _log_event("worker tick crashed", {"error": repr(e)[:500]})
-
-
-async def run_once() -> dict:
-    """--once mode: drain queue + one refresh pass, then exit."""
-    await db.queue_reset_in_flight()
-    return await tick()
-
-
-def main() -> None:
-    import sys
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
-    if "--once" in sys.argv:
-        result = asyncio.run(_once())
-        print(result)
-    else:
-        print("worker --once not given; run `python -m wellisearch.worker --once` "
-              "for a manual run (the app starts the worker itself).", file=sys.stderr)
-        sys.exit(2)
 
 
 async def _once() -> dict:

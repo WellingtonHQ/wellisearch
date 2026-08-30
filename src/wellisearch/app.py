@@ -55,96 +55,8 @@ app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
 
 _worker_task: asyncio.Task | None = None
 
-
-# ------------------------------------------------------------------ lifecycle
-
-async def _ev(message: str, info: dict | None = None) -> None:
-    """Best-effort event logging (dashboard log view)."""
-    try:
-        await db.log_event(message, info)
-    except Exception as e:
-        log.warning("event logging failed: %s", e)
-
-
-async def _startup() -> None:
-    global _worker_task
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
-    await db.startup()
-    await db.queue_reset_in_flight()
-    _worker_task = asyncio.create_task(run_forever(), name="worker")
-    log.info("wellisearch up (worker task started)")
-    await _ev(
-        "wellisearch started",
-        {"version": app.version, "providers": get_settings().provider_order},
-    )
-
-
-async def _shutdown() -> None:
-    global _worker_task
-    if _worker_task is not None:
-        _worker_task.cancel()
-        try:
-            await _worker_task
-        except (asyncio.CancelledError, Exception):
-            pass
-        _worker_task = None
-    from .providers import shutdown_gateway
-
-    await shutdown_gateway()
-    await db.close()
-
-
-# ------------------------------------------------------------------------ auth
-
-@app.middleware("http")
-async def _auth(request: Request, call_next):
-    s = get_settings()
-    key = s.WELLISEARCH_API_KEY
-    path = request.url.path
-    if key and (path.startswith("/api") or path.startswith("/mcp")):
-        token: str | None = None
-        authz = request.headers.get("authorization", "")
-        if authz.lower().startswith("bearer "):
-            token = authz[len("bearer "):].strip()
-        elif request.headers.get("x-api-key"):
-            token = request.headers["x-api-key"].strip()
-        if token is None or not hmac.compare_digest(token, key):
-            return JSONResponse({"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"}, status_code=401)
-    return await call_next(request)
-
-
-# ----------------------------------------------------------------------- routes
-
-@app.get("/health")
-async def health() -> dict[str, Any]:
-    out: dict[str, Any] = {"status": "ok", "time": dt.datetime.now(dt.timezone.utc).isoformat()}
-    try:
-        await db.fetch_one("SELECT 1 AS ok")
-        out["database"] = "ok"
-    except Exception as e:
-        out["database"] = f"error: {e}"
-        out["status"] = "degraded"
-    try:
-        ok, detail = await crawler.health()
-        out["crawl4ai"] = detail if ok else f"error: {detail}"
-    except Exception as e:
-        out["crawl4ai"] = f"error: {e}"
-    try:
-        gw = get_gateway()
-        out["providers"] = [
-            {
-                "name": p.name,
-                "configured": p.configured,
-                "state": await db.get_provider_state(p.name),
-            }
-            for p in await gw.ordered_providers()
-        ]
-    except Exception as e:
-        out["providers"] = f"error: {e}"
-    return out
+WIN_MIN_SECS = 600    # window floor: 10 minutes
+WIN_MAX_SECS = 86400  # window ceiling: 24 hours
 
 
 class FetchBody(BaseModel):
@@ -174,25 +86,38 @@ class PagePatch(BaseModel):
     disabled: bool = Field(default=False)
 
 
-def _negotiate(format_param: str | None, request: Request) -> str:
-    """Resolve the response format from the explicit `format` param and the
-    Accept header. An invalid explicit format is a client error (400)."""
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health")
+async def health() -> dict[str, Any]:
+    out: dict[str, Any] = {"status": "ok", "time": dt.datetime.now(dt.timezone.utc).isoformat()}
     try:
-        return resolve_format(format_param, request.headers.get("accept"))
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-
-def _respond(
-    out: dict,
-    fmt: str,
-    render_md,
-    status: int = 200,
-) -> Response:
-    """The pipeline dict as the negotiated wire format (json | markdown)."""
-    if fmt == "json":
-        return Response(to_json(out), media_type="application/json", status_code=status)
-    return Response(render_md(out), media_type="text/markdown", status_code=status)
+        await db.fetch_one("SELECT 1 AS ok")
+        out["database"] = "ok"
+    except Exception as e:
+        out["database"] = f"error: {e}"
+        out["status"] = "degraded"
+    try:
+        ok, detail = await crawler.health()
+        out["crawl4ai"] = detail if ok else f"error: {detail}"
+    except Exception as e:
+        out["crawl4ai"] = f"error: {e}"
+    try:
+        gw = get_gateway()
+        out["providers"] = [
+            {
+                "name": p.name,
+                "configured": p.configured,
+                "state": await db.get_provider_state(p.name),
+            }
+            for p in await gw.ordered_providers()
+        ]
+    except Exception as e:
+        out["providers"] = f"error: {e}"
+    return out
 
 
 @app.get("/api/search")
@@ -446,14 +371,6 @@ async def api_logs_searches(limit: int = 50) -> Any:
     return {"searches": rows}
 
 
-WIN_MIN_SECS = 600    # window floor: 10 minutes
-WIN_MAX_SECS = 86400  # window ceiling: 24 hours
-
-
-def _clamp_window(secs: int) -> int:
-    return max(WIN_MIN_SECS, min(int(secs), WIN_MAX_SECS))
-
-
 @app.get("/api/window")
 async def api_window(secs: int = 86400) -> Any:
     """Windowed activity stats (searches + crawls), clamped to 10m..24h."""
@@ -482,14 +399,6 @@ async def api_window(secs: int = 86400) -> Any:
             "by_status": {r["status"]: r["n"] for r in crows},
         },
     }
-
-
-def _short_url(url: str) -> str:
-    from urllib.parse import urlparse
-
-    p = urlparse(url)
-    first = p.path.strip("/").split("/", 1)[0]
-    return f"{p.netloc}/{first}" if first else p.netloc
 
 
 @app.get("/api/logs")
@@ -579,16 +488,6 @@ async def api_logs(
 # and is served unauthenticated — it is a public API contract; OWUI still
 # sends the bearer token, and the endpoints themselves stay auth-gated.
 
-_OWUI_SPEC_PATH = pathlib.Path(__file__).resolve().parent / "owui" / "openapi.json"
-
-
-def _load_owui_spec() -> dict[str, Any]:
-    with _OWUI_SPEC_PATH.open(encoding="utf-8") as f:
-        spec = json.load(f)
-    spec["info"]["version"] = __version__  # single source of truth (0.0.0 placeholder on disk)
-    return spec
-
-
 @app.get("/owui/openapi.json")
 async def owui_openapi() -> Any:
     return _load_owui_spec()
@@ -612,8 +511,6 @@ else:  # pragma: no cover
         return {"service": "wellisearch", "docs": "/docs"}
 
 
-# ---------------------------------------------------------------------- uvicorn
-
 def main() -> None:
     import sys
 
@@ -626,6 +523,110 @@ def main() -> None:
         # needs the selector loop (see loopfix.py)
         kwargs["loop"] = "wellisearch.loopfix:loop_factory"
     uvicorn.run("wellisearch.app:app", **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _ev(message: str, info: dict | None = None) -> None:
+    """Best-effort event logging (dashboard log view)."""
+    try:
+        await db.log_event(message, info)
+    except Exception as e:
+        log.warning("event logging failed: %s", e)
+
+
+async def _startup() -> None:
+    global _worker_task
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+    await db.startup()
+    await db.queue_reset_in_flight()
+    _worker_task = asyncio.create_task(run_forever(), name="worker")
+    log.info("wellisearch up (worker task started)")
+    await _ev(
+        "wellisearch started",
+        {"version": app.version, "providers": get_settings().provider_order},
+    )
+
+
+async def _shutdown() -> None:
+    global _worker_task
+    if _worker_task is not None:
+        _worker_task.cancel()
+        try:
+            await _worker_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        _worker_task = None
+    from .providers import shutdown_gateway
+
+    await shutdown_gateway()
+    await db.close()
+
+
+@app.middleware("http")
+async def _auth(request: Request, call_next):
+    s = get_settings()
+    key = s.WELLISEARCH_API_KEY
+    path = request.url.path
+    if key and (path.startswith("/api") or path.startswith("/mcp")):
+        token: str | None = None
+        authz = request.headers.get("authorization", "")
+        if authz.lower().startswith("bearer "):
+            token = authz[len("bearer "):].strip()
+        elif request.headers.get("x-api-key"):
+            token = request.headers["x-api-key"].strip()
+        if token is None or not hmac.compare_digest(token, key):
+            return JSONResponse({"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"}, status_code=401)
+    return await call_next(request)
+
+
+def _negotiate(format_param: str | None, request: Request) -> str:
+    """Resolve the response format from the explicit `format` param and the
+    Accept header. An invalid explicit format is a client error (400)."""
+    try:
+        return resolve_format(format_param, request.headers.get("accept"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _respond(
+    out: dict,
+    fmt: str,
+    render_md,
+    status: int = 200,
+) -> Response:
+    """The pipeline dict as the negotiated wire format (json | markdown)."""
+    if fmt == "json":
+        return Response(to_json(out), media_type="application/json", status_code=status)
+    return Response(render_md(out), media_type="text/markdown", status_code=status)
+
+
+def _clamp_window(secs: int) -> int:
+    return max(WIN_MIN_SECS, min(int(secs), WIN_MAX_SECS))
+
+
+def _short_url(url: str) -> str:
+    from urllib.parse import urlparse
+
+    p = urlparse(url)
+    first = p.path.strip("/").split("/", 1)[0]
+    return f"{p.netloc}/{first}" if first else p.netloc
+
+
+_OWUI_SPEC_PATH = pathlib.Path(__file__).resolve().parent / "owui" / "openapi.json"
+
+
+def _load_owui_spec() -> dict[str, Any]:
+    with _OWUI_SPEC_PATH.open(encoding="utf-8") as f:
+        spec = json.load(f)
+    spec["info"]["version"] = __version__  # single source of truth (0.0.0 placeholder on disk)
+    return spec
 
 
 if __name__ == "__main__":

@@ -20,10 +20,6 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 
-def _tokens(text: str) -> int:
-    return max(1, len(text) // CHARS_PER_TOKEN)
-
-
 def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
     if not markdown or not markdown.strip():
         return []
@@ -97,3 +93,12 @@ def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
             chunks.pop()
 
     return chunks
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _tokens(text: str) -> int:
+    return max(1, len(text) // CHARS_PER_TOKEN)

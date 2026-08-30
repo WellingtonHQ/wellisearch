@@ -25,6 +25,10 @@ log = logging.getLogger("wellisearch.crawler")
 _crawl_sem: asyncio.Semaphore | None = None
 
 
+# ---------------------------------------------------------------------------
+# Client
+# ---------------------------------------------------------------------------
+
 def crawl_semaphore() -> asyncio.Semaphore:
     global _crawl_sem
     if _crawl_sem is None:
@@ -46,14 +50,6 @@ class CrawlError(Exception):
 
     def status_label(self) -> str:
         return f"http_{self.status}" if self.status else "error"
-
-
-def _headers() -> dict[str, str]:
-    h = {"Content-Type": "application/json"}
-    key = get_settings().CRAWL4AI_API_KEY
-    if key:
-        h["Authorization"] = f"Bearer {key}"
-    return h
 
 
 async def fit_markdown(url: str) -> tuple[str | None, str]:
@@ -96,3 +92,15 @@ async def health() -> tuple[bool, str]:
             return False, f"http {r.status_code}"
     except httpx.HTTPError as e:
         return False, str(e)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _headers() -> dict[str, str]:
+    h = {"Content-Type": "application/json"}
+    key = get_settings().CRAWL4AI_API_KEY
+    if key:
+        h["Authorization"] = f"Bearer {key}"
+    return h

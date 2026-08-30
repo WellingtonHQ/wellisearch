@@ -47,22 +47,49 @@ Env (all optional, sensible defaults)
   BENCH_SAMPLE_SIZE        default 5
   BENCH_OUT_DIR            default <this dir>/results
 """
+
+
 from __future__ import annotations
 
+
 import argparse
+
+
 import asyncio
+
+
 import json
+
+
 import math
+
+
 import os
+
+
 import re
+
+
 import statistics
+
+
 import time
+
+
 from dataclasses import dataclass, field
+
+
 from pathlib import Path
+
+
 from typing import Any
 
+
 import httpx
+
+
 import psycopg
+
 
 HERE = Path(__file__).resolve().parent
 
@@ -76,27 +103,6 @@ def log(msg: str) -> None:
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
 
-def _load_dotenv() -> None:
-    """Load KEY=VALUE pairs from the repo-root ``.env`` into ``os.environ``.
-
-    Values already present in the environment win, so explicit exports
-    (e.g. ``POSTGRES_HOST=127.0.0.1``) override the file. Dependency-free and
-    best-effort: a missing/malformed file is simply ignored. This is what lets
-    the judge key (kept in the gitignored ``.env``) be picked up automatically.
-    """
-    env_file = HERE.parent / ".env"
-    if not env_file.is_file():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip("'\"")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
 DEFAULT_MODELS: list[tuple[str, str]] = [
     ("qwen3-8b", "qwen3:8b"),
     # qwen3-4b (thinking) narrates its reasoning into the content (weak
@@ -107,6 +113,7 @@ DEFAULT_MODELS: list[tuple[str, str]] = [
     ("qwen3-1.7b", "qwen3:1.7b"),
     ("qwen3-0.6b", "qwen3:0.6b"),
 ]
+
 
 CLEANUP_SYSTEM_PROMPT = (
     "You are a precise markdown cleaner. Rewrite the markdown provided by the "
@@ -122,6 +129,7 @@ CLEANUP_SYSTEM_PROMPT = (
     "- Output ONLY the cleaned markdown. No explanations, no preamble, and no "
     "code fence around the whole document."
 )
+
 
 JUDGE_SYSTEM_PROMPT = (
     "You are evaluating a markdown-cleaning model. You are given the ORIGINAL "
@@ -140,6 +148,7 @@ JUDGE_SYSTEM_PROMPT = (
     '"note": "<2-3 sentences>"}'
 )
 
+
 _BOILERPLATE_PATTERNS = [
     r"sign\s+in", r"log\s+in", r"cookie", r"privacy\s+policy", r"terms\s+of",
     r"subscribe", r"newsletter", r"all\s+rights\s+reserved", r"copyright",
@@ -147,7 +156,10 @@ _BOILERPLATE_PATTERNS = [
     r"navigation", r"skip\s+to\s+content", r"accept\s+all", r"back\s+to\s+top",
     r"related\s+articles", r"share\s+this", r"follow\s+us",
 ]
+
+
 _BOILERPLATE_RE = re.compile("|".join(_BOILERPLATE_PATTERNS), re.IGNORECASE)
+
 
 _STOPWORDS = frozenset(
     """a an and are as at be but by for from has have he her his i if in is it
@@ -252,6 +264,7 @@ def load_config(args: argparse.Namespace) -> Config:
 
 # No single domain may contribute more than this many pages to the sample.
 PER_DOMAIN_CAP = 3
+
 
 # Cap on candidate rows pulled from Postgres for the sample
 # (select_random_pages then picks within it). Keeps the snapshot step light
@@ -358,21 +371,6 @@ def load_sample(cfg: Config) -> list[dict[str, Any]]:
         # documents even if the stored sample is larger.
         pages = pages[: cfg.sample_size]
     return pages
-
-
-# --------------------------------------------------------------------- LLM calls
-
-def _headers(api_key: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-
-def _native_base(base_url: str) -> str:
-    """Ollama native-API root (``/api/...``) from a base URL that may be the
-    OpenAI-compatible one (``.../v1``)."""
-    base = base_url.rstrip("/")
-    if base.endswith("/v1"):
-        base = base[: -len("/v1")]
-    return base
 
 
 async def stream_chat(
@@ -491,36 +489,6 @@ async def judge_call(
         except json.JSONDecodeError:
             pass
     return {"scores": scores, "raw": text, "ms": round((time.perf_counter() - t0) * 1000, 1)}
-
-
-# ------------------------------------------------------------- deterministic metrics
-
-def _words(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", text.lower())
-
-
-def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
-    if len(words) < n:
-        n = 1
-    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
-
-
-def _containment(needle: set, haystack: set) -> float:
-    if not needle:
-        return 0.0
-    return len(needle & haystack) / len(needle)
-
-
-def _structure(text: str) -> dict[str, int]:
-    lines = text.splitlines()
-    return {
-        "headings": sum(1 for l in lines if re.match(r"^\s{0,3}#{1,6}\s", l)),
-        "tables": sum(1 for l in lines if "|" in l and l.strip().startswith("|")),
-        "code_fences": sum(1 for l in lines if l.strip().startswith("```")),
-        "list_items": sum(
-            1 for l in lines if re.match(r"^\s*([-*+]|\d+\.)\s+", l)
-        ),
-    }
 
 
 def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
@@ -682,24 +650,6 @@ async def run_all(cfg: Config) -> dict[str, Any]:
     return payload
 
 
-# --------------------------------------------------------------------- report
-
-def _stat(values: list[float]) -> dict[str, float]:
-    if not values:
-        return {"n": 0}
-    s = sorted(values)
-    n = len(s)
-    p95 = s[min(n - 1, int(0.95 * n))]
-    return {
-        "n": n,
-        "median": round(statistics.median(s), 3),
-        "mean": round(statistics.fmean(s), 3),
-        "min": round(s[0], 3),
-        "max": round(s[-1], 3),
-        "p95": round(p95, 3),
-    }
-
-
 def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for label, recs in payload["results"].items():
@@ -728,16 +678,6 @@ def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             agg["judge_preservation"] = _stat([float(x) for x in jp])
         out[label] = agg
     return out
-
-
-def _fmt_stat(s: dict[str, Any]) -> str:
-    if s.get("n", 0) == 0:
-        return "—"
-    return f"{s['median']} (p95 {s['p95']})"
-
-
-def _median(values: list[float]) -> float | None:
-    return statistics.median(values) if values else None
 
 
 def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
@@ -800,6 +740,162 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     print("  ".join("-" * w for w in widths), flush=True)
     for r in data:
         print(line(r), flush=True)
+
+
+def write_report(cfg: Config, payload: dict[str, Any]) -> None:
+    agg = aggregate(payload)
+    labels = list(payload["results"].keys())
+    judge = bool(payload["config"].get("judge_model"))
+    lines = (
+        _report_meta_lines(payload)
+        + _report_table_lines(agg, labels, judge)
+        + _report_detail_lines(payload, labels)
+    )
+    cfg.report_file.write_text("\n".join(lines), encoding="utf-8")
+
+
+def report_from_disk(cfg: Config) -> None:
+    if not cfg.results_file.exists():
+        raise SystemExit(f"no results at {cfg.results_file} — run `python llm_md_cleanup_bench.py run` first")
+    payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
+    write_report(cfg, payload)
+
+
+# --------------------------------------------------------------------- main
+
+def main() -> None:
+    _load_dotenv()
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("command", choices=["sample", "run", "report", "all"])
+    p.add_argument("--models", help="comma list label=ollama_tag (default: the 5 benchmark models)")
+    p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
+    p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
+    p.add_argument("--concurrency", type=int, default=1, help="parallel pages per model (default 1 = fair CPU timing)")
+    p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")
+    p.add_argument("--judge-url", help="judge OpenAI-compatible base URL")
+    p.add_argument("--out-dir", help="output directory (default benchmarks/results)")
+    p.add_argument("--smoke", action="store_true", help="2 pages x first 2 models, quick sanity check")
+    args = p.parse_args()
+
+    cfg = load_config(args)
+
+    if args.command in ("sample", "all"):
+        pages = asyncio.run(build_sample(cfg))
+        save_sample(cfg, pages)
+        domains = sorted({p_["domain"] for p_ in pages})
+        log(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
+
+    if args.command in ("run", "all"):
+        asyncio.run(run_all(cfg))
+        log(f"[run] results -> {cfg.results_file}")
+
+    if args.command in ("report", "all"):
+        if not cfg.results_file.exists():
+            raise SystemExit(f"no results at {cfg.results_file} — run the `run` step first")
+        payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
+        write_report(cfg, payload)
+        log(f"[report] -> {cfg.report_file}")
+        print_summary(cfg, payload)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from the repo-root ``.env`` into ``os.environ``.
+
+    Values already present in the environment win, so explicit exports
+    (e.g. ``POSTGRES_HOST=127.0.0.1``) override the file. Dependency-free and
+    best-effort: a missing/malformed file is simply ignored. This is what lets
+    the judge key (kept in the gitignored ``.env``) be picked up automatically.
+    """
+    env_file = HERE.parent / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+# --------------------------------------------------------------------- LLM calls
+
+def _headers(api_key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+
+def _native_base(base_url: str) -> str:
+    """Ollama native-API root (``/api/...``) from a base URL that may be the
+    OpenAI-compatible one (``.../v1``)."""
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+    return base
+
+
+# ------------------------------------------------------------- deterministic metrics
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
+    if len(words) < n:
+        n = 1
+    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def _containment(needle: set, haystack: set) -> float:
+    if not needle:
+        return 0.0
+    return len(needle & haystack) / len(needle)
+
+
+def _structure(text: str) -> dict[str, int]:
+    lines = text.splitlines()
+    return {
+        "headings": sum(1 for l in lines if re.match(r"^\s{0,3}#{1,6}\s", l)),
+        "tables": sum(1 for l in lines if "|" in l and l.strip().startswith("|")),
+        "code_fences": sum(1 for l in lines if l.strip().startswith("```")),
+        "list_items": sum(
+            1 for l in lines if re.match(r"^\s*([-*+]|\d+\.)\s+", l)
+        ),
+    }
+
+
+# --------------------------------------------------------------------- report
+
+def _stat(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {"n": 0}
+    s = sorted(values)
+    n = len(s)
+    p95 = s[min(n - 1, int(0.95 * n))]
+    return {
+        "n": n,
+        "median": round(statistics.median(s), 3),
+        "mean": round(statistics.fmean(s), 3),
+        "min": round(s[0], 3),
+        "max": round(s[-1], 3),
+        "p95": round(p95, 3),
+    }
+
+
+def _fmt_stat(s: dict[str, Any]) -> str:
+    if s.get("n", 0) == 0:
+        return "—"
+    return f"{s['median']} (p95 {s['p95']})"
+
+
+def _median(values: list[float]) -> float | None:
+    return statistics.median(values) if values else None
 
 
 def _report_meta_lines(payload: dict[str, Any]) -> list[str]:
@@ -880,62 +976,6 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
             )
         lines.append("")
     return lines
-
-
-def write_report(cfg: Config, payload: dict[str, Any]) -> None:
-    agg = aggregate(payload)
-    labels = list(payload["results"].keys())
-    judge = bool(payload["config"].get("judge_model"))
-    lines = (
-        _report_meta_lines(payload)
-        + _report_table_lines(agg, labels, judge)
-        + _report_detail_lines(payload, labels)
-    )
-    cfg.report_file.write_text("\n".join(lines), encoding="utf-8")
-
-
-def report_from_disk(cfg: Config) -> None:
-    if not cfg.results_file.exists():
-        raise SystemExit(f"no results at {cfg.results_file} — run `python llm_md_cleanup_bench.py run` first")
-    payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
-    write_report(cfg, payload)
-
-
-# --------------------------------------------------------------------- main
-
-def main() -> None:
-    _load_dotenv()
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["sample", "run", "report", "all"])
-    p.add_argument("--models", help="comma list label=ollama_tag (default: the 5 benchmark models)")
-    p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
-    p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
-    p.add_argument("--concurrency", type=int, default=1, help="parallel pages per model (default 1 = fair CPU timing)")
-    p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")
-    p.add_argument("--judge-url", help="judge OpenAI-compatible base URL")
-    p.add_argument("--out-dir", help="output directory (default benchmarks/results)")
-    p.add_argument("--smoke", action="store_true", help="2 pages x first 2 models, quick sanity check")
-    args = p.parse_args()
-
-    cfg = load_config(args)
-
-    if args.command in ("sample", "all"):
-        pages = asyncio.run(build_sample(cfg))
-        save_sample(cfg, pages)
-        domains = sorted({p_["domain"] for p_ in pages})
-        log(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
-
-    if args.command in ("run", "all"):
-        asyncio.run(run_all(cfg))
-        log(f"[run] results -> {cfg.results_file}")
-
-    if args.command in ("report", "all"):
-        if not cfg.results_file.exists():
-            raise SystemExit(f"no results at {cfg.results_file} — run the `run` step first")
-        payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
-        write_report(cfg, payload)
-        log(f"[report] -> {cfg.report_file}")
-        print_summary(cfg, payload)
 
 
 if __name__ == "__main__":

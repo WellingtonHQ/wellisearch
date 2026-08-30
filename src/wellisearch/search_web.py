@@ -63,53 +63,6 @@ def render_search_markdown(out: dict) -> str:
     return "\n\n".join(["\n".join(lines), "\n---\n".join(blocks)])
 
 
-async def _search_local_index(
-    query: str,
-    k: int,
-    max_age_days: float | None,
-) -> tuple[list[dict], int, str | None]:
-    """The local-index leg: embed the query, rank via fn_search_local, apply
-    the optional freshness filter. Returns (rows, index_ms, index_error).
-
-    A bad query embedding degrades to FTS+trigram only (not an error). A
-    failed fn_search_local (statement timeout, DB error) degrades to an empty
-    row set AND returns the exception as `index_error` — auto mode falls back
-    to the provider gateway (the error is hidden there), local mode surfaces
-    it in the error envelope so "the index is empty" and "the index is down"
-    are distinguishable.
-    """
-    s = get_settings()
-    t_index = time.monotonic()
-    try:
-        qvec = await asyncio.to_thread(embed_one, query)
-    except Exception as e:
-        log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
-        qvec = None
-
-    # Fetch a bit more than we'll return so the coverage gate can see a
-    # full-coverage page that ranks just outside the top-k by score. The extra
-    # rows cost nothing — the legs/fusion are the same; only the final LIMIT
-    # differs.
-    gate_k = max(k, 10)
-    try:
-        rows = await db.fetch_all(
-            "SELECT * FROM fn_search_local(%s, %s::vector, %s)",
-            (query, qvec if qvec is not None else None, gate_k),
-            timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
-        )
-    except Exception as e:
-        log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
-        return [], int((time.monotonic() - t_index) * 1000), f"{type(e).__name__}: {e}"
-
-    if max_age_days is not None:
-        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
-        rows = [
-            r for r in rows
-            if r.get("last_crawled") is None or r["last_crawled"] >= cutoff
-        ]
-    return rows, int((time.monotonic() - t_index) * 1000), None
-
-
 async def search_web(
     query: str,
     num_results: int | None = None,
@@ -238,3 +191,55 @@ async def search_web(
     if source == "error" and index_error:
         out["index_error"] = index_error
     return out
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _search_local_index(
+    query: str,
+    k: int,
+    max_age_days: float | None,
+) -> tuple[list[dict], int, str | None]:
+    """The local-index leg: embed the query, rank via fn_search_local, apply
+    the optional freshness filter. Returns (rows, index_ms, index_error).
+
+    A bad query embedding degrades to FTS+trigram only (not an error). A
+    failed fn_search_local (statement timeout, DB error) degrades to an empty
+    row set AND returns the exception as `index_error` — auto mode falls back
+    to the provider gateway (the error is hidden there), local mode surfaces
+    it in the error envelope so "the index is empty" and "the index is down"
+    are distinguishable.
+    """
+    s = get_settings()
+    t_index = time.monotonic()
+    try:
+        qvec = await asyncio.to_thread(embed_one, query)
+    except Exception as e:
+        log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
+        qvec = None
+
+    # Fetch a bit more than we'll return so the coverage gate can see a
+    # full-coverage page that ranks just outside the top-k by score. The extra
+    # rows cost nothing — the legs/fusion are the same; only the final LIMIT
+    # differs.
+    gate_k = max(k, 10)
+    try:
+        rows = await db.fetch_all(
+            "SELECT * FROM fn_search_local(%s, %s::vector, %s)",
+            (query, qvec if qvec is not None else None, gate_k),
+            timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
+        )
+    except Exception as e:
+        log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
+        return [], int((time.monotonic() - t_index) * 1000), f"{type(e).__name__}: {e}"
+
+    if max_age_days is not None:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
+        rows = [
+            r for r in rows
+            if r.get("last_crawled") is None or r["last_crawled"] >= cutoff
+        ]
+    return rows, int((time.monotonic() - t_index) * 1000), None

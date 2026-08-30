@@ -26,22 +26,6 @@ BASE = "http://127.0.0.1:8780"
 DEFAULT_URL = "https://python.langchain.com/docs/introduction/"
 
 
-def _load_api_key() -> str:
-    key = os.environ.get("WELLISEARCH_API_KEY")
-    if key:
-        return key
-    env_file = Path(__file__).resolve().parent.parent / ".env"
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        if line.startswith("WELLISEARCH_API_KEY="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
-    raise SystemExit("WELLISEARCH_API_KEY not found in environment or .env")
-
-
-KEY = _load_api_key()
-H = {"X-API-Key": KEY}
-PASS, FAIL = 0, 0
-
-
 def check(
     name: str,
     cond: bool,
@@ -59,22 +43,6 @@ def check(
 def first_url(markdown: str) -> str | None:
     m = re.search(r"URL: (\S+)", markdown)
     return m.group(1) if m else None
-
-
-async def _all_page_urls(c: httpx.AsyncClient) -> list[str]:
-    """Every indexed page URL (limit 100)."""
-    rr = await c.get("/api/pages", params={"limit": "100"})
-    return [p["url"] for p in rr.json().get("pages", [])]
-
-
-async def _set_pages_disabled(
-    c: httpx.AsyncClient,
-    urls: list[str],
-    disabled: bool,
-) -> None:
-    """PATCH each page's disabled flag (forces/undoes gateway failover)."""
-    for u in urls:
-        await c.patch(f"/api/pages/{quote(u, safe='')}", json={"disabled": disabled})
 
 
 # ---------------------------------------------------------------------- health
@@ -451,6 +419,70 @@ async def mcp_http_pass() -> None:
         check("mcp/http: stateless streamable session", False, f"{type(e).__name__}: {e}")
 
 
+# ------------------------------------------------------------------------ main
+
+async def main() -> None:
+    """Run the whole E2E pass, in order (later steps reuse earlier state)."""
+    async with httpx.AsyncClient(base_url=BASE, headers=H, timeout=120) as c:
+        await test_health(c)
+        await test_auth()
+        url = await test_search_gateway(c)
+        await test_fetch(c, url)
+        await test_page_indexed(c, url)
+        await test_local_search(c, url)
+        await test_search_mode_provider(c)
+        await test_search_mode_local(c, url)
+        await test_search_mode_invalid(c)
+        await test_fetch_bulk(c)
+        await test_provider_failover(c)
+        await test_provider_order(c)
+        await test_stats_logs(c, url)
+        await test_window_logs(c)
+        await test_dashboard(c)
+        await test_format_json(c, url)
+        await mcp_http_pass()
+
+    print(f"\n===== E2E RESULT: {PASS} passed, {FAIL} failed =====")
+    sys.exit(1 if FAIL else 0)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_api_key() -> str:
+    key = os.environ.get("WELLISEARCH_API_KEY")
+    if key:
+        return key
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        if line.startswith("WELLISEARCH_API_KEY="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    raise SystemExit("WELLISEARCH_API_KEY not found in environment or .env")
+
+
+KEY = _load_api_key()
+H = {"X-API-Key": KEY}
+PASS, FAIL = 0, 0
+
+
+async def _all_page_urls(c: httpx.AsyncClient) -> list[str]:
+    """Every indexed page URL (limit 100)."""
+    rr = await c.get("/api/pages", params={"limit": "100"})
+    return [p["url"] for p in rr.json().get("pages", [])]
+
+
+async def _set_pages_disabled(
+    c: httpx.AsyncClient,
+    urls: list[str],
+    disabled: bool,
+) -> None:
+    """PATCH each page's disabled flag (forces/undoes gateway failover)."""
+    for u in urls:
+        await c.patch(f"/api/pages/{quote(u, safe='')}", json={"disabled": disabled})
+
+
 async def _mcp_http_auth_checks() -> None:
     """Keyless requests must 401; the removed SSE endpoints must 404."""
     # auth: keyless POST must 401 (middleware's startswith("/mcp") prefix)
@@ -526,33 +558,6 @@ async def _mcp_http_tool_call_checks(session: ClientSession) -> None:
           all(k in md for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
           and len(md) > 200,
           md[:120].replace("\n", " | "))
-
-
-# ------------------------------------------------------------------------ main
-
-async def main() -> None:
-    """Run the whole E2E pass, in order (later steps reuse earlier state)."""
-    async with httpx.AsyncClient(base_url=BASE, headers=H, timeout=120) as c:
-        await test_health(c)
-        await test_auth()
-        url = await test_search_gateway(c)
-        await test_fetch(c, url)
-        await test_page_indexed(c, url)
-        await test_local_search(c, url)
-        await test_search_mode_provider(c)
-        await test_search_mode_local(c, url)
-        await test_search_mode_invalid(c)
-        await test_fetch_bulk(c)
-        await test_provider_failover(c)
-        await test_provider_order(c)
-        await test_stats_logs(c, url)
-        await test_window_logs(c)
-        await test_dashboard(c)
-        await test_format_json(c, url)
-        await mcp_http_pass()
-
-    print(f"\n===== E2E RESULT: {PASS} passed, {FAIL} failed =====")
-    sys.exit(1 if FAIL else 0)
 
 
 if __name__ == "__main__":

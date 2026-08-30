@@ -21,6 +21,20 @@ from .index import store_page
 from .embed import model_name
 
 
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--force", action="store_true", help="re-embed every page, even if fresh")
+    ap.add_argument("--dry-run", action="store_true", help="report what would be re-embedded")
+    args = ap.parse_args()
+    asyncio.run(_run(force=args.force, dry_run=args.dry_run))
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 async def _run(force: bool, dry_run: bool) -> None:
     s = get_settings()
     await db.startup()
@@ -61,15 +75,6 @@ async def _run(force: bool, dry_run: bool) -> None:
         print(f"done: ok={ok} unchanged={unchanged} failed={failed}")
     finally:
         await db.close()
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--force", action="store_true", help="re-embed every page, even if fresh")
-    ap.add_argument("--dry-run", action="store_true", help="report what would be re-embedded")
-    args = ap.parse_args()
-    asyncio.run(_run(force=args.force, dry_run=args.dry_run))
 
 
 if __name__ == "__main__":

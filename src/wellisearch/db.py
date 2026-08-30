@@ -37,17 +37,6 @@ STARTUP_RETRIES = 10
 STARTUP_RETRY_S = 3.0
 
 
-def _month() -> str:
-    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m")
-
-
-async def _register_vector(conn: psycopg.AsyncConnection) -> None:
-    """Register the pgvector type adapter on every pooled connection."""
-    from pgvector.psycopg import register_vector_async
-
-    await register_vector_async(conn)
-
-
 class Database:
     def __init__(self) -> None:
         self._pool: AsyncConnectionPool | None = None
@@ -431,3 +420,19 @@ class Database:
 
 # module-level singleton
 db = Database()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _month() -> str:
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m")
+
+
+async def _register_vector(conn: psycopg.AsyncConnection) -> None:
+    """Register the pgvector type adapter on every pooled connection."""
+    from pgvector.psycopg import register_vector_async
+
+    await register_vector_async(conn)

@@ -55,22 +55,46 @@ Docker (reproducible environment, see benchmarks/Dockerfile.embed-bench):
 Dependencies (not part of the app):  pip install -r benchmarks/requirements.txt
 Models are downloaded from Hugging Face on first run and cached locally.
 """
+
+
 from __future__ import annotations
 
+
 import argparse
+
+
 import json
+
+
 import os
+
+
 import platform
+
+
 import subprocess
+
+
 import sys
+
+
 import time
+
+
 from pathlib import Path
+
 
 import numpy as np
 
+
 HERE = Path(__file__).resolve().parent
+
+
 DATA_DIR = HERE / "data"
+
+
 RESULTS_DIR = HERE / "results"
+
 
 # Production baseline first, then the candidates.
 DEFAULT_MODELS = [
@@ -78,6 +102,7 @@ DEFAULT_MODELS = [
     "nomic-ai/nomic-embed-text-v1.5",
     "Qwen/Qwen3-Embedding-0.6B",
 ]
+
 
 # Models to run through the FastEmbed (ONNX) backend instead of PyTorch.
 FASTEMBED_BACKEND = {
@@ -145,32 +170,6 @@ def load_data(data_dir: Path):
             )
     truth = {q["q"]: set(by_url[q["url"]]) for q in queries}
     return chunks, queries, truth
-
-
-def _effective_max_len(tok, args_max: int) -> int:
-    """Cap the requested max length at the model's true limit (if known)."""
-    native = getattr(tok, "model_max_length", None)
-    try:
-        native = int(native)
-    except (TypeError, ValueError):
-        native = None
-    if native is None or native > 100000:  # sentinel / unknown -> trust args
-        return args_max
-    return min(args_max, native)
-
-
-def _l2_normalize(X: np.ndarray) -> np.ndarray:
-    n = np.linalg.norm(X, axis=-1, keepdims=True)
-    n[n == 0] = 1.0
-    return (X / n).astype(np.float32)
-
-
-def _tok_len(
-    tok,
-    text: str,
-    max_len: int,
-) -> int:
-    return len(tok(text, truncation=True, max_length=max_len, add_special_tokens=False)["input_ids"])
 
 
 class TorchRunner:
@@ -518,6 +517,37 @@ def main(argv=None) -> int:
         sout.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"wrote {sout}")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _effective_max_len(tok, args_max: int) -> int:
+    """Cap the requested max length at the model's true limit (if known)."""
+    native = getattr(tok, "model_max_length", None)
+    try:
+        native = int(native)
+    except (TypeError, ValueError):
+        native = None
+    if native is None or native > 100000:  # sentinel / unknown -> trust args
+        return args_max
+    return min(args_max, native)
+
+
+def _l2_normalize(X: np.ndarray) -> np.ndarray:
+    n = np.linalg.norm(X, axis=-1, keepdims=True)
+    n[n == 0] = 1.0
+    return (X / n).astype(np.float32)
+
+
+def _tok_len(
+    tok,
+    text: str,
+    max_len: int,
+) -> int:
+    return len(tok(text, truncation=True, max_length=max_len, add_special_tokens=False)["input_ids"])
 
 
 if __name__ == "__main__":

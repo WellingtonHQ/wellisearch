@@ -37,6 +37,26 @@ from .worker import crawl_url
 BATCH = 100
 
 
+def main() -> None:
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--limit", type=int, default=0,
+                    help="only re-crawl the first N (by fetch_count)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="report what would be re-crawled, don't crawl")
+    ap.add_argument("--resume", action="store_true",
+                    help="skip pages already crawled in the last 24h (resume a "
+                         "partially-finished run)")
+    args = ap.parse_args()
+    asyncio.run(_run(limit=args.limit, dry_run=args.dry_run, resume=args.resume))
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 async def _run(
     limit: int,
     dry_run: bool,
@@ -103,21 +123,6 @@ async def _run(
               f"unchanged={stats['unchanged']} failed={stats['failed']}", flush=True)
     finally:
         await db.close()
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--limit", type=int, default=0,
-                    help="only re-crawl the first N (by fetch_count)")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="report what would be re-crawled, don't crawl")
-    ap.add_argument("--resume", action="store_true",
-                    help="skip pages already crawled in the last 24h (resume a "
-                         "partially-finished run)")
-    args = ap.parse_args()
-    asyncio.run(_run(limit=args.limit, dry_run=args.dry_run, resume=args.resume))
 
 
 if __name__ == "__main__":

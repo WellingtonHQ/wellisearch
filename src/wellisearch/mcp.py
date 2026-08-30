@@ -71,7 +71,46 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
 )
 
 
-# ----------------------------------------------------------------------- runtime
+# ---------------------------------------------------------------------------
+# Public
+# ---------------------------------------------------------------------------
+
+
+def mcp_asgi() -> _MCPMount:
+    """Stateless streamable HTTP ASGI app: /mcp/http.
+
+    Mount at "/mcp" (§7); the auth middleware's startswith("/mcp") prefix
+    covers the endpoint. The returned app is stable across lifespan
+    restarts — it resolves the active session manager per request.
+    """
+    return _MOUNT
+
+
+@asynccontextmanager
+async def mcp_http_lifespan() -> AsyncIterator[None]:
+    """Hold the streamable-HTTP session manager's task group for app lifetime.
+
+    Starlette does not run lifespans of mounted sub-apps, and without an
+    entered task group the first POST to /mcp/http 500s with
+    "Task group is not initialized. Make sure to use run()".
+
+    A fresh MCPServer is built per entry: the SDK's `run()` is one-shot per
+    instance (a second entry raises RuntimeError), so reusing an import-time
+    server would crash any second lifespan start in the same process
+    (uvicorn --reload, a second TestClient, an in-process restart).
+    """
+    runtime = _build_runtime()
+    _MOUNT.set_runtime(runtime)
+    try:
+        async with runtime.server.session_manager.run():
+            yield
+    finally:
+        _MOUNT.set_runtime(None)
+
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
 
 
 class _Runtime:
@@ -147,38 +186,3 @@ class _MCPMount:
 
 
 _MOUNT = _MCPMount()
-
-
-# ------------------------------------------------------------------------ public
-
-
-def mcp_asgi() -> _MCPMount:
-    """Stateless streamable HTTP ASGI app: /mcp/http.
-
-    Mount at "/mcp" (§7); the auth middleware's startswith("/mcp") prefix
-    covers the endpoint. The returned app is stable across lifespan
-    restarts — it resolves the active session manager per request.
-    """
-    return _MOUNT
-
-
-@asynccontextmanager
-async def mcp_http_lifespan() -> AsyncIterator[None]:
-    """Hold the streamable-HTTP session manager's task group for app lifetime.
-
-    Starlette does not run lifespans of mounted sub-apps, and without an
-    entered task group the first POST to /mcp/http 500s with
-    "Task group is not initialized. Make sure to use run()".
-
-    A fresh MCPServer is built per entry: the SDK's `run()` is one-shot per
-    instance (a second entry raises RuntimeError), so reusing an import-time
-    server would crash any second lifespan start in the same process
-    (uvicorn --reload, a second TestClient, an in-process restart).
-    """
-    runtime = _build_runtime()
-    _MOUNT.set_runtime(runtime)
-    try:
-        async with runtime.server.session_manager.run():
-            yield
-    finally:
-        _MOUNT.set_runtime(None)
