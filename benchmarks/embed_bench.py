@@ -117,10 +117,9 @@ def detect_cpu() -> str:
             return subprocess.check_output(
                 ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
             ).strip()
-        with open("/proc/cpuinfo", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                if line.lower().startswith("model name"):
-                    return line.split(":", 1)[1].strip()
+        name = _read_proc_cpuinfo()
+        if name is not None:
+            return name
     except Exception:
         pass
     return platform.processor() or "unknown"
@@ -548,6 +547,22 @@ def _tok_len(
     max_len: int,
 ) -> int:
     return len(tok(text, truncation=True, max_length=max_len, add_special_tokens=False)["input_ids"])
+
+
+def _read_proc_cpuinfo() -> str | None:
+    """Return the CPU model name from /proc/cpuinfo, or None if unavailable."""
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8", errors="ignore") as f:
+            return next(
+                (
+                    line.split(":", 1)[1].strip()
+                    for line in f
+                    if line.lower().startswith("model name")
+                ),
+                None,
+            )
+    except Exception:
+        return None
 
 
 if __name__ == "__main__":

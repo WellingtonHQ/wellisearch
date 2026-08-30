@@ -295,12 +295,8 @@ def select_random_pages(
         for d in domains:
             if len(picked) >= target:
                 break
-            if round_idx < min(cap, len(by_domain[d])):
-                row = by_domain[d][round_idx]
-                if row["url"] not in seen:
-                    seen.add(row["url"])
-                    picked.append(row)
-                    progressed = True
+            if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
+                progressed = True
         if not progressed:
             break
         round_idx += 1
@@ -399,30 +395,22 @@ async def stream_chat(
         },
     }
     t0 = time.perf_counter()
-    ttft_ms: float | None = None
-    parts: list[str] = []
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
+    state: dict[str, Any] = {
+        "ttft_ms": None,
+        "parts": [],
+        "prompt_tokens": None,
+        "completion_tokens": None,
+    }
     async with client.stream(
         "POST", f"{base}/api/chat", json=payload, headers=_headers(api_key)
     ) as resp:
         resp.raise_for_status()
         async for line in resp.aiter_lines():
-            if not line:
-                continue
-            try:
-                chunk = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            msg = chunk.get("message") or {}
-            content = msg.get("content")
-            if content:
-                if ttft_ms is None:
-                    ttft_ms = (time.perf_counter() - t0) * 1000
-                parts.append(content)
-            if chunk.get("done"):
-                prompt_tokens = chunk.get("prompt_eval_count")
-                completion_tokens = chunk.get("eval_count")
+            _process_stream_line(line, t0, state)
+    ttft_ms = state["ttft_ms"]
+    parts = state["parts"]
+    prompt_tokens = state["prompt_tokens"]
+    completion_tokens = state["completion_tokens"]
     total_ms = (time.perf_counter() - t0) * 1000
     text = "".join(parts)
     if completion_tokens is None and text:
@@ -476,18 +464,7 @@ async def judge_call(
     r.raise_for_status()
     data = r.json()
     text = data["choices"][0]["message"]["content"]
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    scores: dict[str, Any] = {}
-    if m:
-        try:
-            obj = json.loads(m.group(0))
-            for k in ("faithfulness", "noise_removal", "preservation"):
-                if isinstance(obj.get(k), (int, float)):
-                    scores[k] = int(obj[k])
-            if isinstance(obj.get("note"), str):
-                scores["note"] = obj["note"]
-        except json.JSONDecodeError:
-            pass
+    scores = _parse_judge_scores(text)
     return {"scores": scores, "raw": text, "ms": round((time.perf_counter() - t0) * 1000, 1)}
 
 
@@ -825,6 +802,24 @@ def _load_dotenv() -> None:
             os.environ[key] = value
 
 
+def _pick_from_domain(
+    domain: str,
+    rows: list[dict[str, Any]],
+    round_idx: int,
+    cap: int,
+    seen: set[str],
+    picked: list[dict[str, Any]],
+) -> bool:
+    """Pick the next row for a domain if within the cap and not already seen."""
+    if round_idx < min(cap, len(rows)):
+        row = rows[round_idx]
+        if row["url"] not in seen:
+            seen.add(row["url"])
+            picked.append(row)
+            return True
+    return False
+
+
 # --------------------------------------------------------------------- LLM calls
 
 def _headers(api_key: str) -> dict[str, str]:
@@ -838,6 +833,43 @@ def _native_base(base_url: str) -> str:
     if base.endswith("/v1"):
         base = base[: -len("/v1")]
     return base
+
+
+def _process_stream_line(line: str, t0: float, state: dict[str, Any]) -> None:
+    """Fold one streamed line into the state dict (ttft, parts, tokens)."""
+    if not line:
+        return
+    try:
+        chunk = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    msg = chunk.get("message") or {}
+    content = msg.get("content")
+    if content:
+        if state["ttft_ms"] is None:
+            state["ttft_ms"] = (time.perf_counter() - t0) * 1000
+        state["parts"].append(content)
+    if chunk.get("done"):
+        state["prompt_tokens"] = chunk.get("prompt_eval_count")
+        state["completion_tokens"] = chunk.get("eval_count")
+
+
+def _parse_judge_scores(text: str) -> dict[str, Any]:
+    """Extract the judge's 1-5 scores (and note) from a free-text reply."""
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    scores: dict[str, Any] = {}
+    if not m:
+        return scores
+    try:
+        obj = json.loads(m.group(0))
+        for k in ("faithfulness", "noise_removal", "preservation"):
+            if isinstance(obj.get(k), (int, float)):
+                scores[k] = int(obj[k])
+        if isinstance(obj.get("note"), str):
+            scores["note"] = obj["note"]
+    except json.JSONDecodeError:
+        return scores
+    return scores
 
 
 # ------------------------------------------------------------- deterministic metrics
