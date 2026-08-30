@@ -480,7 +480,7 @@ async function refresh() {
       api("/api/stats"),
       api("/api/providers"),
       api("/api/pages?sort=fetch_count&limit=5"),
-      api("/api/pages?sort=search_hit_count&limit=20"),
+      api("/api/pages?sort=search_hit_count&limit=5"),
       api("/api/window?secs=" + winSecs),
       api("/api/logs?secs=" + winSecs + "&limit=200"),
       api("/health").catch(() => null),
