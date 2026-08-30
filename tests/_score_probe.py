@@ -19,7 +19,7 @@ QUERIES = [
     ("SPURIOUS", "quantum computing explained"),
 ]
 
-async def main():
+async def main() -> None:
     s = get_settings()
     print("SEARCH_MIN_SCORE =", s.SEARCH_MIN_SCORE)
     await db.startup()

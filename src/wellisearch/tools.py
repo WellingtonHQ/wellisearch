@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from collections.abc import Callable
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -54,7 +55,7 @@ def _clean(obj: Any) -> Any:
 def _fmt(
     out: dict,
     format_param: str | None,
-    render_md,
+    render_md: Callable[[dict], str],
 ) -> str:
     """Render the pipeline dict in the requested format (json | markdown).
 

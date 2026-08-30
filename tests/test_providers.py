@@ -15,7 +15,7 @@ import json
 import httpx
 
 from wellisearch.config import Settings
-from wellisearch.providers.base import Provider, ProviderError
+from wellisearch.providers.base import Provider, ProviderError, Result
 from wellisearch.providers.brave import Brave
 from wellisearch.providers.exa import Exa
 from wellisearch.providers.tavily import Tavily
@@ -25,11 +25,11 @@ QUERY = "query here"
 
 
 def make_client(
-    status=200,
-    payload=None,
-    text="",
-    raise_exc=None,
-):
+    status: int = 200,
+    payload: dict | None = None,
+    text: str = "",
+    raise_exc: Exception | None = None,
+) -> tuple[httpx.AsyncClient, dict]:
     """Build an AsyncClient backed by a MockTransport.
 
     Returns (client, captured) where captured records the last request's
@@ -54,14 +54,14 @@ def make_client(
 
 
 async def run_search(
-    cls,
-    settings,
-    status=200,
-    payload=None,
-    text="",
-    num=3,
-    query=QUERY,
-):
+    cls: type[Provider],
+    settings: Settings,
+    status: int = 200,
+    payload: dict | None = None,
+    text: str = "",
+    num: int = 3,
+    query: str = QUERY,
+) -> tuple[Provider, list[Result], dict]:
     client, captured = make_client(status=status, payload=payload, text=text)
     p = cls(settings, client)
     results = await p.search(query, num)
@@ -69,11 +69,11 @@ async def run_search(
 
 
 async def expect_provider_error(
-    cls,
-    settings,
-    status,
-    msg_substr,
-):
+    cls: type[Provider],
+    settings: Settings,
+    status: int,
+    msg_substr: str,
+) -> None:
     client, _ = make_client(status=status, text="boom")
     p = cls(settings, client)
     try:
@@ -86,7 +86,7 @@ async def expect_provider_error(
     raise AssertionError(f"{p.name}: expected ProviderError for http {status}")
 
 
-async def expect_network_error(cls, settings):
+async def expect_network_error(cls: type[Provider], settings: Settings) -> None:
     client, _ = make_client(raise_exc=httpx.ConnectError("no route to host"))
     p = cls(settings, client)
     try:

@@ -11,6 +11,10 @@ import html
 import re
 from dataclasses import dataclass, field
 
+import httpx
+
+from ..config import Settings
+
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
@@ -45,8 +49,8 @@ class Provider:
 
     def __init__(
         self,
-        settings,
-        client,
+        settings: Settings,
+        client: httpx.AsyncClient,
     ) -> None:
         self.s = settings
         self.client = client

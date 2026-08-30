@@ -21,7 +21,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from .config import get_settings
+from .config import Settings, get_settings
 
 log = logging.getLogger("wellisearch.db")
 
@@ -86,7 +86,7 @@ class Database:
             await conn.execute(schema_sql)
         log.info("schema applied (extensions, tables, fn_search_local)")
 
-    async def _ensure_app_db(self, s) -> None:
+    async def _ensure_app_db(self, s: Settings) -> None:
         admin = await psycopg.AsyncConnection.connect(
             s.conninfo(s.POSTGRES_ADMIN_DB), autocommit=True
         )

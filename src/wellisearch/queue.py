@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 from . import worker
 from .config import get_settings
@@ -52,7 +53,7 @@ INFLIGHT = InFlight()
 async def crawl_deduped(
     url: str,
     trigger: str,
-    fn,
+    fn: Callable[[], Awaitable[object]],
 ) -> object:
     """Run `fn()` for url unless another crawl of the same URL is in flight;
     then await that crawl's result instead (no double-crawl).

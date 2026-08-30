@@ -66,6 +66,7 @@ import platform
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -135,7 +136,7 @@ def percentile(sorted_vals: list[float], p: float) -> float:
     return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (k - lo)
 
 
-def load_data(data_dir: Path):
+def load_data(data_dir: Path) -> tuple[list[dict], list[dict], dict[str, set[str]]]:
     chunks = [
         json.loads(line)
         for line in (data_dir / "corpus.jsonl").read_text(encoding="utf-8").splitlines()
@@ -163,8 +164,8 @@ class TorchRunner:
     def __init__(
         self,
         model_id: str,
-        args,
-    ):
+        args: argparse.Namespace,
+    ) -> None:
         import torch
         from sentence_transformers import SentenceTransformer
 
@@ -214,8 +215,8 @@ class FastEmbedRunner:
     def __init__(
         self,
         model_id: str,
-        args,
-    ):
+        args: argparse.Namespace,
+    ) -> None:
         import fastembed
         import onnxruntime
         from fastembed import TextEmbedding
@@ -253,7 +254,7 @@ class FastEmbedRunner:
         return _l2_normalize(v[None, :])[0]
 
 
-def make_runner(model_id: str, args):
+def make_runner(model_id: str, args: argparse.Namespace) -> TorchRunner | FastEmbedRunner:
     if model_id in FASTEMBED_BACKEND or "minilm" in model_id.lower():
         return FastEmbedRunner(model_id, args)
     return TorchRunner(model_id, args)
@@ -261,10 +262,10 @@ def make_runner(model_id: str, args):
 
 def score_quality(
     S: np.ndarray,
-    queries,
-    truth,
-    chunks,
-    order,
+    queries: list[dict],
+    truth: dict[str, set[str]],
+    chunks: list[dict],
+    order: list[int],
     topk: int,
 ) -> dict:
     nq, nd = S.shape
@@ -296,11 +297,11 @@ def score_quality(
 
 
 def measure_latency(
-    encode_one,
-    tok_count,
+    encode_one: Callable[[str], np.ndarray],
+    tok_count: Callable[[str], int],
     doc_texts: list[str],
     sample_n: int,
-):
+) -> dict | None:
     n = len(doc_texts)
     if n == 0:
         return None
@@ -323,10 +324,10 @@ def measure_latency(
 
 def run_model(
     model_id: str,
-    chunks,
-    queries,
-    truth,
-    args,
+    chunks: list[dict],
+    queries: list[dict],
+    truth: dict[str, set[str]],
+    args: argparse.Namespace,
 ) -> dict:
     runner = make_runner(model_id, args)
 
@@ -414,7 +415,7 @@ def print_report(results: list[dict], total_wall: float) -> None:
     print("=" * 100)
 
 
-def parse_args(argv=None):
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -436,7 +437,7 @@ def parse_args(argv=None):
     return a
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -518,7 +519,7 @@ def main(argv=None) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _effective_max_len(tok, args_max: int) -> int:
+def _effective_max_len(tok: object, args_max: int) -> int:
     """Cap the requested max length at the model's true limit (if known)."""
     native = getattr(tok, "model_max_length", None)
     try:
@@ -537,7 +538,7 @@ def _l2_normalize(X: np.ndarray) -> np.ndarray:
 
 
 def _tok_len(
-    tok,
+    tok: object,
     text: str,
     max_len: int,
 ) -> int:

@@ -13,6 +13,7 @@ import hmac
 import json
 import logging
 import pathlib
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -578,7 +579,7 @@ async def _shutdown() -> None:
 
 
 @app.middleware("http")
-async def _auth(request: Request, call_next):
+async def _auth(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     s = get_settings()
     key = s.WELLISEARCH_API_KEY
     path = request.url.path
@@ -609,7 +610,7 @@ def _negotiate(format_param: str | None, request: Request) -> str:
 def _respond(
     out: dict,
     fmt: str,
-    render_md,
+    render_md: Callable[[dict], str],
     status: int = 200,
 ) -> Response:
     """The pipeline dict as the negotiated wire format (json | markdown)."""
