@@ -252,9 +252,10 @@ first. The dashboard's "Log" view renders this.
 |---|---|---|
 | `secs` | 86400 | clamped to 600 (10m) .. 86400 (24h) |
 | `limit` | 200 | max 500 |
+| `q` | (empty) | case-insensitive substring match over each row's message and info; empty = no filter |
 
 Returns `{ logs: [{ ts, kind: "crawl" \| "search" \| "event", message, info }],
-total, secs }` where `total` is the row count in the window before `limit`.
+total, secs }` where `total` is the row count in the window (after any `q` filter) before `limit`.
 
 Operational events (worker ticks, provider gateway failures/serves, admin
 actions, startup) are written to the `event_log` table by the service itself

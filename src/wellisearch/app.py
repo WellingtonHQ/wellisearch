@@ -488,10 +488,16 @@ def _short_url(url: str) -> str:
 
 
 @app.get("/api/logs")
-async def api_logs(secs: int = 86400, limit: int = 200) -> Any:
+async def api_logs(
+    secs: int = 86400,
+    limit: int = 200,
+    q: str = "",
+) -> Any:
     """Merged windowed log stream: crawls + searches + events, ts DESC.
 
     Each row: {ts, kind: crawl|search|event, message, info}.
+    With q, rows are filtered to those whose message or info contains q
+    (case-insensitive substring); total then counts the matched rows.
     """
     secs = _clamp_window(secs)
     limit = max(1, min(int(limit), 500))
@@ -549,7 +555,15 @@ async def api_logs(secs: int = 86400, limit: int = 200) -> Any:
             "info": e["info"] or {},
         })
     logs.sort(key=lambda r: r["ts"], reverse=True)
-    return {"logs": logs[:limit], "total": len(logs), "secs": secs}
+    q = (q or "").strip().lower()
+    if q:
+        logs = [
+            r for r in logs
+            if q in (r["message"] or "").lower()
+            or q in json.dumps(r["info"] or {}, default=str).lower()
+        ]
+    total = len(logs)
+    return {"logs": logs[:limit], "total": total, "secs": secs}
 
 
 # ---------------------------------------------------------------------- OWUI

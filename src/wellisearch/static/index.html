@@ -154,7 +154,13 @@
 </section>
 
 <section>
-  <h2 id="log-title">Log (window)</h2>
+  <div class="row" style="justify-content:space-between;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
+    <h2 id="log-title">Log (window)</h2>
+    <div class="row" style="gap:10px;align-items:center">
+      <span class="muted" id="log-q-count" style="font-size:12px"></span>
+      <input id="log-q" type="search" placeholder="search logs" style="width:220px" oninput="onLogQ(this.value)">
+    </div>
+  </div>
   <div class="card"><table id="log-table"><thead><tr>
     <th style="width:150px">time</th><th>message</th><th style="width:34%">info</th>
   </tr></thead><tbody></tbody></table></div>
@@ -229,6 +235,12 @@ function setWindow(v) {
   winSecs = s;
   localStorage.setItem("wsec", String(s));
   refresh();
+}
+let logQ = "";
+let logQTimer = null;
+function onLogQ(v) {
+  clearTimeout(logQTimer);
+  logQTimer = setTimeout(() => { logQ = String(v || "").trim(); refresh(); }, 250);
 }
 
 // ---------------------------------------------------------------- actions
@@ -482,7 +494,7 @@ async function refresh() {
       api("/api/pages?sort=fetch_count&limit=5"),
       api("/api/pages?sort=search_hit_count&limit=5"),
       api("/api/window?secs=" + winSecs),
-      api("/api/logs?secs=" + winSecs + "&limit=200"),
+      api("/api/logs?secs=" + winSecs + "&limit=200&q=" + encodeURIComponent(logQ)),
       api("/health").catch(() => null),
     ]);
     if (health) {
@@ -499,6 +511,8 @@ async function refresh() {
     $("#top-fetch tbody").innerHTML = pageRows(pagesF.pages, false);
     $("#top-hits tbody").innerHTML = pageRows(pagesH.pages, true);
     renderLog(logsData.logs);
+    const qcount = $("#log-q-count");
+    if (qcount) qcount.textContent = logQ ? logsData.total + " match" + (logsData.total === 1 ? "" : "es") : "";
     $("#updated").textContent = "updated " + new Date().toLocaleTimeString();
     if (localStorage.getItem("wkey")) $("#authbox").style.display = "none";
   } catch (e) {
