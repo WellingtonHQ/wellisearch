@@ -105,7 +105,7 @@ One row per search request (all sources). Powers the local-hit-rate metric.
 | `id` | `bigserial` **PK** | |
 | `ts` | `timestamptz` | indexed `DESC` |
 | `query` | `text` | |
-| `source` | `text` | `local` \| `tavily` \| `brave` \| `searxng` |
+| `source` | `text` | `local` \| `tavily` \| `brave` \| `exa` \| `youcom` |
 | `local_hits` | `int` | good-local count (or all-local in degraded mode) |
 | `results` | `jsonb` | full result set |
 
@@ -145,25 +145,26 @@ Monthly usage ledger, one row per provider per calendar month.
 
 | Column | Type | Notes |
 |---|---|---|
-| `provider` | `text` **PK** | `tavily` \| `brave` (searxng is self-hosted, no quota) |
+| `provider` | `text` **PK** | `tavily` \| `brave` \| `exa` \| `youcom` |
 | `month` | `text` **PK** | `YYYY-MM` (UTC) |
 | `used` | `int` | incremented by `quota_bump` on every served request |
 | `quota_limit` | `int` | `NULL` = unknown; gateway still fails over on HTTP 429 |
 
 `quota_used_limit(provider)` returns `(used, limit)` where `limit` is the
 runtime `provider_state.limit_override` if set, else the env default
-(`TAVILY_QUOTA_MONTHLY` / `BRAVE_QUOTA_MONTHLY`).
+(`TAVILY_QUOTA_MONTHLY` / `BRAVE_QUOTA_MONTHLY` / `EXA_QUOTA_MONTHLY` / `YOUCOM_QUOTA_MONTHLY`).
 
 ## provider_state
 
-Runtime gateway state — persists across restarts, so a toggle you flip in the
-dashboard survives a redeploy.
+Per-provider gateway state. Persists across restarts, so changes made in the
+dashboard (toggles, failover order) stick.
 
 | Column | Type | Notes |
 |---|---|---|
 | `provider` | `text` **PK** | |
 | `enabled` | `bool` | default `true`; `false` = skip in failover (runtime toggle) |
 | `limit_override` | `int` | overrides the env monthly limit when non-NULL |
+| `sort_order` | `int` | runtime failover position (dashboard / `PUT /api/providers/order`); `NULL` = env default position. A non-NULL set on the pool's rows is the active runtime order; clearing it all resets to `SEARCH_PROVIDERS` |
 | `last_served` | `timestamptz` | when it last answered a search |
 | `last_error` | `text` | most recent failure reason (shown in dashboard + `/api/providers`) |
 | `updated_at` | `timestamptz` | |

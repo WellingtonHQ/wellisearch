@@ -1,9 +1,9 @@
-"""Brave Search API — independent 30B+ index.
+"""You.com Search API — web-scale search provider.
 
-Verified live (2026-08): GET https://api.search.brave.com/res/v1/web/search
-with X-Subscription-Token <key>; response
-{type, query, web: {results: [{url, title, description, ...}]}, ...}.
-Description snippets carry inline HTML (<strong>) — cleaned in base.snippet().
+Verified live (2026-08): POST https://api.you.com/v1/search with
+X-API-Key <key>; body {"query", "count"}; response
+{results: {web: [{url, title, description, favicon_url, snippets}]}, metadata}.
+No relevance score in the response — score stays None (like Brave).
 """
 from __future__ import annotations
 
@@ -12,22 +12,19 @@ import httpx
 from .base import Provider, ProviderError, Result
 
 
-class Brave(Provider):
-    name = "brave"
-    ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
+class YouCom(Provider):
+    name = "youcom"
+    ENDPOINT = "https://api.you.com/v1/search"
 
     @property
     def configured(self) -> bool:
-        return bool(self.s.BRAVE_API_KEY)
+        return bool(self.s.YOUCOM_API_KEY)
 
     async def search(self, query: str, num: int) -> list[Result]:
-        headers = {
-            "X-Subscription-Token": self.s.BRAVE_API_KEY,
-            "Accept": "application/json",
-        }
-        params = {"q": query, "count": max(1, num)}
+        headers = {"X-API-Key": self.s.YOUCOM_API_KEY}
+        body = {"query": query, "count": max(1, num)}
         try:
-            r = await self.client.get(self.ENDPOINT, params=params, headers=headers)
+            r = await self.client.post(self.ENDPOINT, json=body, headers=headers)
         except httpx.HTTPError as e:
             raise ProviderError(self.name, f"network: {e}") from e
 
@@ -40,7 +37,7 @@ class Brave(Provider):
 
         data = r.json()
         out: list[Result] = []
-        for item in (data.get("web") or {}).get("results", []):
+        for item in (data.get("results") or {}).get("web", []):
             url = (item.get("url") or "").strip()
             if not url:
                 continue

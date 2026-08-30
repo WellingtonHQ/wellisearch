@@ -30,13 +30,17 @@ class Settings(BaseSettings):
     CRAWL4AI_URL: str = "http://crawl4ai:11235"
     CRAWL4AI_API_KEY: str = "change-me"
 
-    # --- search providers (ordered priority; first success serves) ---
-    SEARCH_PROVIDERS: str = "tavily,brave,searxng"
+    # --- search providers (failover pool + default order; the dashboard can
+    # override the order at runtime — see provider_state.sort_order) ---
+    SEARCH_PROVIDERS: str = "tavily,brave,exa,youcom"
     TAVILY_API_KEY: str = ""
     TAVILY_QUOTA_MONTHLY: int = 1000
     BRAVE_API_KEY: str = ""
     BRAVE_QUOTA_MONTHLY: int = 1000
-    SEARXNG_URL: str = "http://searxng:8080"
+    EXA_API_KEY: str = ""
+    EXA_QUOTA_MONTHLY: int = 1000
+    YOUCOM_API_KEY: str = ""
+    YOUCOM_QUOTA_MONTHLY: int = 1000
     PROVIDER_TIMEOUT_S: int = 20
 
     # --- embeddings (single source of truth; load-bearing) ---
@@ -76,7 +80,7 @@ class Settings(BaseSettings):
     KICK_DEBOUNCE_S: int = 5
     QUEUE_MAX_ATTEMPTS: int = 3
     CRAWL_TIMEOUT_S: int = 45
-    CRAWL_MAX_PARALLEL: int = 3
+    CRAWL_MAX_PARALLEL: int = 8
     LOG_RETENTION_DAYS: int = 30  # event_log / crawl_log / search_log prune age
 
     # --- server ---
@@ -95,7 +99,8 @@ class Settings(BaseSettings):
         raw = {
             "tavily": self.TAVILY_QUOTA_MONTHLY,
             "brave": self.BRAVE_QUOTA_MONTHLY,
-            "searxng": 0,
+            "exa": self.EXA_QUOTA_MONTHLY,
+            "youcom": self.YOUCOM_QUOTA_MONTHLY,
         }.get(provider)
         if raw is None or raw <= 0:
             return None

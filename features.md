@@ -77,9 +77,9 @@ The way it works is as follows.
 This will help rotate search engines to prevent burning one API limit, and then moving to burn the next one.
 
 ## Add new providers:
-1. Exa
+1. Exa — Done 2026-08-29
 2. ddgs (duck duck go custom crawler)
-3. you.com
+3. you.com — Done 2026-08-29
 
 ## Provider auto-ranking
 Rather than having the user manually select the tiers, the system itself
@@ -88,6 +88,7 @@ It will periodically reorder the providers to put the highest quality one at the
 
 ## Remove searxng
 It is no longer needed or useful.
+— Done 2026-08-29 (SearXNG removed; EXA added as third provider).
 
 ## Ability to specify specific provider in search
 Currently we have the search_mode param that lets you pick between local, provider, and auto modes. 
@@ -104,7 +105,7 @@ Wellisearch would then return markdown as normal and it would look like any othe
 
 # Dashboard
 
-- Ability to move/reorder the provider list
+- Ability to move/reorder the provider list — Done 2026-08-29 (dashboard ↑/↓ reorder + "reset to default order"; `PUT /api/providers/order`; persists in `provider_state.sort_order`, effective immediately)
 - Drop the "Top pages by search_hit_count"
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.

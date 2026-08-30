@@ -1,4 +1,4 @@
-"""Tavily Search API — primary provider (agent-optimized structured results).
+"""Tavily Search API — agent-optimized structured results.
 
 Verified live (2026-08): POST https://api.tavily.com/search with
 Authorization: Bearer <key>; body {"query", "max_results"}; response

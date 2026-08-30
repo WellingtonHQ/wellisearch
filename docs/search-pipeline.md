@@ -80,15 +80,16 @@ calibration data.
 
 ### 5b. No good local hit → provider gateway
 
-`gateway.search(query, k)` walks `SEARCH_PROVIDERS` in order
-(default `tavily → brave → searxng`). A provider serves iff it passes all
-gates:
+`gateway.search(query, k)` tries the providers one by one, in the order
+currently set (a dashboard/API override via `PUT /api/providers/order` when
+set, else the `SEARCH_PROVIDERS` default). A provider serves iff it passes
+all gates:
 
 1. **enabled** — `provider_state.enabled` (runtime toggle, default true)
 2. **configured** — API key / base URL present in env
 3. **quota** — `provider_quota.used < limit` for the current month
-   (limit = runtime `limit_override` or env default `TAVILY_QUOTA_MONTHLY` /
-   `BRAVE_QUOTA_MONTHLY`; `None` = unlimited)
+    (limit = runtime `limit_override` or env default `TAVILY_QUOTA_MONTHLY` /
+    `BRAVE_QUOTA_MONTHLY` / `EXA_QUOTA_MONTHLY` / `YOUCOM_QUOTA_MONTHLY`; `None` = unlimited)
 4. **non-empty result set** — a 200 with zero results is a *soft failure*
    and failover continues
 
@@ -160,7 +161,7 @@ Header lines (response-level):
 
 | Line | Notes |
 |---|---|
-| `Source:` | `local` \| `tavily` \| `brave` \| `searxng` \| `error` |
+| `Source:` | `local` \| `tavily` \| `brave` \| `exa` \| `youcom` \| `error` |
 | `Degraded:` | `true` \| `false` — true only in §6 degraded mode |
 | `Time:` | total ms, split into `index:` (Postgres search) and — only when a provider was used — `provider:` (gateway wait); in `search_mode=provider` the `index:` part is omitted (the index leg never ran) |
 | `Provider Errors:` | `{provider}: {error}` pairs joined by `;` — present only when providers failed |

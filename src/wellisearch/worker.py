@@ -53,7 +53,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     except crawler.CrawlError as e:
         ms = int((time.monotonic() - t0) * 1000)
         label = e.status_label()
-        await db.log_crawl(url, trigger, label, ms, detail=e.message[:500])
+        await db.log_crawl(url, trigger, label, ms, detail=e.message[:1000])
         await db.execute(
             "UPDATE pages SET last_status = %s WHERE url = %s",
             (label, url),
@@ -108,7 +108,7 @@ async def _drain_queue(deadline: float) -> dict:
                 await db.queue_done(url, ok=True)
             except Exception as e:
                 log.warning("queue crawl failed for %s: %s", url, e)
-                await db.queue_done(url, ok=False, error=str(e)[:500])
+                await db.queue_done(url, ok=False, error=str(e)[:1000])
             finally:
                 processed += 1
 

@@ -53,7 +53,7 @@ class Provider:
 
     @staticmethod
     def clean_html(text: str) -> str:
-        """Strip inline HTML (Brave/SearXNG snippets carry <strong> etc.)."""
+        """Strip inline HTML (Brave snippets carry <strong> etc.)."""
         if not text:
             return ""
         text = html.unescape(text or "")

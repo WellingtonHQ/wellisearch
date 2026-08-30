@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS search_log (
   id BIGSERIAL PRIMARY KEY,
   ts TIMESTAMPTZ NOT NULL DEFAULT now(),
   query TEXT NOT NULL,
-  source TEXT NOT NULL, -- 'local' | 'tavily' | 'brave' | 'searxng'
+  source TEXT NOT NULL, -- 'local' | 'tavily' | 'brave' | 'exa' | 'youcom'
   local_hits INT,
   results JSONB
 );
@@ -111,16 +111,22 @@ CREATE INDEX IF NOT EXISTS event_log_ts_idx ON event_log (ts DESC);
 
 -- ---------------------------------------------------------------------------
 -- provider_state: runtime provider gateway state (toggles persist across
--- restarts; env supplies the defaults — see PATCH /api/providers/{name})
+-- restarts; env supplies the defaults — see PATCH /api/providers/{name}).
+-- sort_order: runtime failover position (dashboard reorder / PUT
+-- /api/providers/order); NULL = env default position.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS provider_state (
   provider TEXT PRIMARY KEY,
   enabled BOOLEAN NOT NULL DEFAULT true,
   limit_override INT, -- runtime override of the env monthly limit
+  sort_order INT, -- runtime failover position (dashboard); NULL = env default
   last_served TIMESTAMPTZ,
   last_error TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- existing databases: created before the column existed — add it on first
+-- startup after this change (idempotent, like the CREATEs above)
+ALTER TABLE provider_state ADD COLUMN IF NOT EXISTS sort_order INT;
 
 -- ===========================================================================
 -- fn_search_local(query, qvec, k) — the hybrid ranking core: FTS + trigram +

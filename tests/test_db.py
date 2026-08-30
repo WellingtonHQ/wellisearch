@@ -5,7 +5,6 @@ import os
 # host-local endpoints (container aliases don't resolve on the host)
 os.environ.setdefault("POSTGRES_HOST", "127.0.0.1")
 os.environ.setdefault("CRAWL4AI_URL", "http://127.0.0.1:11235")
-os.environ.setdefault("SEARXNG_URL", "http://127.0.0.1:8081")
 
 from wellisearch.db import db  # noqa: E402
 
@@ -120,6 +119,19 @@ async def main() -> None:
     assert st["enabled"] is False
     await db.set_provider_state("brave", enabled=True, last_error=None)
     print("OK provider state toggle")
+
+    # --- provider order: runtime override roundtrip (NULL = env default)
+    assert await db.get_provider_order() is None, "expected no override at start"
+    await db.set_provider_order(["brave", "tavily"])
+    assert await db.get_provider_order() == ["brave", "tavily"], await db.get_provider_order()
+    # toggling a provider's enabled flag must not clobber its sort_order
+    await db.set_provider_state("brave", enabled=False)
+    assert await db.get_provider_order() == ["brave", "tavily"], await db.get_provider_order()
+    await db.set_provider_state("brave", enabled=True, last_error=None)
+    # reset clears the override
+    await db.set_provider_order([])
+    assert await db.get_provider_order() is None, "reset should clear the override"
+    print("OK provider order roundtrip")
 
     # --- event_log: roundtrip + prune
     await db.log_event("test event", {"foo": "bar", "n": 42})

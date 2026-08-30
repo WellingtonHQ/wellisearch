@@ -68,7 +68,7 @@ async def fit_markdown(url: str) -> tuple[str | None, str]:
     if r.status_code in (401, 403):
         raise CrawlError(url, f"auth rejected ({r.status_code})", status=r.status_code)
     if r.status_code >= 400:
-        raise CrawlError(url, f"crawl4ai http {r.status_code}: {r.text[:200]}", status=r.status_code)
+        raise CrawlError(url, f"crawl4ai http {r.status_code}: {r.text[:1000]}", status=r.status_code)
 
     data = r.json()
     if not data.get("success"):

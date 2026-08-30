@@ -1,9 +1,9 @@
-"""Brave Search API — independent 30B+ index.
+"""EXA Search API — AI-native semantic search provider.
 
-Verified live (2026-08): GET https://api.search.brave.com/res/v1/web/search
-with X-Subscription-Token <key>; response
-{type, query, web: {results: [{url, title, description, ...}]}, ...}.
-Description snippets carry inline HTML (<strong>) — cleaned in base.snippet().
+Verified live (2026-08): POST https://api.exa.ai/search with
+x-api-key <key>; body {"query", "numResults", "contents": {"text": true}};
+response {requestId, results: [{id, url, title, publishedDate?, text?}], ...}.
+No relevance score in the response — score stays None (like Brave).
 """
 from __future__ import annotations
 
@@ -12,22 +12,24 @@ import httpx
 from .base import Provider, ProviderError, Result
 
 
-class Brave(Provider):
-    name = "brave"
-    ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
+class Exa(Provider):
+    name = "exa"
+    ENDPOINT = "https://api.exa.ai/search"
 
     @property
     def configured(self) -> bool:
-        return bool(self.s.BRAVE_API_KEY)
+        return bool(self.s.EXA_API_KEY)
 
     async def search(self, query: str, num: int) -> list[Result]:
-        headers = {
-            "X-Subscription-Token": self.s.BRAVE_API_KEY,
-            "Accept": "application/json",
+        headers = {"x-api-key": self.s.EXA_API_KEY}
+        body = {
+            "query": query,
+            "numResults": max(1, num),
+            # ask for page text so we have a snippet; base.snippet() trims it
+            "contents": {"text": True, "maxChars": 800},
         }
-        params = {"q": query, "count": max(1, num)}
         try:
-            r = await self.client.get(self.ENDPOINT, params=params, headers=headers)
+            r = await self.client.post(self.ENDPOINT, json=body, headers=headers)
         except httpx.HTTPError as e:
             raise ProviderError(self.name, f"network: {e}") from e
 
@@ -40,7 +42,7 @@ class Brave(Provider):
 
         data = r.json()
         out: list[Result] = []
-        for item in (data.get("web") or {}).get("results", []):
+        for item in data.get("results", []):
             url = (item.get("url") or "").strip()
             if not url:
                 continue
@@ -48,7 +50,7 @@ class Brave(Provider):
                 Result(
                     url=url,
                     title=self.clean_html(item.get("title") or url),
-                    snippet=self.snippet(item.get("description") or ""),
+                    snippet=self.snippet(item.get("text") or ""),
                     score=None,
                 )
             )

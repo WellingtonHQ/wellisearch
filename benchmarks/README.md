@@ -12,6 +12,13 @@ image (or a venv) with PyTorch. The LLM cleanup bench is a thin HTTP client: it
 talks to **Ollama** (candidate models) and **LM Studio** (the 27B judge) over
 their OpenAI-compatible endpoints — it downloads no model weights itself.
 
+There is also one **decision benchmark** (findings only — no committed harness,
+it ran from `/tmp`):
+
+| Benchmark | File | What it decided |
+|---|---|---|
+| **Engine gating** (2026-08-30) | [`engine-gating/ENGINE_GATING_FINDINGS.md`](engine-gating/ENGINE_GATING_FINDINGS.md) | whether we can drop Crawl4AI + AGPL `nodriver` for a permissive native engine — **yes**: build on `patchright` (Apache-2.0) + `Scrapling` (BSD-3). See [`docs/native-crawler-design.md`](../docs/native-crawler-design.md). |
+
 ---
 
 ## Embedding-model benchmark

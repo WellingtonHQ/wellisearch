@@ -140,7 +140,7 @@ async def health() -> dict[str, Any]:
                 "configured": p.configured,
                 "state": await db.get_provider_state(p.name),
             }
-            for p in gw.providers
+            for p in await gw.ordered_providers()
         ]
     except Exception as e:
         out["providers"] = f"error: {e}"
@@ -164,6 +164,10 @@ class RefreshBody(BaseModel):
 class ProviderPatch(BaseModel):
     enabled: bool | None = None
     limit: int | None = None
+
+
+class ProviderOrder(BaseModel):
+    order: list[str] | None  # None = reset to env default; else a full ordered list
 
 
 class PagePatch(BaseModel):
@@ -260,12 +264,14 @@ async def api_stats() -> Any:
 async def api_providers() -> Any:
     s = get_settings()
     gw = get_gateway()
+    order, source = await gw.order_names()
     out = []
-    for p in gw.providers:
+    for p in await gw.ordered_providers():
         state = await db.get_provider_state(p.name) or {}
         used, limit = await db.quota_used_limit(p.name)
         out.append({
             "name": p.name,
+            "order": order.index(p.name),
             "configured": p.configured,
             "enabled": state.get("enabled", True),
             "limit_runtime": state.get("limit_override"),
@@ -275,13 +281,41 @@ async def api_providers() -> Any:
             "last_served": state.get("last_served"),
             "last_error": state.get("last_error"),
         })
-    return {"providers": out}
+    return {"providers": out, "order": order, "order_source": source}
+
+
+@app.put("/api/providers/order")
+async def api_provider_order(body: ProviderOrder) -> Any:
+    """Set the runtime failover order (dashboard reorder).
+
+    Body: {"order": ["brave", "tavily", ...]} to reorder, or {"order": null}
+    to reset to the env default (SEARCH_PROVIDERS). The list must be a
+    permutation of the configured provider pool.
+    """
+    gw = get_gateway()
+    pool = gw._env_order
+    if body.order is None:
+        await db.set_provider_order([])
+        await _ev("provider order reset to env default", {})
+        return {"ok": True, "order": list(pool), "order_source": "env"}
+
+    names = [n.strip().lower() for n in body.order if isinstance(n, str) and n.strip()]
+    if len(names) != len(set(names)):
+        raise HTTPException(400, "order contains duplicate providers")
+    if sorted(names) != sorted(pool):
+        raise HTTPException(
+            400,
+            f"order must be a permutation of the configured providers: {pool}",
+        )
+    await db.set_provider_order(names)
+    await _ev("provider order changed", {"order": names})
+    return {"ok": True, "order": names, "order_source": "runtime"}
 
 
 @app.patch("/api/providers/{name}")
 async def api_provider_patch(name: str, body: ProviderPatch) -> Any:
-    s = get_settings()
-    if name not in s.provider_order:
+    gw = get_gateway()
+    if name not in gw._env_order:
         raise HTTPException(404, f"unknown provider {name!r}")
     if body.enabled is not None:
         await db.set_provider_state(name, enabled=body.enabled)
@@ -454,10 +488,16 @@ def _short_url(url: str) -> str:
 
 
 @app.get("/api/logs")
-async def api_logs(secs: int = 86400, limit: int = 200) -> Any:
+async def api_logs(
+    secs: int = 86400,
+    limit: int = 200,
+    q: str = "",
+) -> Any:
     """Merged windowed log stream: crawls + searches + events, ts DESC.
 
     Each row: {ts, kind: crawl|search|event, message, info}.
+    With q, rows are filtered to those whose message or info contains q
+    (case-insensitive substring); total then counts the matched rows.
     """
     secs = _clamp_window(secs)
     limit = max(1, min(int(limit), 500))
@@ -515,7 +555,15 @@ async def api_logs(secs: int = 86400, limit: int = 200) -> Any:
             "info": e["info"] or {},
         })
     logs.sort(key=lambda r: r["ts"], reverse=True)
-    return {"logs": logs[:limit], "total": len(logs), "secs": secs}
+    q = (q or "").strip().lower()
+    if q:
+        logs = [
+            r for r in logs
+            if q in (r["message"] or "").lower()
+            or q in json.dumps(r["info"] or {}, default=str).lower()
+        ]
+    total = len(logs)
+    return {"logs": logs[:limit], "total": total, "secs": secs}
 
 
 # ---------------------------------------------------------------------- OWUI

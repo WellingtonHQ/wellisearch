@@ -118,15 +118,68 @@ Dashboard payload: index counts, freshness buckets, queue depth, provider
 quota, worker runtime (last tick + stats + in-flight), last search.
 
 ### `GET /api/providers`
-Per-provider gateway state: `configured`, `enabled`,
-`limit_runtime`/`limit_default`, `quota_used`/`quota_limit`, `last_served`,
-`last_error`.
+Per-provider gateway state, listed in the order they'll be tried — one of the
+configured providers, depending on what's currently set.
+
+```json
+{
+  // which provider order is currently in effect
+  "order": ["tavily", "brave", "exa", "youcom"],
+  // "env" = the SEARCH_PROVIDERS default; "runtime" = a dashboard/API override
+  "order_source": "env",
+  // one entry per provider, in the order they'll be tried
+  "providers": [
+    {
+      "name": "tavily",
+      "order": 0,                       // 0-based position in "order"
+      "configured": true,               // has an API key in env
+      "enabled": true,                  // runtime toggle; false = skipped in failover
+      "limit_runtime": null,            // dashboard monthly-cap override, or null
+      "limit_default": 1000,            // env monthly-quota default for this provider
+      "quota_used": 12,                 // requests served this month (UTC)
+      "quota_limit": 1000,              // effective monthly cap (override, else default)
+      "last_served": "2026-08-29T18:15:13-07:00",  // when it last answered, or null
+      "last_error": null                // most recent failure reason, or null
+    }
+  ]
+}
+```
+
+### `PUT /api/providers/order`
+Set the order the providers are tried (persists in `provider_state.sort_order`,
+effective immediately — no restart).
+
+Request body: `{ "order": ["brave", "tavily", "exa", "youcom"] }` to reorder,
+or `{ "order": null }` to reset to the `SEARCH_PROVIDERS` default. The list
+must be a **permutation** of the configured provider pool.
+
+```json
+{
+  "ok": true,
+  "order": ["brave", "tavily", "exa", "youcom"],
+  "order_source": "runtime"
+}
+```
+
+(`order_source` is `"env"` after a reset.) `400` on duplicates, unknown
+providers, or a non-permutation.
 
 ### `PATCH /api/providers/{name}`
-Runtime toggle / limit override (persists in `provider_state`).
+Toggle a provider on/off or override its monthly limit (persists in
+`provider_state`).
 
-Body: `{ "enabled": false }`, `{ "limit": 500 }`, or both.
-`404` if the provider name isn't in `SEARCH_PROVIDERS`.
+Request body: `{ "enabled": false }`, `{ "limit": 500 }`, or both.
+
+```json
+{
+  "ok": true,
+  "name": "tavily",
+  "enabled": false,
+  "limit": null
+}
+```
+
+`404` if the provider name isn't in the configured pool.
 
 ### `POST /api/seed`
 Queue a URL for background indexing and kick the worker.
@@ -173,8 +226,21 @@ Returns:
 ```json
 {
   "secs": 86400,
-  "searches": { "total": 27, "by_source": { "local": 21, "brave": 5 }, "local_rate": 0.778 },
-  "crawls": { "total": 623, "by_status": { "ok": 269, "unchanged": 350 } }
+  "searches": {
+    "total": 27,
+    "by_source": {
+      "local": 21,
+      "brave": 5
+    },
+    "local_rate": 0.778
+  },
+  "crawls": {
+    "total": 623,
+    "by_status": {
+      "ok": 269,
+      "unchanged": 350
+    }
+  }
 }
 ```
 
@@ -186,9 +252,10 @@ first. The dashboard's "Log" view renders this.
 |---|---|---|
 | `secs` | 86400 | clamped to 600 (10m) .. 86400 (24h) |
 | `limit` | 200 | max 500 |
+| `q` | (empty) | case-insensitive substring match over each row's message and info; empty = no filter |
 
 Returns `{ logs: [{ ts, kind: "crawl" \| "search" \| "event", message, info }],
-total, secs }` where `total` is the row count in the window before `limit`.
+total, secs }` where `total` is the row count in the window (after any `q` filter) before `limit`.
 
 Operational events (worker ticks, provider gateway failures/serves, admin
 actions, startup) are written to the `event_log` table by the service itself

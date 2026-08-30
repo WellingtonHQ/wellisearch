@@ -2,8 +2,8 @@
 
 wellisearch is a **self-hosted web-search gateway for LLMs**: a single FastAPI
 container that keeps a local, embeddable index of web pages and serves search
-results from it first, falling back to paid search providers (Tavily → Brave →
-SearXNG) only on a local miss. It exposes the same pipeline as a **REST API**
+results from it first, falling back to one of the configured search
+providers (in the order currently set) only on a local miss. It exposes the same pipeline as a **REST API**
 and an **MCP server** (Streamable HTTP), with a built-in static dashboard.
 
 Design goals (see `BLUEPRINT.md` for the full plan):
@@ -29,6 +29,7 @@ Design goals (see `BLUEPRINT.md` for the full plan):
 | [api.md](api.md) | REST endpoint reference and the six MCP tools, with request/response shapes. |
 | [deployment.md](deployment.md) | Docker/compose, shared Postgres and network, full configuration reference, operations (health, reindex, manual worker run). |
 | [trigram-rewrite.md](trigram-rewrite.md) | 2026-08 post-mortem: why the trigram leg of `fn_search_local` was rewritten (full-corpus scans → index-bounded), plus the pool/CPU hygiene fixes. |
+| [native-crawler-design.md](native-crawler-design.md) | Proposed native crawl engine (patchright + Scrapling, general flow + per-site extractors, yt-dlp style) — design ahead of the Crawl4AI/AGPL migration. Status: proposal. |
 
 ## Diagrams
 
@@ -40,6 +41,7 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
 - `images/ranking.svg` — `fn_search_local` internals
 - `images/data-model.svg` — ER diagram
 - `images/indexing.svg` — indexing pipeline and worker
+- `images/native-crawler.svg` — native crawl engine (policy → tier ladder → extractors → gate)
 
 ## Quick orientation (5-minute tour)
 
@@ -50,11 +52,12 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
    vector, RRF-fused). If any result covers ≥ `LOCAL_MIN_COVERAGE` (default
    `0.75`) of the query's content words, the local rows are served
    immediately — **zero provider credits**.
-3. Otherwise the **provider gateway** (`providers/`) tries
-   `SEARCH_PROVIDERS` in order (default `tavily,brave,searxng`), gated by
-   runtime toggles, configuration, and a monthly quota ledger. First
-   non-empty result serves; the top result URLs are **enqueued for
-   background indexing** so the next identical query is free.
+ 3. Otherwise the **provider gateway** (`providers/`) tries the providers one
+    by one, in the order currently set (a dashboard override via
+    `PUT /api/providers/order` when set, else the `SEARCH_PROVIDERS` default),
+    gated by runtime toggles, configuration, and a monthly quota ledger. First
+    non-empty result serves; the top result URLs are **enqueued for background
+    indexing** so the next identical query is free.
 4. **All paths are logged** to `search_log`; every crawl is logged to
    `crawl_log` with trigger, status, and timing.
 5. The **background worker** (one asyncio task) drains the crawl queue and
@@ -75,7 +78,7 @@ src/wellisearch/
   fetch.py          fetch_page / fetch_pages (stored-first, budgeted)
   tools.py          the six MCP tools
   mcp.py            MCP server setup (Streamable HTTP)
-  providers/        gateway: tavily, brave, searxng adapters + failover
+  providers/        gateway: tavily, brave, exa, youcom adapters + failover
   index.py          store_page: hash → chunk → embed → upsert
   chunk.py          markdown chunker (≤ MAX_CHUNK_TOKENS)
   embed.py          fastembed singleton (EMBED_MODEL / EMBED_DIMS)
