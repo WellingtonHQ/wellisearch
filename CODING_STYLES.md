@@ -32,18 +32,20 @@ async def db_log_crawl(url, trigger, status, ms, detail=None, chunks_written=Non
 ## 2. File Ordering
 
 Structure files from highest order to lowest: public APIs and entry points at
-the top, internal helpers (`_prefixed`) below. Separate sections with a dash
-divider and a short lowercase label.
+the top, internal helpers (`_prefixed`) below. Separate sections with a
+divider (as in the examples) and a short Title Cased label.
 
 **Do:**
 ```python
-# ------------------------------------------------------------------ single URL
+# ---------------------------------------------------------------------------
+# Single URL
+# ---------------------------------------------------------------------------
 
 async def crawl_url(url: str, trigger: str) -> dict: ...
 
-
-# --------------------------------------------------------------------- ticks
-
+# ---------------------------------------------------------------------------
+# Ticks
+# ---------------------------------------------------------------------------
 async def _drain_queue(deadline: float) -> dict: ...
 ```
 
