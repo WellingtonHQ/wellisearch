@@ -12,15 +12,35 @@ from wellisearch.db import db  # noqa: E402
 async def main() -> None:
     await db.startup()
     print("OK startup (schema applied)")
+    await _clean_slate()
+    await _check_tables()
+    await _check_fn_search_local_nonsense()
+    await _store_page_roundtrip()
+    await _check_local_hit()
+    await _check_queue_quota_provider_state()
+    await _check_provider_order()
+    await _check_event_log()
+    await _cleanup()
+    await db.close()
+    print("ALL DB INTEGRATION TESTS PASSED")
 
-    # clean slate for this test's URLs (DB persists between runs)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _clean_slate() -> None:
+    """Delete this test's URLs (DB persists between runs)."""
     for table in ("pages", "crawl_queue"):
         await db.execute(f"DELETE FROM {table} WHERE url LIKE 'https://example.com/%%'")
     await db.execute("DELETE FROM provider_quota")
     await db.execute("DELETE FROM provider_state")
     # note: search_log / crawl_log are left untouched — they are shared history
 
-    # --- tables exist
+
+async def _check_tables() -> None:
+    """The public schema tables all exist."""
     tables = await db.fetch_all(
         "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
     )
@@ -32,15 +52,19 @@ async def main() -> None:
         assert expected in names, f"missing table {expected}"
     print("OK tables:", names)
 
-    # --- fn_search_local exists and runs (nonsense token -> no rows,
-    # regardless of what else the shared dev index contains)
+
+async def _check_fn_search_local_nonsense() -> None:
+    """fn_search_local exists and runs (nonsense token -> no rows,
+    regardless of what else the shared dev index contains)."""
     rows = await db.fetch_all(
         "SELECT * FROM fn_search_local(%s, NULL, 5)", ("zxqvjflurbqz xyptwqrfvz",)
     )
     assert rows == [], rows
     print("OK fn_search_local (nonsense query -> no rows)")
 
-    # --- store_page with a real embedding
+
+async def _store_page_roundtrip() -> None:
+    """store_page with a real embedding, then the unchanged short-circuit."""
     from wellisearch.index import store_page
 
     section = (
@@ -73,7 +97,9 @@ async def main() -> None:
     assert status == "unchanged" and chunks == 0
     print("OK unchanged short-circuit")
 
-    # --- fn_search_local now finds it
+
+async def _check_local_hit() -> None:
+    """fn_search_local now finds the stored page (findability, not top-5)."""
     # Findability, not top-5: the live corpus (~1.34M chunks) contains dozens
     # of real, more complete pgvector pages that legitimately outrank this
     # synthetic blurb (it typically lands in the ~40s-50s). The assertion is
@@ -99,7 +125,9 @@ async def main() -> None:
     )
     print("unrelated query rows:", rows2)
 
-    # --- queue + quota + provider state
+
+async def _check_queue_quota_provider_state() -> None:
+    """Queue dedupe/claim/done, quota ledger, provider state toggle."""
     ins = await db.queue_enqueue("https://example.com/queued-page", "test")
     assert ins
     assert not await db.queue_enqueue("https://example.com/queued-page", "test")
@@ -120,7 +148,9 @@ async def main() -> None:
     await db.set_provider_state("brave", enabled=True, last_error=None)
     print("OK provider state toggle")
 
-    # --- provider order: runtime override roundtrip (NULL = env default)
+
+async def _check_provider_order() -> None:
+    """Provider order: runtime override roundtrip (NULL = env default)."""
     assert await db.get_provider_order() is None, "expected no override at start"
     await db.set_provider_order(["brave", "tavily"])
     assert await db.get_provider_order() == ["brave", "tavily"], await db.get_provider_order()
@@ -133,7 +163,9 @@ async def main() -> None:
     assert await db.get_provider_order() is None, "reset should clear the override"
     print("OK provider order roundtrip")
 
-    # --- event_log: roundtrip + prune
+
+async def _check_event_log() -> None:
+    """event_log: roundtrip + null info."""
     await db.log_event("test event", {"foo": "bar", "n": 42})
     row = await db.fetch_one("SELECT message, info FROM event_log ORDER BY id DESC LIMIT 1")
     assert row and row["message"] == "test event" and (row["info"] or {}) == {"foo": "bar", "n": 42}, row
@@ -143,13 +175,12 @@ async def main() -> None:
     assert row and row["message"] == "test event no info" and row["info"] is None, row
     print("OK event_log null info")
 
-    # --- cleanup test rows (keep the example page? delete both for a clean slate)
+
+async def _cleanup() -> None:
+    """Delete the test rows (keep a clean slate for the next run)."""
     await db.execute("DELETE FROM pages WHERE url LIKE 'https://example.com/%%'")
     await db.execute("DELETE FROM crawl_queue WHERE url LIKE 'https://example.com/%%'")
     print("OK cleanup")
-
-    await db.close()
-    print("ALL DB INTEGRATION TESTS PASSED")
 
 
 asyncio.run(main())

@@ -27,178 +27,13 @@ from .worker import crawl_url
 
 
 def register_tools(server: MCPServer) -> None:
-    @server.tool(
-        name="search_web",
-        description=(
-            "Search the web (local index first, provider gateway on a miss). "
-            "Returns a Markdown document: a header with Source "
-            "(local|tavily|brave|exa|youcom|error), Degraded (true|false), and a "
-            "Time line (total ms, split into index: ms and — when a provider "
-            "was used — provider: ms), then result blocks of Title/URL/Snippet "
-            "separated by --- lines. Local hits include a Last Crawled line per "
-            "result and cost zero provider credits; on a miss, top result URLs "
-            "are indexed in the background — no need to wait. If Degraded is "
-            "true, all providers failed and only local results are shown (see "
-            "the Provider Errors header line). Set search_mode to choose the "
-            "source: \"auto\" (default, local first then provider), \"local\" "
-            "(index only — an error if the index has nothing), or \"provider\" "
-            "(bypass the local index and force a live provider answer, use when "
-            "unsatisfied with a prior local result). Set format=\"json\" for the "
-            "structured JSON envelope instead of Markdown."
-        ),
-    )
-    async def search_web(
-        query: str,
-        num_results: int = 5,
-        max_crawl: int = 5,
-        max_age_days: float | None = None,
-        search_mode: str = "auto",  # "auto" | "local" | "provider"
-        format: str = "markdown",  # "json" | "markdown"
-    ) -> str:
-        try:
-            out = await _search_web(
-                query,
-                num_results=num_results,
-                max_crawl=max_crawl,
-                max_age_days=max_age_days,
-                search_mode=search_mode,
-            )
-        except ValueError as e:
-            # invalid search_mode: REST answers 400, MCP has no status code —
-            # same "Error: ..." shape as a bad format below
-            return f"Error: {e}"
-        return _fmt(out, format, render_search_markdown)
-
-    @server.tool(
-        name="fetch_page",
-        description=(
-            "Load one URL as clean/fit Markdown for reading. Returns a "
-            "Markdown document: a Title/URL/From Index/Chars/Truncated header "
-            "plus a Time line (total ms, split into index: ms and — when the "
-            "page had to be crawled — crawl: ms), then the page body. Indexed "
-            "pages are served instantly from the local index; unknown URLs are "
-            "crawled on demand and stored. Bumps the page's fetch_count "
-            "(priority + prominence). A failed fetch returns a URL/Status/Error "
-            "header. Set format=\"json\" for the structured JSON envelope "
-            "instead of Markdown."
-        ),
-    )
-    async def fetch_page(
-        url: str,
-        max_chars: int | None = None,
-        format: str = "markdown",
-    ) -> str:
-        out = await _fetch_page(url, max_chars=max_chars)
-        return _fmt(out, format, render_fetch_page_markdown)
-
-    @server.tool(
-        name="fetch_pages",
-        description=(
-            "Bulk-read multiple URLs in one call under a shared total "
-            "character budget. Returns a Markdown document: a "
-            "Strategy/Budget/Pages Fetched/Total Chars/Truncated header plus a "
-            "Time line (total ms, split into index: ms and — when any page had "
-            "to be crawled — crawl: ms), then one "
-            "Title/URL/From Index/Chars/Truncated section per page "
-            "(body after a --- line). Failed URLs get a URL/Status/Error "
-            f"section. strategy: {list(STRATEGIES)} (default 'smart'). "
-            "Each trimmed page carries a [truncated — N chars omitted, "
-            "strategy=X] marker. Set format=\"json\" for the structured JSON "
-            "envelope instead of Markdown."
-        ),
-    )
-    async def fetch_pages(
-        urls: list[str],
-        max_chars: int | None = None,  # null = full content (spec §7)
-        per_page_chars: int | None = None,
-        strategy: str = "smart",
-        format: str = "markdown",  # "json" | "markdown"
-    ) -> str:
-        out = await _fetch_pages(
-            urls,
-            max_chars=max_chars,
-            per_page_chars=per_page_chars,
-            strategy=strategy,
-        )
-        return _fmt(out, format, render_fetch_pages_markdown)
-
-    @server.tool(
-        name="index_stats",
-        description=(
-            "Snapshot of the local index + provider gateway: page/chunk "
-            "counts, freshness, the current provider failover order and its "
-            "source (runtime override vs env default), search hit-rate by "
-            "provider (24h/7d/30d), crawl queue depth, monthly quota usage "
-            "vs limit. Use to gauge index freshness before relying on it."
-        ),
-    )
-    async def index_stats() -> dict:
-        return _clean(await _index_stats_data())
-
-    @server.tool(
-        name="seed_url",
-        description=(
-            "Manually add a URL to the index: queues a background crawl and "
-            "kicks the worker. Returns queue position/status. Use to save a "
-            "specific page for later retrieval."
-        ),
-    )
-    async def seed_url(url: str) -> dict:
-        from .fetch import _valid_url
-
-        if not _valid_url(url):
-            return {"ok": False, "url": url, "error": "invalid or non-http(s) url"}
-        inserted = await queue.enqueue(url, source="manual")
-        row = await db.fetch_one(
-            "SELECT status, attempts, enqueued_at FROM crawl_queue WHERE url = %s "
-            "ORDER BY enqueued_at DESC LIMIT 1",
-            (url,),
-        )
-        pos = await db.fetch_one(
-            "SELECT count(*) AS ahead FROM crawl_queue WHERE status = 'pending' "
-            "AND enqueued_at < %s",
-            ((row or {}).get("enqueued_at") or dt.datetime.now(dt.timezone.utc),),
-        )
-        return _clean({
-            "ok": True,
-            "url": url,
-            "newly_queued": inserted,
-            "queue": row,
-            "ahead_in_queue": pos["ahead"],
-        })
-
-    @server.tool(
-        name="refresh_page",
-        description=(
-            "Force an immediate re-crawl of a single page (bypasses the "
-            "refresh-order priority). Returns the new last_crawled + status."
-        ),
-    )
-    async def refresh_page(url: str) -> dict:
-        from .fetch import _valid_url
-
-        if not _valid_url(url):
-            return {"ok": False, "url": url, "error": "invalid or non-http(s) url"}
-        try:
-            r = await crawl_url(url, trigger="manual")
-        except Exception as e:
-            page = await db.page_get(url)
-            return _clean({
-                "ok": False,
-                "url": url,
-                "error": str(e),
-                "last_status": (page or {}).get("last_status"),
-            })
-        page = await db.page_get(url)
-        return _clean({
-            "ok": True,
-            "url": url,
-            "status": r.get("status"),
-            "chunks": r.get("chunks"),
-            "ms": r.get("ms"),
-            "last_crawled": (page or {}).get("last_crawled"),
-            "last_status": (page or {}).get("last_status"),
-        })
+    """Register the six MCP tools on the server (BLUEPRINT §7)."""
+    _tool_search_web(server)
+    _tool_fetch_page(server)
+    _tool_fetch_pages(server)
+    _tool_index_stats(server)
+    _tool_seed_url(server)
+    _tool_refresh_page(server)
 
 
 # ---------------------------------------------------------------------------
@@ -305,3 +140,194 @@ async def _index_stats_data() -> dict:
         "quota_this_month": quota,
         "crawls_30d": {r["status"]: r["n"] for r in crawls},
     }
+
+
+def _tool_search_web(server: MCPServer) -> None:
+    """Register the search_web tool."""
+    @server.tool(
+        name="search_web",
+        description=(
+            "Search the web (local index first, provider gateway on a miss). "
+            "Returns a Markdown document: a header with Source "
+            "(local|tavily|brave|exa|youcom|error), Degraded (true|false), and a "
+            "Time line (total ms, split into index: ms and — when a provider "
+            "was used — provider: ms), then result blocks of Title/URL/Snippet "
+            "separated by --- lines. Local hits include a Last Crawled line per "
+            "result and cost zero provider credits; on a miss, top result URLs "
+            "are indexed in the background — no need to wait. If Degraded is "
+            "true, all providers failed and only local results are shown (see "
+            "the Provider Errors header line). Set search_mode to choose the "
+            "source: \"auto\" (default, local first then provider), \"local\" "
+            "(index only — an error if the index has nothing), or \"provider\" "
+            "(bypass the local index and force a live provider answer, use when "
+            "unsatisfied with a prior local result). Set format=\"json\" for the "
+            "structured JSON envelope instead of Markdown."
+        ),
+    )
+    async def search_web(
+        query: str,
+        num_results: int = 5,
+        max_crawl: int = 5,
+        max_age_days: float | None = None,
+        search_mode: str = "auto",  # "auto" | "local" | "provider"
+        format: str = "markdown",  # "json" | "markdown"
+    ) -> str:
+        try:
+            out = await _search_web(
+                query,
+                num_results=num_results,
+                max_crawl=max_crawl,
+                max_age_days=max_age_days,
+                search_mode=search_mode,
+            )
+        except ValueError as e:
+            # invalid search_mode: REST answers 400, MCP has no status code —
+            # same "Error: ..." shape as a bad format below
+            return f"Error: {e}"
+        return _fmt(out, format, render_search_markdown)
+
+
+def _tool_fetch_page(server: MCPServer) -> None:
+    """Register the fetch_page tool."""
+    @server.tool(
+        name="fetch_page",
+        description=(
+            "Load one URL as clean/fit Markdown for reading. Returns a "
+            "Markdown document: a Title/URL/From Index/Chars/Truncated header "
+            "plus a Time line (total ms, split into index: ms and — when the "
+            "page had to be crawled — crawl: ms), then the page body. Indexed "
+            "pages are served instantly from the local index; unknown URLs are "
+            "crawled on demand and stored. Bumps the page's fetch_count "
+            "(priority + prominence). A failed fetch returns a URL/Status/Error "
+            "header. Set format=\"json\" for the structured JSON envelope "
+            "instead of Markdown."
+        ),
+    )
+    async def fetch_page(
+        url: str,
+        max_chars: int | None = None,
+        format: str = "markdown",
+    ) -> str:
+        out = await _fetch_page(url, max_chars=max_chars)
+        return _fmt(out, format, render_fetch_page_markdown)
+
+
+def _tool_fetch_pages(server: MCPServer) -> None:
+    """Register the fetch_pages tool."""
+    @server.tool(
+        name="fetch_pages",
+        description=(
+            "Bulk-read multiple URLs in one call under a shared total "
+            "character budget. Returns a Markdown document: a "
+            "Strategy/Budget/Pages Fetched/Total Chars/Truncated header plus a "
+            "Time line (total ms, split into index: ms and — when any page had "
+            "to be crawled — crawl: ms), then one "
+            "Title/URL/From Index/Chars/Truncated section per page "
+            "(body after a --- line). Failed URLs get a URL/Status/Error "
+            f"section. strategy: {list(STRATEGIES)} (default 'smart'). "
+            "Each trimmed page carries a [truncated — N chars omitted, "
+            "strategy=X] marker. Set format=\"json\" for the structured JSON "
+            "envelope instead of Markdown."
+        ),
+    )
+    async def fetch_pages(
+        urls: list[str],
+        max_chars: int | None = None,  # null = full content (spec §7)
+        per_page_chars: int | None = None,
+        strategy: str = "smart",
+        format: str = "markdown",  # "json" | "markdown"
+    ) -> str:
+        out = await _fetch_pages(
+            urls,
+            max_chars=max_chars,
+            per_page_chars=per_page_chars,
+            strategy=strategy,
+        )
+        return _fmt(out, format, render_fetch_pages_markdown)
+
+
+def _tool_index_stats(server: MCPServer) -> None:
+    """Register the index_stats tool."""
+    @server.tool(
+        name="index_stats",
+        description=(
+            "Snapshot of the local index + provider gateway: page/chunk "
+            "counts, freshness, the current provider failover order and its "
+            "source (runtime override vs env default), search hit-rate by "
+            "provider (24h/7d/30d), crawl queue depth, monthly quota usage "
+            "vs limit. Use to gauge index freshness before relying on it."
+        ),
+    )
+    async def index_stats() -> dict:
+        return _clean(await _index_stats_data())
+
+
+def _tool_seed_url(server: MCPServer) -> None:
+    """Register the seed_url tool."""
+    @server.tool(
+        name="seed_url",
+        description=(
+            "Manually add a URL to the index: queues a background crawl and "
+            "kicks the worker. Returns queue position/status. Use to save a "
+            "specific page for later retrieval."
+        ),
+    )
+    async def seed_url(url: str) -> dict:
+        from .fetch import _valid_url
+
+        if not _valid_url(url):
+            return {"ok": False, "url": url, "error": "invalid or non-http(s) url"}
+        inserted = await queue.enqueue(url, source="manual")
+        row = await db.fetch_one(
+            "SELECT status, attempts, enqueued_at FROM crawl_queue WHERE url = %s "
+            "ORDER BY enqueued_at DESC LIMIT 1",
+            (url,),
+        )
+        pos = await db.fetch_one(
+            "SELECT count(*) AS ahead FROM crawl_queue WHERE status = 'pending' "
+            "AND enqueued_at < %s",
+            ((row or {}).get("enqueued_at") or dt.datetime.now(dt.timezone.utc),),
+        )
+        return _clean({
+            "ok": True,
+            "url": url,
+            "newly_queued": inserted,
+            "queue": row,
+            "ahead_in_queue": pos["ahead"],
+        })
+
+
+def _tool_refresh_page(server: MCPServer) -> None:
+    """Register the refresh_page tool."""
+    @server.tool(
+        name="refresh_page",
+        description=(
+            "Force an immediate re-crawl of a single page (bypasses the "
+            "refresh-order priority). Returns the new last_crawled + status."
+        ),
+    )
+    async def refresh_page(url: str) -> dict:
+        from .fetch import _valid_url
+
+        if not _valid_url(url):
+            return {"ok": False, "url": url, "error": "invalid or non-http(s) url"}
+        try:
+            r = await crawl_url(url, trigger="manual")
+        except Exception as e:
+            page = await db.page_get(url)
+            return _clean({
+                "ok": False,
+                "url": url,
+                "error": str(e),
+                "last_status": (page or {}).get("last_status"),
+            })
+        page = await db.page_get(url)
+        return _clean({
+            "ok": True,
+            "url": url,
+            "status": r.get("status"),
+            "chunks": r.get("chunks"),
+            "ms": r.get("ms"),
+            "last_crawled": (page or {}).get("last_crawled"),
+            "last_status": (page or {}).get("last_status"),
+        })

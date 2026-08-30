@@ -184,16 +184,7 @@ async def fetch_pages(
         return t
 
     # --- validate + dedupe (preserve first-seen order)
-    seen: set[str] = set()
-    clean: list[str] = []
-    bad: list[dict] = []
-    for u in urls or []:
-        if not isinstance(u, str) or not _valid_url(u):
-            bad.append({"url": str(u), "error": "invalid or non-http(s) url"})
-            continue
-        if u not in seen:
-            seen.add(u)
-            clean.append(u)
+    clean, bad = _validate_urls(urls)
 
     if not clean:
         return {
@@ -225,17 +216,7 @@ async def fetch_pages(
         per_page = per_page_chars if per_page_chars and per_page_chars > 0 else None
 
     # --- resolve all pages in parallel (in-flight-deduped)
-    resolved: list[dict] = []
-    failed: list[dict] = []
-
-    async def _one(u: str) -> None:
-        try:
-            resolved.append(await _resolve_page(u))
-        except Exception as e:
-            log.warning("fetch_pages: %s failed: %s", u, e)
-            failed.append({"url": u, "error": str(e)[:300]})
-
-    await asyncio.gather(*(_one(u) for u in clean))
+    resolved, failed = await _resolve_all(clean)
     if not resolved:
         return {
             "ok": False,
@@ -249,30 +230,7 @@ async def fetch_pages(
         await db.bump_fetch_count(p["url"])
 
     # --- allocate the budget per strategy
-    lens = [len(p["content"]) for p in resolved]
-    weights = [p["fetch_count"] for p in resolved]
-    budgets = allocate_budgets(strat, lens, weights, budget, per_page)
-
-    pages_out: list[dict] = []
-    total_chars = 0
-    any_truncated = False
-
-    for p, chars in zip(resolved, budgets):
-        text, truncated = truncate_page(p["content"], chars, strat)
-        omitted = len(p["content"]) - len(text)
-        if truncated:
-            text = text + "\n" + truncation_marker(omitted, strat)
-            any_truncated = True
-        total_chars += len(text)
-        pages_out.append({
-            "url": p["url"],
-            "title": p["title"],
-            "content": text,
-            "chars": len(text),
-            "truncated": truncated,
-            "omitted": omitted if truncated else 0,
-            "from_index": p["from_index"],
-        })
+    pages_out, total_chars, any_truncated = _allocate_pages(resolved, strat, budget, per_page)
 
     # Pages resolved in parallel, so each leg is the critical path (max), not
     # the sum. Legs are per-leg critical paths: when different pages dominate
@@ -357,3 +315,70 @@ async def _resolve_page(url: str) -> dict:
         "index_ms": index_ms,
         "crawl_ms": crawl_ms,
     }
+
+
+def _validate_urls(urls: list[str]) -> tuple[list[str], list[dict]]:
+    """Validate + dedupe (preserve first-seen order). Returns (clean, bad)."""
+    seen: set[str] = set()
+    clean: list[str] = []
+    bad: list[dict] = []
+    for u in urls or []:
+        if not isinstance(u, str) or not _valid_url(u):
+            bad.append({"url": str(u), "error": "invalid or non-http(s) url"})
+            continue
+        if u not in seen:
+            seen.add(u)
+            clean.append(u)
+    return clean, bad
+
+
+async def _resolve_all(urls: list[str]) -> tuple[list[dict], list[dict]]:
+    """Resolve every URL in parallel (in-flight-deduped).
+    Returns (resolved, failed)."""
+    resolved: list[dict] = []
+    failed: list[dict] = []
+
+    async def _one(u: str) -> None:
+        try:
+            resolved.append(await _resolve_page(u))
+        except Exception as e:
+            log.warning("fetch_pages: %s failed: %s", u, e)
+            failed.append({"url": u, "error": str(e)[:300]})
+
+    await asyncio.gather(*(_one(u) for u in urls))
+    return resolved, failed
+
+
+def _allocate_pages(
+    resolved: list[dict],
+    strat: str,
+    budget: int | None,
+    per_page: int | None,
+) -> tuple[list[dict], int, bool]:
+    """Allocate the shared char budget per strategy and assemble the page
+    dicts. Returns (pages_out, total_chars, any_truncated)."""
+    lens = [len(p["content"]) for p in resolved]
+    weights = [p["fetch_count"] for p in resolved]
+    budgets = allocate_budgets(strat, lens, weights, budget, per_page)
+
+    pages_out: list[dict] = []
+    total_chars = 0
+    any_truncated = False
+
+    for p, chars in zip(resolved, budgets):
+        text, truncated = truncate_page(p["content"], chars, strat)
+        omitted = len(p["content"]) - len(text)
+        if truncated:
+            text = text + "\n" + truncation_marker(omitted, strat)
+            any_truncated = True
+        total_chars += len(text)
+        pages_out.append({
+            "url": p["url"],
+            "title": p["title"],
+            "content": text,
+            "chars": len(text),
+            "truncated": truncated,
+            "omitted": omitted if truncated else 0,
+            "from_index": p["from_index"],
+        })
+    return pages_out, total_chars, any_truncated

@@ -96,17 +96,6 @@ async def search_web(
         (r.get("coverage") or 0.0) >= s.LOCAL_MIN_COVERAGE for r in local_rows
     )
 
-    def _local_result(r: dict) -> dict:
-        return {
-            "url": r["url"],
-            "title": r.get("title") or r["url"],
-            "snippet": (r.get("snippet") or "")[:400],
-            "score": r.get("score"),
-            "coverage": r.get("coverage"),
-            "last_crawled": r.get("last_crawled"),
-            "fetch_count": r.get("fetch_count"),
-        }
-
     source: str
     results: list[dict]
     degraded = False
@@ -117,52 +106,18 @@ async def search_web(
         # local only: serve what the index has — the caller explicitly chose
         # local, so the coverage gate does not apply. No provider fallback.
         if local_rows:
-            source = "local"
-            results = [_local_result(r) for r in local_rows[:k]]
-            await db.mark_search_hits([r["url"] for r in results])
+            source, results = await _serve_local(local_rows, k)
         else:
             source = "error"
             results = []
     elif serve_local:
         # local hit — zero provider credits (the quota-preservation layer)
-        source = "local"
-        results = [_local_result(r) for r in local_rows[:k]]
-        await db.mark_search_hits([r["url"] for r in results])
+        source, results = await _serve_local(local_rows, k)
     else:
         # ---- provider gateway (auto: no good local hit; provider: always)
-        gw = get_gateway()
-        t_prov = time.monotonic()
-        try:
-            provider_results, provider_name, errors = await gw.search(query, k)
-            provider_ms = int((time.monotonic() - t_prov) * 1000)
-            source = provider_name
-            results = [
-                {
-                    "url": r.url,
-                    "title": r.title,
-                    "snippet": r.snippet[:400],
-                    "score": r.score,
-                }
-                for r in provider_results[:k]
-            ]
-            # speculative pre-indexing: enqueue top result URLs (background)
-            for r in provider_results[:crawl_n]:
-                await queue.enqueue(r.url, source="search")
-        except GatewayExhausted as e:
-            provider_ms = int((time.monotonic() - t_prov) * 1000)
-            log.error("all providers failed: %s", e)
-            errors = e.errors
-            if search_mode == "auto" and local_rows:
-                # degraded mode: serve whatever local results we have (§14.12)
-                degraded = True
-                source = "local"
-                results = [_local_result(r) for r in local_rows[:k]]
-                await db.mark_search_hits([r["url"] for r in results])
-            else:
-                # provider mode has no local fallback; auto only reaches here
-                # when the index returned nothing
-                source = "error"
-                results = []
+        source, results, degraded, errors, provider_ms = await _provider_search(
+            query, k, crawl_n, search_mode, local_rows
+        )
 
     await db.log_search(query, source, len(results), results)
 
@@ -243,3 +198,67 @@ async def _search_local_index(
             if r.get("last_crawled") is None or r["last_crawled"] >= cutoff
         ]
     return rows, int((time.monotonic() - t_index) * 1000), None
+
+
+def _local_result(r: dict) -> dict:
+    """One local-index row as a result dict (snippet clamped to 400 chars)."""
+    return {
+        "url": r["url"],
+        "title": r.get("title") or r["url"],
+        "snippet": (r.get("snippet") or "")[:400],
+        "score": r.get("score"),
+        "coverage": r.get("coverage"),
+        "last_crawled": r.get("last_crawled"),
+        "fetch_count": r.get("fetch_count"),
+    }
+
+
+async def _serve_local(local_rows: list[dict], k: int) -> tuple[str, list[dict]]:
+    """Serve local rows as results and mark the search hits.
+    Returns (source, results)."""
+    results = [_local_result(r) for r in local_rows[:k]]
+    await db.mark_search_hits([r["url"] for r in results])
+    return "local", results
+
+
+async def _provider_search(
+    query: str,
+    k: int,
+    crawl_n: int,
+    search_mode: str,
+    local_rows: list[dict],
+) -> tuple[str, list[dict], bool, list[dict], int | None]:
+    """The provider-gateway leg: search, map results, and enqueue the top
+    result URLs for background indexing. On GatewayExhausted, degrade to the
+    local rows when available (§14.12).
+    Returns (source, results, degraded, errors, provider_ms)."""
+    gw = get_gateway()
+    t_prov = time.monotonic()
+    try:
+        provider_results, provider_name, errors = await gw.search(query, k)
+        provider_ms = int((time.monotonic() - t_prov) * 1000)
+        source = provider_name
+        results = [
+            {
+                "url": r.url,
+                "title": r.title,
+                "snippet": r.snippet[:400],
+                "score": r.score,
+            }
+            for r in provider_results[:k]
+        ]
+        # speculative pre-indexing: enqueue top result URLs (background)
+        for r in provider_results[:crawl_n]:
+            await queue.enqueue(r.url, source="search")
+        return source, results, False, errors, provider_ms
+    except GatewayExhausted as e:
+        provider_ms = int((time.monotonic() - t_prov) * 1000)
+        log.error("all providers failed: %s", e)
+        errors = e.errors
+        if search_mode == "auto" and local_rows:
+            # degraded mode: serve whatever local results we have (§14.12)
+            source, results = await _serve_local(local_rows, k)
+            return source, results, True, errors, provider_ms
+        # provider mode has no local fallback; auto only reaches here
+        # when the index returned nothing
+        return "error", [], False, errors, provider_ms
