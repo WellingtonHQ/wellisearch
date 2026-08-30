@@ -26,6 +26,10 @@ from .youcom import YouCom
 
 log = logging.getLogger("wellisearch.providers")
 
+ERROR_MAX_LEN = 300        # max chars kept in a provider error message
+CRASH_REPR_MAX_LEN = 500   # max chars kept in a crash repr (provider_state)
+CRASH_ERROR_MAX_LEN = 200  # max chars kept in a crash error (error chain)
+
 REGISTRY: dict[str, type[Provider]] = {
     "tavily": Tavily,
     "brave": Brave,
@@ -128,13 +132,13 @@ class Gateway:
                 log.warning("provider %s failed: %s", p.name, e)
                 await db.set_provider_state(p.name, last_error=str(e))
                 errors.append({"provider": p.name, "error": str(e), "status": e.status})
-                await self._ev(f"provider {p.name} failed", {"error": str(e)[:300], "status": e.status})
+                await self._ev(f"provider {p.name} failed", {"error": str(e)[:ERROR_MAX_LEN], "status": e.status})
                 continue
             except Exception as e:  # defensive: never leak a provider bug to the LLM
                 log.exception("provider %s crashed", p.name)
-                await db.set_provider_state(p.name, last_error=f"crash: {e!r}"[:500])
-                errors.append({"provider": p.name, "error": f"crash: {e!r}"[:200]})
-                await self._ev(f"provider {p.name} crashed", {"error": repr(e)[:300]})
+                await db.set_provider_state(p.name, last_error=f"crash: {e!r}"[:CRASH_REPR_MAX_LEN])
+                errors.append({"provider": p.name, "error": f"crash: {e!r}"[:CRASH_ERROR_MAX_LEN]})
+                await self._ev(f"provider {p.name} crashed", {"error": repr(e)[:ERROR_MAX_LEN]})
                 continue
 
             ms = int((time.monotonic() - t0) * 1000)

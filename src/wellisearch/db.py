@@ -79,8 +79,8 @@ class Database:
         # 3. open the main pool
         self._pool = AsyncConnectionPool(
             conninfo=s.conninfo(),
-            min_size=2,
-            max_size=12,
+            min_size=s.DB_POOL_MIN_SIZE,
+            max_size=s.DB_POOL_MAX_SIZE,
             open=False,
             kwargs={"row_factory": dict_row},
             configure=_register_vector,

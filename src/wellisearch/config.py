@@ -27,10 +27,15 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "wellisearch"
     # Admin/maintenance DB used only to self-create the app DB at startup (§11).
     POSTGRES_ADMIN_DB: str = "postgres"
+    # Connection pool sizing (db.py AsyncConnectionPool).
+    DB_POOL_MIN_SIZE: int = 2
+    DB_POOL_MAX_SIZE: int = 12
 
     # --- crawl4ai (the single crawling path) ---
     CRAWL4AI_URL: str = "http://crawl4ai:11235"
     CRAWL4AI_API_KEY: str = "change-me"
+    # /health reachability check timeout (crawler.health).
+    CRAWL4AI_HEALTH_TIMEOUT_S: int = 5
 
     # --- search providers (failover pool + default order; the dashboard can
     # override the order at runtime — see provider_state.sort_order) ---
@@ -57,6 +62,9 @@ class Settings(BaseSettings):
     # --- search ---
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
+    # Local-hit gate: fetch at least this many rows so the coverage gate can
+    # see a full-coverage page that ranks just outside the top-k by score.
+    SEARCH_GATE_MIN_K: int = 10
     # Local-hit gate: serve local if any top result's `coverage`
     # (fn_search_local column, see docs/ranking.md) is >= this.
     LOCAL_MIN_COVERAGE: float = 0.75

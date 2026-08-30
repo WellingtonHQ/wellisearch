@@ -31,6 +31,8 @@ from .serialize import resolve_format, to_json
 from .truncation import STRATEGIES
 from .worker import crawl_url
 
+TREND_WINDOWS = {"24h": 1, "7d": 7, "30d": 30}  # index_stats search-trend windows (label → days)
+
 
 def register_tools(server: MCPServer) -> None:
     """Register the six MCP tools on the server (BLUEPRINT §7)."""
@@ -82,7 +84,7 @@ async def _index_stats_data() -> dict:
     )
     chunks = await db.fetch_one("SELECT count(*) AS total FROM chunks")
 
-    windows = {"24h": 1, "7d": 7, "30d": 30}
+    windows = TREND_WINDOWS
     trends: dict[str, dict[str, Any]] = {}
     for label, days in windows.items():
         rows = await db.fetch_all(

@@ -17,6 +17,9 @@ from .config import get_settings
 
 log = logging.getLogger("wellisearch.crawler")
 
+ERROR_TEXT_MAX_LEN = 1000  # max response body kept in a crawl error message
+ERROR_DATA_MAX_LEN = 200   # max JSON payload kept in a crawl error message
+
 # Global crawl cap shared by the worker (queue drain + watchlist refresh)
 # AND the fetch/refresh request paths: at most CRAWL_MAX_PARALLEL concurrent
 # Crawl4AI calls in total (matches crawl4ai's 3 gunicorn workers). fetch_pages
@@ -74,11 +77,11 @@ async def fit_markdown(url: str) -> tuple[str | None, str]:
     if r.status_code in (401, 403):
         raise CrawlError(url, f"auth rejected ({r.status_code})", status=r.status_code)
     if r.status_code >= 400:
-        raise CrawlError(url, f"crawl4ai http {r.status_code}: {r.text[:1000]}", status=r.status_code)
+        raise CrawlError(url, f"crawl4ai http {r.status_code}: {r.text[:ERROR_TEXT_MAX_LEN]}", status=r.status_code)
 
     data = r.json()
     if not data.get("success"):
-        raise CrawlError(url, f"crawl4ai failed: {str(data)[:200]}")
+        raise CrawlError(url, f"crawl4ai failed: {str(data)[:ERROR_DATA_MAX_LEN]}")
     md = data.get("markdown") or ""
     if not md.strip():
         raise CrawlError(url, "empty markdown returned")
@@ -90,7 +93,7 @@ async def health() -> tuple[bool, str]:
     s = get_settings()
     base = s.CRAWL4AI_URL.rstrip("/")
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=s.CRAWL4AI_HEALTH_TIMEOUT_S) as client:
             r = await client.get(f"{base}/health", headers=_headers())
             if r.status_code == 200:
                 return True, "ok"

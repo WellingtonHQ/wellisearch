@@ -183,7 +183,7 @@ async def _search_local_index(
     # full-coverage page that ranks just outside the top-k by score. The extra
     # rows cost nothing — the legs/fusion are the same; only the final LIMIT
     # differs.
-    gate_k = max(k, 10)
+    gate_k = max(k, s.SEARCH_GATE_MIN_K)
     try:
         rows = await db.fetch_all(
             "SELECT * FROM fn_search_local(%s, %s::vector, %s)",

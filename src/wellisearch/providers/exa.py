@@ -11,6 +11,8 @@ import httpx
 
 from .base import Provider, ProviderError, Result
 
+EXA_MAX_CHARS = 800  # max page-text chars requested per result (snippet source)
+
 
 class Exa(Provider):
     """EXA Search API adapter (semantic search endpoint)."""
@@ -34,7 +36,7 @@ class Exa(Provider):
             "query": query,
             "numResults": max(1, num),
             # ask for page text so we have a snippet; base.snippet() trims it
-            "contents": {"text": True, "maxChars": 800},
+            "contents": {"text": True, "maxChars": EXA_MAX_CHARS},
         }
         try:
             r = await self.client.post(self.ENDPOINT, json=body, headers=headers)

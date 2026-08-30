@@ -63,6 +63,9 @@ _worker_task: asyncio.Task | None = None
 WIN_MIN_SECS = 600    # window floor: 10 minutes
 WIN_MAX_SECS = 86400  # window ceiling: 24 hours
 
+API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
+API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
+
 
 class FetchBody(BaseModel):
     """Request body for POST /api/fetch: the URL to fetch, with optional
@@ -370,7 +373,7 @@ async def api_pages(sort: str = "fetch_count", limit: int = 20) -> Any:
         f"SELECT url, title, domain, fetch_count, search_hit_count, crawl_count, "
         f"last_crawled, last_status, disabled "
         f"FROM pages ORDER BY {order} LIMIT %s",
-        (min(limit, 100),),
+        (min(limit, API_PAGES_MAX_LIMIT),),
     )
     freshness = await db.fetch_all(
         """
@@ -404,7 +407,7 @@ async def api_logs_crawls(limit: int = 50) -> Any:
     rows = await db.fetch_all(
         "SELECT ts, url, trigger, status, ms, chunks_written, detail "
         "FROM crawl_log ORDER BY id DESC LIMIT %s",
-        (min(limit, 500),),
+        (min(limit, API_LOGS_MAX_LIMIT),),
     )
     return {"crawls": rows}
 
@@ -415,13 +418,13 @@ async def api_logs_searches(limit: int = 50) -> Any:
     rows = await db.fetch_all(
         "SELECT ts, query, source, local_hits, results FROM search_log "
         "ORDER BY id DESC LIMIT %s",
-        (min(limit, 500),),
+        (min(limit, API_LOGS_MAX_LIMIT),),
     )
     return {"searches": rows}
 
 
 @app.get("/api/window")
-async def api_window(secs: int = 86400) -> Any:
+async def api_window(secs: int = WIN_MAX_SECS) -> Any:
     """Windowed activity stats (searches + crawls), clamped to 10m..24h."""
     secs = _clamp_window(secs)
     srows = await db.fetch_all(
@@ -452,7 +455,7 @@ async def api_window(secs: int = 86400) -> Any:
 
 @app.get("/api/logs")
 async def api_logs(
-    secs: int = 86400,
+    secs: int = WIN_MAX_SECS,
     limit: int = 200,
     q: str = "",
 ) -> Any:
@@ -463,7 +466,7 @@ async def api_logs(
     (case-insensitive substring); total then counts the matched rows.
     """
     secs = _clamp_window(secs)
-    limit = max(1, min(int(limit), 500))
+    limit = max(1, min(int(limit), API_LOGS_MAX_LIMIT))
     cutoff = "ts >= now() - make_interval(secs => %s)"
     crawls = await db.fetch_all(
         "SELECT ts, url, trigger, status, ms, chunks_written, detail FROM crawl_log "

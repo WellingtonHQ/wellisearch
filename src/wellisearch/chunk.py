@@ -15,6 +15,7 @@ import re
 
 CHARS_PER_TOKEN = 4
 _MIN_CHUNK_TOKENS = 50
+STUB_MERGE_DIVISOR = 5  # trailing stub below budget//5 merges into the previous chunk
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -96,7 +97,7 @@ def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
     # merge a small trailing stub into the previous chunk
     if len(chunks) >= 2:
         last_tokens = _tokens(chunks[-1])
-        if last_tokens < max(_MIN_CHUNK_TOKENS, budget // 5):
+        if last_tokens < max(_MIN_CHUNK_TOKENS, budget // STUB_MERGE_DIVISOR):
             chunks[-2] = chunks[-2] + "\n\n" + chunks[-1]
             chunks.pop()
 

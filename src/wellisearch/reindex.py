@@ -20,6 +20,8 @@ from .db import db
 from .embed import model_name
 from .index import store_page
 
+PROGRESS_INTERVAL = 10  # print progress every N pages
+
 
 def main() -> None:
     """CLI entry point: parse args and run the re-embed."""
@@ -72,7 +74,7 @@ async def _run(force: bool, dry_run: bool) -> None:
                 unchanged += 1
             else:
                 ok += 1
-            if i % 10 == 0 or i == len(stale):
+            if i % PROGRESS_INTERVAL == 0 or i == len(stale):
                 print(f"  {i}/{len(stale)} (ok={ok} unchanged={unchanged} failed={failed})")
 
         print(f"done: ok={ok} unchanged={unchanged} failed={failed}")

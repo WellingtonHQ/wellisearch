@@ -29,6 +29,9 @@ from .index import store_page
 
 log = logging.getLogger("wellisearch.worker")
 
+ERROR_DETAIL_MAX_LEN = 1000  # max chars kept in a crawl error detail (crawl_log)
+ERROR_REPR_MAX_LEN = 500     # max chars kept in a crash repr (crawl_log)
+
 # runtime state for the dashboard "Now" panel
 STATE: dict = {
     "last_tick_at": None,
@@ -127,7 +130,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     except crawler.CrawlError as e:
         ms = int((time.monotonic() - t0) * 1000)
         label = e.status_label()
-        await db.log_crawl(url, trigger, label, ms, detail=e.message[:1000])
+        await db.log_crawl(url, trigger, label, ms, detail=e.message[:ERROR_DETAIL_MAX_LEN])
         await db.execute(
             "UPDATE pages SET last_status = %s WHERE url = %s",
             (label, url),
@@ -135,7 +138,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
         raise
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
-        await db.log_crawl(url, trigger, "error", ms, detail=repr(e)[:500])
+        await db.log_crawl(url, trigger, "error", ms, detail=repr(e)[:ERROR_REPR_MAX_LEN])
         raise
 
     try:

@@ -33,6 +33,9 @@ from .worker import crawl_url
 
 log = logging.getLogger("wellisearch.fetch")
 
+TITLE_MAX_LEN = 120  # max chars kept when deriving a title from the first line
+ERROR_MAX_LEN = 300  # max chars kept in a per-URL fetch error message
+
 _OMITTED = object()  # sentinel: "parameter not provided"
 
 
@@ -278,7 +281,7 @@ def _title_from_markdown(md: str) -> str | None:
     for line in md.splitlines():
         line = line.strip()
         if line:
-            return line[:120]
+            return line[:TITLE_MAX_LEN]
     return None
 
 
@@ -348,7 +351,7 @@ async def _resolve_all(urls: list[str]) -> tuple[list[dict], list[dict]]:
             resolved.append(await _resolve_page(u))
         except Exception as e:
             log.warning("fetch_pages: %s failed: %s", u, e)
-            failed.append({"url": u, "error": str(e)[:300]})
+            failed.append({"url": u, "error": str(e)[:ERROR_MAX_LEN]})
 
     await asyncio.gather(*(_one(u) for u in urls))
     return resolved, failed

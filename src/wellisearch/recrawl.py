@@ -35,6 +35,7 @@ from .worker import crawl_url
 # the number of waiting coroutines bounded so a 20k-URL run doesn't hold 20k
 # live tasks at once.
 BATCH = 100
+PREVIEW_LIMIT = 20  # dry-run: max URLs printed before "... and N more"
 
 
 def main() -> None:
@@ -87,10 +88,10 @@ async def _run(
         total = len(urls)
         print(f"recrawl: {total} pages, concurrency={conc}", flush=True)
         if dry_run:
-            for u in urls[:20]:
+            for u in urls[:PREVIEW_LIMIT]:
                 print(f"  {u}")
-            if total > 20:
-                print(f"  ... and {total - 20} more")
+            if total > PREVIEW_LIMIT:
+                print(f"  ... and {total - PREVIEW_LIMIT} more")
             return
 
         stats = {"ok": 0, "unchanged": 0, "failed": 0}
