@@ -90,7 +90,7 @@ async def run_forever() -> None:
             await tick()
         except Exception as e:
             log.exception("worker tick crashed")
-            await _log_event("worker tick crashed", {"error": repr(e)[:500]})
+            await _log_event("worker tick crashed", {"error": repr(e)[:ERROR_REPR_MAX_LEN]})
 
 
 async def run_once() -> dict:
@@ -145,7 +145,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
         status, chunks_written = await store_page(url, md, title=title)
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
-        await db.log_crawl(url, trigger, "error", ms, detail=f"store: {e!r}"[:500])
+        await db.log_crawl(url, trigger, "error", ms, detail=f"store: {e!r}"[:ERROR_REPR_MAX_LEN])
         raise
 
     ms = int((time.monotonic() - t0) * 1000)
