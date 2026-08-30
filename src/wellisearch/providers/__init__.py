@@ -1,7 +1,7 @@
 """Provider gateway: ordered failover + monthly quota ledger + normalization.
 
 Failover order is resolved per search: the runtime override
-(provider_state.sort_order, set from the dashboard / PUT /api/providers/order)
+(provider_state.sort_order, set from the dashboard or via PUT /api/providers/order)
 when present, else the env default (SEARCH_PROVIDERS). First provider that
 (a) is enabled, (b) is configured, (c) is not quota-exhausted, and (d)
 returns a non-empty result set — serves. Every failure is captured per

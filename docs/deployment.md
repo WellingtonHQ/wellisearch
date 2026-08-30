@@ -79,7 +79,7 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 ### Search providers
 | Var | Default | Notes |
 |---|---|---|
-| `SEARCH_PROVIDERS` | `tavily,brave,exa,youcom` | the providers + their default order (a dashboard override wins); first non-empty result serves |
+| `SEARCH_PROVIDERS` | `tavily,brave,exa,youcom` | the providers + their current order; first non-empty result serves |
 | `TAVILY_API_KEY` | *(empty)* | |
 | `TAVILY_QUOTA_MONTHLY` | `1000` | `0`/unset = unknown; still fails over on 429 |
 | `BRAVE_API_KEY` | *(empty)* | |
