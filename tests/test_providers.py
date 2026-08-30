@@ -7,6 +7,8 @@ response (or raises), so we can assert exactly what each adapter sends and
 how it normalizes the reply — including the status-code -> ProviderError
 mapping the gateway relies on for failover.
 """
+from __future__ import annotations
+
 import asyncio
 import json
 

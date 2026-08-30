@@ -1,4 +1,6 @@
 """DB integration: schema apply, store_page, fn_search_local, queue, quota."""
+from __future__ import annotations
+
 import asyncio
 import os
 

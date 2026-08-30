@@ -1,4 +1,6 @@
 """Unit tests: chunker + truncation + renderers (pure logic, no DB)."""
+from __future__ import annotations
+
 from wellisearch.chunk import chunk_markdown
 from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_markdown
 from wellisearch.search_web import render_search_markdown

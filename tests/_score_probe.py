@@ -1,6 +1,9 @@
 """Measure TRUE local scores (fts + trigram + vector legs, exactly as the
 API computes them) so a threshold can be chosen on the real scale."""
+from __future__ import annotations
+
 import asyncio
+
 from wellisearch.config import get_settings
 from wellisearch.db import db
 from wellisearch.embed import embed_one

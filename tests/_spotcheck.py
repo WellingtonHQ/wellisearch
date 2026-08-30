@@ -1,4 +1,9 @@
-import httpx, os, re
+from __future__ import annotations
+
+import os
+import re
+
+import httpx
 
 env = open(os.path.join(os.path.dirname(__file__), "..", ".env"), encoding="utf-8").read()
 key = re.search(r"^WELLISEARCH_API_KEY=(.+)$", env, re.M).group(1).strip()
