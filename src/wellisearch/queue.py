@@ -24,10 +24,14 @@ log = logging.getLogger("wellisearch.queue")
 
 
 class InFlight:
+    """Shared url → future map so the same URL is never crawled twice concurrently."""
+
     def __init__(self) -> None:
+        """Starts with an empty url → future map."""
         self._m: dict[str, asyncio.Future] = {}
 
     def get(self, url: str) -> asyncio.Future | None:
+        """The in-flight future for a URL, or None."""
         return self._m.get(url)
 
     def register(
@@ -35,15 +39,19 @@ class InFlight:
         url: str,
         fut: asyncio.Future,
     ) -> None:
+        """Record the in-flight future for a URL."""
         self._m[url] = fut
 
     def forget(self, url: str) -> None:
+        """Remove a URL's entry (no-op when absent)."""
         self._m.pop(url, None)
 
     def urls(self) -> list[str]:
+        """The URLs currently in flight."""
         return list(self._m.keys())
 
     def __len__(self) -> int:
+        """The number of URLs currently in flight."""
         return len(self._m)
 
 
@@ -110,6 +118,7 @@ def kick_worker() -> None:
         return  # debounce window already running
 
     async def _debounced() -> None:
+        """Sleep out the debounce window, then run one worker tick."""
         await asyncio.sleep(s.KICK_DEBOUNCE_S)
         log.info("kicked worker tick (debounce %ss elapsed)", s.KICK_DEBOUNCE_S)
         await worker.tick()

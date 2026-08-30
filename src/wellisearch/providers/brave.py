@@ -13,11 +13,13 @@ from .base import Provider, ProviderError, Result
 
 
 class Brave(Provider):
+    """Brave Search API adapter (web search endpoint)."""
     name = "brave"
     ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 
     @property
     def configured(self) -> bool:
+        """True when BRAVE_API_KEY is set."""
         return bool(self.s.BRAVE_API_KEY)
 
     async def search(
@@ -25,6 +27,8 @@ class Brave(Provider):
         query: str,
         num: int,
     ) -> list[Result]:
+        """Run a web search and return canonical Results; auth/quota/HTTP
+        failures raise ProviderError."""
         headers = {
             "X-Subscription-Token": self.s.BRAVE_API_KEY,
             "Accept": "application/json",

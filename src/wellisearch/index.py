@@ -21,6 +21,7 @@ log = logging.getLogger("wellisearch.index")
 
 
 def domain_of(url: str) -> str:
+    """The URL's lowercased host; empty string when unparseable."""
     try:
         return (urlparse(url).netloc or "").lower()
     except Exception:

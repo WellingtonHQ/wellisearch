@@ -128,6 +128,7 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
     t_start = time.monotonic()
 
     def _timing(**extra: int) -> dict:
+        """Timing dict: elapsed ms since the call started, plus any extras."""
         t: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
         t.update(extra)
         return t
@@ -179,6 +180,7 @@ async def fetch_pages(
     t_start = time.monotonic()
 
     def _timing(**extra: int) -> dict:
+        """Timing dict: elapsed ms since the call started, plus any extras."""
         t: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
         t.update(extra)
         return t
@@ -260,6 +262,7 @@ async def fetch_pages(
 
 
 def _valid_url(url: str) -> bool:
+    """True when the URL is http(s) with a host."""
     try:
         p = urlparse(url)
         return p.scheme in ("http", "https") and bool(p.netloc)
@@ -268,6 +271,7 @@ def _valid_url(url: str) -> bool:
 
 
 def _title_from_markdown(md: str) -> str | None:
+    """First H1, else the first non-empty line (120 chars), else None."""
     m = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
     if m:
         return m.group(1).strip()
@@ -339,6 +343,7 @@ async def _resolve_all(urls: list[str]) -> tuple[list[dict], list[dict]]:
     failed: list[dict] = []
 
     async def _one(u: str) -> None:
+        """Resolve one URL, routing it to resolved or failed."""
         try:
             resolved.append(await _resolve_page(u))
         except Exception as e:

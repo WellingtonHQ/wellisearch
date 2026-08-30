@@ -38,6 +38,7 @@ BATCH = 100
 
 
 def main() -> None:
+    """CLI entry point: parse args and run the one-shot re-crawl."""
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
@@ -62,6 +63,8 @@ async def _run(
     dry_run: bool,
     resume: bool = False,
 ) -> None:
+    """Select the target pages (optionally limited/resumable) and re-crawl
+    them in BATCH-sized batches, reporting progress and stats."""
     s = get_settings()
     conc = s.CRAWL_MAX_PARALLEL
     log = logging.getLogger("wellisearch.recrawl")
@@ -94,6 +97,7 @@ async def _run(
         t0 = time.monotonic()
 
         async def process(url: str) -> None:
+            """Re-crawl one page via crawl_url and tally the outcome into stats."""
             try:
                 r = await crawl_url(url, "recrawl")
                 status = (r or {}).get("status", "ok")

@@ -11,6 +11,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """All env knobs in one place; values come from the process environment
+    (compose `env_file: .env` in the container, or a loaded .env on the host)."""
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -91,6 +93,7 @@ class Settings(BaseSettings):
 
     @property
     def provider_order(self) -> list[str]:
+        """Provider failover order from SEARCH_PROVIDERS (comma list, lowercased)."""
         names = [p.strip().lower() for p in self.SEARCH_PROVIDERS.split(",")]
         return [n for n in names if n]
 
@@ -107,6 +110,7 @@ class Settings(BaseSettings):
         return int(raw)
 
     def conninfo(self, dbname: str | None = None) -> str:
+        """psycopg connection string for ``dbname`` (default: POSTGRES_DB)."""
         return (
             f"host={self.POSTGRES_HOST} port={self.POSTGRES_PORT} "
             f"user={self.POSTGRES_USER} password={self.POSTGRES_PASSWORD} "
@@ -117,4 +121,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Cached Settings instance (one per process)."""
     return Settings()

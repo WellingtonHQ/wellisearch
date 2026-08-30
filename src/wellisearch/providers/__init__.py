@@ -38,13 +38,18 @@ class GatewayExhausted(Exception):
     """All providers failed. Carries the per-provider error chain."""
 
     def __init__(self, errors: list[dict]) -> None:
+        """Keep the per-provider error chain and summarize it as the message."""
         self.errors = errors
         summary = "; ".join(f"{e['provider']}: {e['error']}" for e in errors) or "no providers configured"
         super().__init__(summary)
 
 
 class Gateway:
+    """The ordered failover pool of configured providers, sharing one HTTP client."""
+
     def __init__(self) -> None:
+        """Build the provider pool from SEARCH_PROVIDERS (skipping unknown
+        names) and open the shared HTTP client."""
         self.s = get_settings()
         self._client = httpx.AsyncClient(timeout=self.s.PROVIDER_TIMEOUT_S)
         self._by_name: dict[str, Provider] = {}
@@ -158,6 +163,8 @@ class Gateway:
         p: Provider,
         errors: list[dict],
     ) -> bool:
+        """Failover gate: enabled, configured, and not quota-exhausted; the
+        skip reason is recorded in errors."""
         state = await db.get_provider_state(p.name)
         if state and not state["enabled"]:
             errors.append({"provider": p.name, "error": "disabled (runtime toggle)"})
@@ -174,6 +181,7 @@ class Gateway:
         return True
 
     async def close(self) -> None:
+        """Close the shared HTTP client."""
         await self._client.aclose()
 
 
@@ -181,6 +189,7 @@ _gateway: Gateway | None = None
 
 
 def get_gateway() -> Gateway:
+    """Process-wide Gateway singleton, created lazily."""
     global _gateway
     if _gateway is None:
         _gateway = Gateway()
@@ -188,6 +197,7 @@ def get_gateway() -> Gateway:
 
 
 async def shutdown_gateway() -> None:
+    """Close the gateway (if any) and clear the singleton."""
     global _gateway
     if _gateway is not None:
         await _gateway.close()

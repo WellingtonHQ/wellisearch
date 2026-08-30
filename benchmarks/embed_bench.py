@@ -97,6 +97,7 @@ FASTEMBED_BACKEND = {
 
 
 def detect_cpu() -> str:
+    """The CPU model name (macOS sysctl, /proc/cpuinfo, or platform.processor)."""
     try:
         if sys.platform == "darwin":
             return subprocess.check_output(
@@ -126,6 +127,7 @@ def model_prefixes(model_id: str) -> tuple[str, str]:
 
 
 def percentile(sorted_vals: list[float], p: float) -> float:
+    """Linear-interpolated percentile of a sorted list."""
     if not sorted_vals:
         return 0.0
     if len(sorted_vals) == 1:
@@ -137,6 +139,7 @@ def percentile(sorted_vals: list[float], p: float) -> float:
 
 
 def load_data(data_dir: Path) -> tuple[list[dict], list[dict], dict[str, set[str]]]:
+    """Load the test set: chunks, queries, and per-query ground-truth chunk ids."""
     chunks = [
         json.loads(line)
         for line in (data_dir / "corpus.jsonl").read_text(encoding="utf-8").splitlines()
@@ -166,6 +169,8 @@ class TorchRunner:
         model_id: str,
         args: argparse.Namespace,
     ) -> None:
+        """Load the sentence-transformers model on CPU and set up the tokenizer,
+        dimension, and task prefixes."""
         import torch
         from sentence_transformers import SentenceTransformer
 
@@ -190,19 +195,23 @@ class TorchRunner:
         self.batch = args.batch
 
     def truncate(self, text: str) -> str:
+        """Truncate text to max_len tokens (via the tokenizer)."""
         ids = self.tok(text, truncation=True, max_length=self.max_len, add_special_tokens=False)["input_ids"]
         return self.tok.decode(ids)
 
     def tok_count(self, text: str) -> int:
+        """Token count of text after truncation to max_len."""
         return _tok_len(self.tok, text, self.max_len)
 
     def encode(self, texts: list[str]) -> np.ndarray:
+        """Encode a batch of texts to L2-normalized float32 vectors."""
         X = self.model.encode(
             texts, batch_size=self.batch, normalize_embeddings=True, show_progress_bar=False
         )
         return _l2_normalize(np.asarray(X, dtype=np.float32))
 
     def encode_one(self, text: str) -> np.ndarray:
+        """Encode one text to an L2-normalized float32 vector."""
         X = self.model.encode([text], normalize_embeddings=True, show_progress_bar=False)
         return _l2_normalize(np.asarray(X, dtype=np.float32))[0]
 
@@ -217,6 +226,8 @@ class FastEmbedRunner:
         model_id: str,
         args: argparse.Namespace,
     ) -> None:
+        """Load the FastEmbed (ONNX) model and set up the tokenizer, dimension,
+        and batch size."""
         import fastembed
         import onnxruntime
         from fastembed import TextEmbedding
@@ -237,24 +248,29 @@ class FastEmbedRunner:
         self.batch = args.batch
 
     def truncate(self, text: str) -> str:
+        """Truncate text to max_len tokens (via the tokenizer)."""
         ids = self.tok(text, truncation=True, max_length=self.max_len, add_special_tokens=False)["input_ids"]
         return self.tok.decode(ids)
 
     def tok_count(self, text: str) -> int:
+        """Token count of text after truncation to max_len."""
         return _tok_len(self.tok, text, self.max_len)
 
     def encode(self, texts: list[str]) -> np.ndarray:
+        """Encode a batch of texts to L2-normalized float32 vectors."""
         X = np.stack(
             [np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)]
         )
         return _l2_normalize(X)
 
     def encode_one(self, text: str) -> np.ndarray:
+        """Encode one text to an L2-normalized float32 vector."""
         v = np.asarray(next(iter(self.model.embed([text]))), dtype=np.float32)
         return _l2_normalize(v[None, :])[0]
 
 
 def make_runner(model_id: str, args: argparse.Namespace) -> TorchRunner | FastEmbedRunner:
+    """Pick the backend runner for a model (FastEmbed for MiniLM, else PyTorch)."""
     if model_id in FASTEMBED_BACKEND or "minilm" in model_id.lower():
         return FastEmbedRunner(model_id, args)
     return TorchRunner(model_id, args)
@@ -268,6 +284,7 @@ def score_quality(
     order: list[int],
     topk: int,
 ) -> dict:
+    """Compute Recall@1/5/10 and MRR@10 from the query×doc score matrix."""
     nq, nd = S.shape
     topk = min(topk, nd)
     recall = {1: 0, 5: 0, 10: 0}
@@ -302,6 +319,7 @@ def measure_latency(
     doc_texts: list[str],
     sample_n: int,
 ) -> dict | None:
+    """Measure single-doc encode latency (median/p95) over a sampled subset."""
     n = len(doc_texts)
     if n == 0:
         return None
@@ -329,6 +347,7 @@ def run_model(
     truth: dict[str, set[str]],
     args: argparse.Namespace,
 ) -> dict:
+    """Run the full benchmark for one model: embed, score, latency, env metadata."""
     runner = make_runner(model_id, args)
 
     order = sorted(range(len(chunks)), key=lambda i: len(chunks[i]["text"]))
@@ -381,10 +400,12 @@ def run_model(
 
 
 def slug(model_id: str) -> str:
+    """A filesystem-safe slug for a model id."""
     return model_id.replace("/", "__").replace(":", "_").lower()
 
 
 def print_report(results: list[dict], total_wall: float) -> None:
+    """Print the comparison table and per-model detail."""
     if not results:
         return
     print()
@@ -416,6 +437,7 @@ def print_report(results: list[dict], total_wall: float) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI args (models, batch, max-len, threads, topk, latency, dirs)."""
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -438,6 +460,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the benchmark across all models, print the report, write result files."""
     args = parse_args(argv)
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -532,6 +555,7 @@ def _effective_max_len(tok: object, args_max: int) -> int:
 
 
 def _l2_normalize(X: np.ndarray) -> np.ndarray:
+    """L2-normalize along the last axis (zero-safe)."""
     n = np.linalg.norm(X, axis=-1, keepdims=True)
     n[n == 0] = 1.0
     return (X / n).astype(np.float32)
@@ -542,6 +566,7 @@ def _tok_len(
     text: str,
     max_len: int,
 ) -> int:
+    """Token count of text after truncation to max_len."""
     return len(tok(text, truncation=True, max_length=max_len, add_special_tokens=False)["input_ids"])
 
 

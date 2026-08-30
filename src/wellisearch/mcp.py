@@ -123,6 +123,7 @@ class _Runtime:
         server: MCPServer,
         app: Starlette,
     ) -> None:
+        """Bind the MCPServer and its Starlette app."""
         self.server = server
         self.app = app
 
@@ -167,9 +168,11 @@ class _MCPMount:
     """
 
     def __init__(self) -> None:
+        """Starts with no active runtime (requests 503 until the lifespan sets one)."""
         self._runtime: _Runtime | None = None
 
     def set_runtime(self, runtime: _Runtime | None) -> None:
+        """Track the active runtime (None on lifespan exit)."""
         self._runtime = runtime
 
     async def __call__(
@@ -178,6 +181,7 @@ class _MCPMount:
         receive: Receive,
         send: Send,
     ) -> None:
+        """Dispatch the ASGI request to the active runtime's app, or 503 if none."""
         runtime = self._runtime
         if runtime is None:
             await _respond_not_started(scope, send)

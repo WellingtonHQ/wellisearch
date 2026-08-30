@@ -85,6 +85,8 @@ def resolve_format(format_param: str | None, accept_header: str | None = None) -
 
 
 def _json_default(o: Any) -> Any:
+    """json.dumps fallback for Postgres types: datetime/date/time → ISO
+    string, Decimal → float, set → sorted list."""
     if isinstance(o, (dt.datetime, dt.date, dt.time)):
         return o.isoformat()
     if isinstance(o, decimal.Decimal):

@@ -1,3 +1,5 @@
+"""Spot-check the live search API: run a few queries and print source,
+degraded flag, result count, and the first URL."""
 from __future__ import annotations
 
 import os

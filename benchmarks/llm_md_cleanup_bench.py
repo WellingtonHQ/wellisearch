@@ -148,6 +148,7 @@ _STOPWORDS = frozenset(
 
 @dataclass
 class Config:
+    """Benchmark settings assembled from CLI args + environment."""
     postgres_dsn: str
     ollama_base_url: str
     ollama_api_key: str
@@ -168,6 +169,7 @@ class Config:
     report_file: Path = field(init=False)
 
     def __post_init__(self) -> None:
+        """Create the output dir and derive the sample/results/report paths."""
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.sample_file = self.out_dir / "llm-cleanup.sample.json"
         self.results_file = self.out_dir / "llm-cleanup.results.json"
@@ -175,6 +177,7 @@ class Config:
 
 
 def load_config(args: argparse.Namespace) -> Config:
+    """Build a Config from CLI args + env, validating the judge is configured when needed."""
     pg_host = os.environ.get("POSTGRES_HOST", "127.0.0.1")
     pg_port = os.environ.get("POSTGRES_PORT", "5432")
     pg_user = os.environ.get("POSTGRES_USER", "wellington")
@@ -325,6 +328,7 @@ async def build_sample(cfg: Config) -> list[dict[str, Any]]:
 
 
 def save_sample(cfg: Config, pages: list[dict[str, Any]]) -> None:
+    """Write the sample snapshot (reproducible input) to disk as JSON."""
     payload = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "sample_size": len(pages),
@@ -334,6 +338,7 @@ def save_sample(cfg: Config, pages: list[dict[str, Any]]) -> None:
 
 
 def load_sample(cfg: Config) -> list[dict[str, Any]]:
+    """Read the sample snapshot from disk, capped by sample_size (or 2 in smoke)."""
     if not cfg.sample_file.exists():
         raise SystemExit(
             f"no sample at {cfg.sample_file} — run `python llm_md_cleanup_bench.py sample` first"
@@ -428,6 +433,7 @@ async def judge_call(
     original: str,
     cleaned: str,
 ) -> dict[str, Any]:
+    """Send original + cleaned markdown to the 27B judge; return parsed scores + raw text."""
     user = f"=== ORIGINAL ===\n{original}\n\n=== CLEANED ===\n{cleaned}"
     payload = {
         "model": cfg.judge_model,
@@ -449,6 +455,7 @@ async def judge_call(
 
 
 def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
+    """Compute no-addition, preservation, boilerplate-removal, structure, and length metrics."""
     o_words = _words(original)
     c_words = _words(cleaned)
     o_8 = _ngrams(o_words, 8)
@@ -491,11 +498,13 @@ async def run_model(
     tag: str,
     pages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Run one model over all pages (concurrency-limited), collecting outputs, metrics, and judge scores."""
     await warmup(client, cfg, tag)
     sem = asyncio.Semaphore(cfg.concurrency)
     results: list[dict[str, Any]] = []
 
     async def one(page: dict[str, Any], idx: int) -> dict[str, Any]:
+        """Process one page: stream the cleanup, compute metrics, and (optionally) call the judge."""
         async with sem:
             rec: dict[str, Any] = {
                 "model": label,
@@ -586,6 +595,7 @@ async def ensure_models(
 
 
 async def run_all(cfg: Config) -> dict[str, Any]:
+    """Run all models over the sample and write the full results JSON."""
     pages = load_sample(cfg)
     models = cfg.models[:2] if cfg.smoke else cfg.models
     timeout = httpx.Timeout(cfg.timeout_s, connect=10.0)
@@ -616,6 +626,7 @@ async def run_all(cfg: Config) -> dict[str, Any]:
 
 
 def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Aggregate per-model metrics + judge scores into summary statistics."""
     out: dict[str, dict[str, Any]] = {}
     for label, recs in payload["results"].items():
         ok = [r for r in recs if "error" not in r and r.get("output")]
@@ -698,6 +709,7 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
         ]
         if judge:
             def jmed(key: str) -> str:
+                """Median judge score for one dimension, formatted to one decimal."""
                 vals = [float(r["judge"]["scores"][key]) for r in ok
                         if r.get("judge", {}).get("scores", {}).get(key) is not None]
                 med = _median(vals)
@@ -708,6 +720,7 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     widths = [max(len(cols[i]), *(len(r[i]) for r in data)) for i in range(len(cols))]
 
     def line(cells: list[str]) -> str:
+        """Format a row of cells to fixed widths (first left, rest right-aligned)."""
         return "  ".join(
             cell.ljust(w) if i == 0 else cell.rjust(w)
             for i, (cell, w) in enumerate(zip(cells, widths))
@@ -720,6 +733,7 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
 
 
 def write_report(cfg: Config, payload: dict[str, Any]) -> None:
+    """Render and write the Markdown report (meta, summary table, per-page detail)."""
     agg = aggregate(payload)
     labels = list(payload["results"].keys())
     judge = bool(payload["config"].get("judge_model"))
@@ -732,6 +746,7 @@ def write_report(cfg: Config, payload: dict[str, Any]) -> None:
 
 
 def report_from_disk(cfg: Config) -> None:
+    """Re-render the report from the stored results file."""
     if not cfg.results_file.exists():
         raise SystemExit(f"no results at {cfg.results_file} — run `python llm_md_cleanup_bench.py run` first")
     payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
@@ -741,6 +756,7 @@ def report_from_disk(cfg: Config) -> None:
 # --------------------------------------------------------------------- main
 
 def main() -> None:
+    """CLI entry point: parse args and dispatch sample/run/report/all."""
     _load_dotenv()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("command", choices=["sample", "run", "report", "all"])
@@ -826,6 +842,7 @@ def _pick_from_domain(
 # --------------------------------------------------------------------- LLM calls
 
 def _headers(api_key: str) -> dict[str, str]:
+    """Authorization + Content-Type headers for an API key."""
     return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
 
@@ -878,22 +895,26 @@ def _parse_judge_scores(text: str) -> dict[str, Any]:
 # ------------------------------------------------------------- deterministic metrics
 
 def _words(text: str) -> list[str]:
+    """Lowercased alphanumeric tokens."""
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
 def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
+    """Set of n-grams (falls back to 1-grams if the list is too short)."""
     if len(words) < n:
         n = 1
     return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
 
 
 def _containment(needle: set, haystack: set) -> float:
+    """Fraction of the needle set present in the haystack set."""
     if not needle:
         return 0.0
     return len(needle & haystack) / len(needle)
 
 
 def _structure(text: str) -> dict[str, int]:
+    """Counts of headings, tables, code fences, and list items."""
     lines = text.splitlines()
     return {
         "headings": sum(1 for l in lines if re.match(r"^\s{0,3}#{1,6}\s", l)),
@@ -908,6 +929,7 @@ def _structure(text: str) -> dict[str, int]:
 # --------------------------------------------------------------------- report
 
 def _stat(values: list[float]) -> dict[str, float]:
+    """Summary statistics (n, median, mean, min, max, p95)."""
     if not values:
         return {"n": 0}
     s = sorted(values)
@@ -924,12 +946,14 @@ def _stat(values: list[float]) -> dict[str, float]:
 
 
 def _fmt_stat(s: dict[str, Any]) -> str:
+    """Compact 'median (p95 ...)' string, or an em dash when empty."""
     if s.get("n", 0) == 0:
         return "—"
     return f"{s['median']} (p95 {s['p95']})"
 
 
 def _median(values: list[float]) -> float | None:
+    """Median of the values, or None when empty."""
     return statistics.median(values) if values else None
 
 

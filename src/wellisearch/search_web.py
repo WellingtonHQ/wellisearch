@@ -70,6 +70,9 @@ async def search_web(
     max_age_days: float | None = None,
     search_mode: str = "auto",
 ) -> dict:
+    """The search pipeline: local index first (auto), provider gateway on a
+    miss, then log the search, enqueue top results for background indexing,
+    and return the envelope. `search_mode` selects the source (auto/local/provider)."""
     s = get_settings()
     k = max(1, num_results or s.SEARCH_K)  # clamp: negative k would slice rows off the end
     crawl_n = s.SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)

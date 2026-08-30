@@ -12,6 +12,8 @@ from wellisearch.db import db  # noqa: E402
 
 
 async def main() -> None:
+    """Run the full DB integration suite (schema, store_page, search, queue,
+    quota, provider state/order, event log)."""
     await db.startup()
     print("OK startup (schema applied)")
     await _clean_slate()

@@ -71,6 +71,8 @@ def _fmt(
 
 
 async def _index_stats_data() -> dict:
+    """Assemble the index_stats payload: index size/freshness, gateway order,
+    search trends, queue depth, quota, and the 30-day crawl mix."""
     s = get_settings()
     now = dt.datetime.now(dt.timezone.utc)
 
@@ -178,6 +180,7 @@ def _tool_search_web(server: MCPServer) -> None:
         search_mode: str = "auto",  # "auto" | "local" | "provider"
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:
+        """Run the search_web pipeline and render the result in the requested format."""
         try:
             out = await _search_web(
                 query,
@@ -214,6 +217,7 @@ def _tool_fetch_page(server: MCPServer) -> None:
         max_chars: int | None = None,
         format: str = "markdown",
     ) -> str:
+        """Load one URL and render the result in the requested format."""
         out = await _fetch_page(url, max_chars=max_chars)
         return _fmt(out, format, render_fetch_page_markdown)
 
@@ -243,6 +247,8 @@ def _tool_fetch_pages(server: MCPServer) -> None:
         strategy: str = "smart",
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:
+        """Bulk-load multiple URLs under a shared budget and render the result
+        in the requested format."""
         out = await _fetch_pages(
             urls,
             max_chars=max_chars,
@@ -265,6 +271,7 @@ def _tool_index_stats(server: MCPServer) -> None:
         ),
     )
     async def index_stats() -> dict:
+        """Return the JSON-safe index_stats snapshot."""
         return _clean(await _index_stats_data())
 
 
@@ -279,6 +286,7 @@ def _tool_seed_url(server: MCPServer) -> None:
         ),
     )
     async def seed_url(url: str) -> dict:
+        """Validate the URL, enqueue a background crawl, and report the queue position."""
         from .fetch import _valid_url
 
         if not _valid_url(url):
@@ -313,6 +321,7 @@ def _tool_refresh_page(server: MCPServer) -> None:
         ),
     )
     async def refresh_page(url: str) -> dict:
+        """Force an immediate re-crawl of one page and return the new status."""
         from .fetch import _valid_url
 
         if not _valid_url(url):

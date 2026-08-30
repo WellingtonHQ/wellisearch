@@ -21,6 +21,12 @@ _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 
 def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
+    """Split markdown into ~``max_tokens``-token chunks, heading-aware.
+
+    Chunks start at heading boundaries and never split inside a fenced code
+    block or a table row; a small trailing stub is merged into the previous
+    chunk.
+    """
     if not markdown or not markdown.strip():
         return []
 
@@ -34,6 +40,8 @@ def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
     fence_marker = ""
 
     def flush() -> None:
+        """Append the accumulated lines as one chunk (if any) and reset the
+        accumulator."""
         nonlocal current, current_tokens
         if current:
             text = "\n".join(current).strip()
@@ -101,4 +109,5 @@ def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
 
 
 def _tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token, minimum 1."""
     return max(1, len(text) // CHARS_PER_TOKEN)

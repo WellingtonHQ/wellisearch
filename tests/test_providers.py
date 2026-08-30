@@ -38,6 +38,8 @@ def make_client(
     captured: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """MockTransport handler: raise the configured exception, or record the
+        request and return the canned response."""
         if raise_exc is not None:
             raise raise_exc
         captured["method"] = request.method
@@ -62,6 +64,8 @@ async def run_search(
     num: int = 3,
     query: str = QUERY,
 ) -> tuple[Provider, list[Result], dict]:
+    """Run one provider search against a mock client; return (provider,
+    results, captured request)."""
     client, captured = make_client(status=status, payload=payload, text=text)
     p = cls(settings, client)
     results = await p.search(query, num)
@@ -74,6 +78,8 @@ async def expect_provider_error(
     status: int,
     msg_substr: str,
 ) -> None:
+    """Assert a given HTTP status maps to a ProviderError with the expected
+    message and status."""
     client, _ = make_client(status=status, text="boom")
     p = cls(settings, client)
     try:
@@ -87,6 +93,7 @@ async def expect_provider_error(
 
 
 async def expect_network_error(cls: type[Provider], settings: Settings) -> None:
+    """Assert a network failure maps to a ProviderError with a 'network' message."""
     client, _ = make_client(raise_exc=httpx.ConnectError("no route to host"))
     p = cls(settings, client)
     try:
@@ -259,6 +266,7 @@ async def test_youcom() -> None:
 
 
 async def main() -> None:
+    """Run all provider adapter tests (base helpers + each provider)."""
     test_base()
     await test_tavily()
     await test_brave()

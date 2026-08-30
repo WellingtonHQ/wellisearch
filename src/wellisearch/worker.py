@@ -97,6 +97,7 @@ async def run_once() -> dict:
 
 
 def main() -> None:
+    """CLI entry point: run one tick (--once) and exit."""
     import sys
 
     logging.basicConfig(
@@ -151,6 +152,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
 
 
 async def _drain_queue(deadline: float) -> dict:
+    """Claim and crawl pending queue rows, up to the per-tick budget."""
     s = get_settings()
     processed = 0
     sem = asyncio.Semaphore(s.CRAWL_MAX_PARALLEL)
@@ -163,6 +165,7 @@ async def _drain_queue(deadline: float) -> dict:
     log.info("tick: draining queue (%d pending in budget window)", len(rows))
 
     async def process(url: str) -> None:
+        """Claim one queue row and crawl it (bounded by the parallelism semaphore)."""
         nonlocal processed
         if time.monotonic() > deadline:
             return
@@ -183,6 +186,7 @@ async def _drain_queue(deadline: float) -> dict:
 
 
 async def _refresh_watchlist(deadline: float) -> dict:
+    """Refresh stale watchlist pages (by fetch_count), up to the per-tick budget."""
     s = get_settings()
     min_age = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=s.REFRESH_MIN_AGE_HOURS)
     rows = await db.fetch_all(
@@ -198,6 +202,7 @@ async def _refresh_watchlist(deadline: float) -> dict:
     results = []
 
     async def refresh(row: dict) -> None:
+        """Re-crawl one watchlist page and record the result."""
         if time.monotonic() > deadline:
             return
         url = row["url"]
@@ -222,6 +227,7 @@ async def _log_event(message: str, info: dict | None = None) -> None:
 
 
 async def _retention_sweep() -> None:
+    """Prune old log rows past the retention window (best-effort)."""
     try:
         s = get_settings()
         pruned = await db.prune_logs(s.LOG_RETENTION_DAYS)
@@ -234,6 +240,7 @@ async def _retention_sweep() -> None:
 
 
 async def _once() -> dict:
+    """One-shot mode: open the DB, run a single tick, and close it."""
     from .db import db as _db
 
     await _db.startup()

@@ -42,6 +42,7 @@ def embed(texts: list[str]) -> list[list[float]]:
 
 
 def embed_one(text: str) -> list[float]:
+    """Embed a single text and return its vector."""
     return embed([text])[0]
 
 
@@ -51,10 +52,13 @@ def embed_one(text: str) -> list[float]:
 
 
 def _cache_dir() -> str:
+    """fastembed's model cache dir (FASTEMBED_CACHE_DIR, or ~/.cache/fastembed)."""
     return os.environ.get("FASTEMBED_CACHE_DIR") or str(pathlib.Path.home() / ".cache" / "fastembed")
 
 
 def _get_model() -> Any:
+    """Load the fastembed model once (thread-safe) and verify its dimension
+    matches EMBED_DIMS."""
     global _model
     with _lock:
         if _model is None:

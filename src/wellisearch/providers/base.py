@@ -21,6 +21,8 @@ _WS_RE = re.compile(r"\s+")
 
 @dataclass(slots=True)
 class Result:
+    """Canonical search result: url, title, snippet, optional score, and
+    provider-specific extras."""
     url: str
     title: str
     snippet: str = ""
@@ -37,6 +39,7 @@ class ProviderError(Exception):
         message: str,
         status: int | None = None,
     ) -> None:
+        """Keep the provider name and optional HTTP status on the failure."""
         super().__init__(f"{provider}: {message}")
         self.provider = provider
         self.status = status
@@ -52,11 +55,13 @@ class Provider:
         settings: Settings,
         client: httpx.AsyncClient,
     ) -> None:
+        """Keep the settings and the shared HTTP client."""
         self.s = settings
         self.client = client
 
     @property
     def configured(self) -> bool:
+        """Whether the provider is usable (has its key/url); base is always True."""
         return True
 
     async def search(
@@ -64,6 +69,7 @@ class Provider:
         query: str,
         num: int,
     ) -> list[Result]:
+        """Search the provider and return canonical Results; adapters must implement."""
         raise NotImplementedError
 
     # ------------------------------------------------------------ utilities

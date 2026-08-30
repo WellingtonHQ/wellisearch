@@ -30,6 +30,7 @@ _crawl_sem: asyncio.Semaphore | None = None
 # ---------------------------------------------------------------------------
 
 def crawl_semaphore() -> asyncio.Semaphore:
+    """Process-wide crawl concurrency cap (CRAWL_MAX_PARALLEL), created lazily."""
     global _crawl_sem
     if _crawl_sem is None:
         _crawl_sem = asyncio.Semaphore(get_settings().CRAWL_MAX_PARALLEL)
@@ -37,18 +38,22 @@ def crawl_semaphore() -> asyncio.Semaphore:
 
 
 class CrawlError(Exception):
+    """A failed crawl, carrying the URL, message, and optional HTTP status."""
+
     def __init__(
         self,
         url: str,
         message: str,
         status: int | None = None,
     ) -> None:
+        """Keep the URL, message, and optional HTTP status on the failure."""
         super().__init__(f"{url}: {message}")
         self.url = url
         self.message = message
         self.status = status
 
     def status_label(self) -> str:
+        """Short status for logs: ``http_<status>`` when present, else ``error``."""
         return f"http_{self.status}" if self.status else "error"
 
 
@@ -99,6 +104,7 @@ async def health() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def _headers() -> dict[str, str]:
+    """Crawl4AI request headers (Bearer auth when CRAWL4AI_API_KEY is set)."""
     h = {"Content-Type": "application/json"}
     key = get_settings().CRAWL4AI_API_KEY
     if key:

@@ -20,6 +20,8 @@ QUERIES = [
 ]
 
 async def main() -> None:
+    """Print the top local scores per probe query and whether they pass the
+    SEARCH_MIN_SCORE gate."""
     s = get_settings()
     print("SEARCH_MIN_SCORE =", s.SEARCH_MIN_SCORE)
     await db.startup()

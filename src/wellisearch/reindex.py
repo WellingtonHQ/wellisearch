@@ -22,6 +22,7 @@ from .index import store_page
 
 
 def main() -> None:
+    """CLI entry point: parse args and run the re-embed."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--force", action="store_true", help="re-embed every page, even if fresh")
@@ -36,6 +37,8 @@ def main() -> None:
 
 
 async def _run(force: bool, dry_run: bool) -> None:
+    """Find pages needing (re)embedding (all when --force) and re-chunk +
+    re-embed each, reporting progress."""
     s = get_settings()
     await db.startup()
     try:

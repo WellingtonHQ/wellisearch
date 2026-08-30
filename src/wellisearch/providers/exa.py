@@ -13,11 +13,13 @@ from .base import Provider, ProviderError, Result
 
 
 class Exa(Provider):
+    """EXA Search API adapter (semantic search endpoint)."""
     name = "exa"
     ENDPOINT = "https://api.exa.ai/search"
 
     @property
     def configured(self) -> bool:
+        """True when EXA_API_KEY is set."""
         return bool(self.s.EXA_API_KEY)
 
     async def search(
@@ -25,6 +27,8 @@ class Exa(Provider):
         query: str,
         num: int,
     ) -> list[Result]:
+        """Run a semantic search and return canonical Results; auth/quota/HTTP
+        failures raise ProviderError."""
         headers = {"x-api-key": self.s.EXA_API_KEY}
         body = {
             "query": query,

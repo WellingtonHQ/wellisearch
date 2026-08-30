@@ -31,6 +31,7 @@ def check(
     cond: bool,
     detail: str = "",
 ) -> None:
+    """Record one assertion: bump PASS/FAIL and print the outcome."""
     global PASS, FAIL
     if cond:
         PASS += 1
@@ -41,6 +42,7 @@ def check(
 
 
 def first_url(markdown: str) -> str | None:
+    """The first `URL: <url>` value in the Markdown, or None."""
     m = re.search(r"URL: (\S+)", markdown)
     return m.group(1) if m else None
 
@@ -498,6 +500,7 @@ async def main() -> None:
 
 
 def _load_api_key() -> str:
+    """The API key from the environment or the .env file (exit if absent)."""
     key = os.environ.get("WELLISEARCH_API_KEY")
     if key:
         return key
