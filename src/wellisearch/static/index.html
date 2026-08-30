@@ -42,6 +42,9 @@
   button:hover { border-color: var(--accent); }
   button.danger:hover { border-color: var(--bad); color: var(--bad); }
   button.on { border-color: var(--ok); color: var(--ok); }
+  button.mini { padding: 1px 6px; font-size: 12px; line-height: 1.5; }
+  button:disabled { opacity: .35; cursor: default; }
+  button:disabled:hover { border-color: var(--border); }
   input, select { background: #0d1117; color: var(--text); border: 1px solid var(--border);
           border-radius: 6px; padding: 3px 8px; font: inherit; font-size: 12px; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -99,11 +102,17 @@
 </section>
 
 <section>
-  <h2>Providers &amp; quota (this month)</h2>
+  <div class="row" style="justify-content:space-between;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
+    <h2>Providers &amp; quota (this month)</h2>
+    <div class="row" style="gap:10px;align-items:center">
+      <span class="muted" id="prov-order-src" style="font-size:12px"></span>
+      <button id="prov-order-reset" hidden onclick="resetOrder()">reset to default order</button>
+    </div>
+  </div>
   <div class="card">
     <table id="providers">
       <thead><tr>
-        <th>provider</th><th>status</th><th class="num">quota used</th>
+        <th>provider</th><th class="num">priority</th><th>status</th><th class="num">quota used</th>
         <th>usage</th><th class="num">limit (runtime override)</th>
         <th>last served</th><th>last error</th><th>actions</th>
       </tr></thead>
@@ -250,6 +259,26 @@ async function setLimit(name, input) {
         toast(name + " limit " + (v ?? "default")); refresh(); }
   catch (e) { toast(e.message, false); }
 }
+let providerOrder = [];
+async function applyOrder(order) {
+  try {
+    await api("/api/providers/order", { method: "PUT", body: { order } });
+    toast(order ? "provider order updated" : "provider order reset to default");
+    refresh();
+    return true;
+  } catch (e) { toast(e.message, false); return false; }
+}
+async function moveProvider(name, dir) {
+  const i = providerOrder.indexOf(name);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= providerOrder.length) return;
+  const next = providerOrder.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  if (await applyOrder(next)) providerOrder = next;
+}
+async function resetOrder() {
+  if (await applyOrder(null)) providerOrder = [];
+}
 
 // ------------------------------------------------------------------ panels
 function renderNow(st) {
@@ -291,8 +320,17 @@ function renderNow(st) {
   ).join("");
 }
 
-function renderProviders(provs) {
-  const rows = provs.map(p => {
+function renderProviders(prov) {
+  const provs = (prov && prov.providers) ? prov.providers : (Array.isArray(prov) ? prov : []);
+  providerOrder = (prov && prov.order && prov.order.length)
+    ? prov.order
+    : provs.map(p => p.name);
+  const runtime = prov && prov.order_source === "runtime";
+  const src = $("#prov-order-src");
+  const resetBtn = $("#prov-order-reset");
+  if (src) src.textContent = runtime ? "runtime order" : "default order (SEARCH_PROVIDERS)";
+  if (resetBtn) resetBtn.hidden = !runtime;
+  const rows = provs.map((p, i) => {
     const limit = p.quota_limit ?? p.limit_default;
     const used = p.quota_used ?? 0;
     const pct = limit ? Math.min(100, used / limit * 100) : 0;
@@ -303,8 +341,17 @@ function renderProviders(provs) {
         ? `<span class="pill ok">enabled</span>`
         : `<span class="pill warn">disabled</span>`;
     const limVal = p.limit_runtime ?? (limit === p.limit_default ? "" : limit);
+    const pos = (prov && prov.order) ? prov.order.indexOf(p.name) : i;
+    const prio = provs.length > 1
+      ? `<span class="row" style="gap:2px;justify-content:flex-end">
+           <button class="mini" title="move up" ${pos <= 0 ? "disabled" : ""} onclick="moveProvider('${esc(p.name)}', -1)">↑</button>
+           <span class="num">${pos + 1}</span>
+           <button class="mini" title="move down" ${pos >= provs.length - 1 ? "disabled" : ""} onclick="moveProvider('${esc(p.name)}', 1)">↓</button>
+         </span>`
+      : `<span class="num">1</span>`;
     return `<tr>
       <td><b>${esc(p.name)}</b></td>
+      <td class="num">${prio}</td>
       <td>${status}</td>
       <td class="num">${used}${limit ? " / " + limit : ""}</td>
       <td><div class="bar"><div class="${over ? "over" : ""}" style="width:${pct}%"></div></div></td>
@@ -437,7 +484,7 @@ async function refresh() {
       el.title = `db: ${health.database}\ncrawl4ai: ${health.crawl4ai}`;
     }
     renderNow(st);
-    renderProviders(prov.providers || []);
+    renderProviders(prov);
     renderActivity(win);
     renderIndex(st, pagesF, win);
     $("#top-fetch tbody").innerHTML = pageRows(pagesF.pages, false);

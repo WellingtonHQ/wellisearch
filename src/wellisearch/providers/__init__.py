@@ -1,11 +1,13 @@
 """Provider gateway: ordered failover + monthly quota ledger + normalization.
 
-Order comes from SEARCH_PROVIDERS (default tavily → brave → exa → youcom).
-First provider that (a) is enabled, (b) is configured, (c) is not quota-
-exhausted, and (d) returns a non-empty result set — serves. Every failure
-is captured per provider (last_error in provider_state, visible in the
-dashboard + /api/providers). A 200 with zero results counts as a soft
-failure so the gateway keeps failing over to something that returns pages.
+Failover order is resolved per search: the runtime override
+(provider_state.sort_order, set from the dashboard / PUT /api/providers/order)
+when present, else the env default (SEARCH_PROVIDERS). First provider that
+(a) is enabled, (b) is configured, (c) is not quota-exhausted, and (d)
+returns a non-empty result set — serves. Every failure is captured per
+provider (last_error in provider_state, visible in the dashboard +
+/api/providers). A 200 with zero results counts as a soft failure so the
+gateway keeps failing over to something that returns pages.
 """
 from __future__ import annotations
 
@@ -45,13 +47,45 @@ class Gateway:
     def __init__(self) -> None:
         self.s = get_settings()
         self._client = httpx.AsyncClient(timeout=self.s.PROVIDER_TIMEOUT_S)
-        self._providers: list[Provider] = []
+        self._by_name: dict[str, Provider] = {}
+        self._env_order: list[str] = []  # pool + default order from SEARCH_PROVIDERS
         for name in self.s.provider_order:
             cls = REGISTRY.get(name)
             if cls is None:
                 log.warning("unknown provider %r in SEARCH_PROVIDERS — skipped", name)
                 continue
-            self._providers.append(cls(self.s, self._client))
+            p = cls(self.s, self._client)
+            self._by_name[p.name] = p
+            self._env_order.append(p.name)
+
+    async def ordered_providers(self) -> list[Provider]:
+        """The provider pool in the current failover order.
+
+        The runtime override (provider_state.sort_order, dashboard /
+        PUT /api/providers/order) wins when set; otherwise the env default
+        order (SEARCH_PROVIDERS) applies. Unknown names in the override are
+        dropped, and env providers missing from it keep their env position.
+        """
+        order = await db.get_provider_order()
+        if order is None:
+            return [self._by_name[n] for n in self._env_order]
+        out: list[Provider] = []
+        for name in order:
+            p = self._by_name.get(name)
+            if p is not None:
+                out.append(p)
+        # defensive: anything in the pool but not the override keeps its env position
+        for name in self._env_order:
+            if name not in {q.name for q in out}:
+                out.append(self._by_name[name])
+        return out
+
+    async def order_names(self) -> tuple[list[str], str]:
+        """(order, source) where source is "runtime" or "env"."""
+        order = await db.get_provider_order()
+        if order is None:
+            return list(self._env_order), "env"
+        return [n for n in order if n in self._by_name] or list(self._env_order), "runtime"
 
     async def _ev(self, message: str, info: dict | None = None) -> None:
         """Best-effort event logging (dashboard log view)."""
@@ -62,17 +96,14 @@ class Gateway:
 
     # ------------------------------------------------------------ queries
 
-    @property
-    def providers(self) -> list[Provider]:
-        return list(self._providers)
-
     async def search(self, query: str, num: int) -> tuple[list[Result], str, list[dict]]:
-        """Try providers in order. Returns (results, provider_name, error_chain).
+        """Try providers in the current failover order (see ordered_providers).
 
+        Returns (results, provider_name, error_chain).
         Raises GatewayExhausted if none can serve.
         """
         errors: list[dict] = []
-        for p in self._providers:
+        for p in await self.ordered_providers():
             if not await self._provider_available(p, errors):
                 continue
             import time

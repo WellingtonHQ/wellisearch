@@ -30,7 +30,8 @@ class Settings(BaseSettings):
     CRAWL4AI_URL: str = "http://crawl4ai:11235"
     CRAWL4AI_API_KEY: str = "change-me"
 
-    # --- search providers (ordered priority; first success serves) ---
+    # --- search providers (failover pool + default order; the dashboard can
+    # override the order at runtime — see provider_state.sort_order) ---
     SEARCH_PROVIDERS: str = "tavily,brave,exa,youcom"
     TAVILY_API_KEY: str = ""
     TAVILY_QUOTA_MONTHLY: int = 1000

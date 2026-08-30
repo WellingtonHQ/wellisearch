@@ -1,4 +1,4 @@
-"""Brave Search API — secondary provider (independent 30B+ index).
+"""Brave Search API — independent 30B+ index.
 
 Verified live (2026-08): GET https://api.search.brave.com/res/v1/web/search
 with X-Subscription-Token <key>; response

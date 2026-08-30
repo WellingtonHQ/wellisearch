@@ -140,7 +140,7 @@ async def health() -> dict[str, Any]:
                 "configured": p.configured,
                 "state": await db.get_provider_state(p.name),
             }
-            for p in gw.providers
+            for p in await gw.ordered_providers()
         ]
     except Exception as e:
         out["providers"] = f"error: {e}"
@@ -164,6 +164,10 @@ class RefreshBody(BaseModel):
 class ProviderPatch(BaseModel):
     enabled: bool | None = None
     limit: int | None = None
+
+
+class ProviderOrder(BaseModel):
+    order: list[str] | None  # None = reset to env default; else a full ordered list
 
 
 class PagePatch(BaseModel):
@@ -260,12 +264,14 @@ async def api_stats() -> Any:
 async def api_providers() -> Any:
     s = get_settings()
     gw = get_gateway()
+    order, source = await gw.order_names()
     out = []
-    for p in gw.providers:
+    for p in await gw.ordered_providers():
         state = await db.get_provider_state(p.name) or {}
         used, limit = await db.quota_used_limit(p.name)
         out.append({
             "name": p.name,
+            "order": order.index(p.name),
             "configured": p.configured,
             "enabled": state.get("enabled", True),
             "limit_runtime": state.get("limit_override"),
@@ -275,13 +281,41 @@ async def api_providers() -> Any:
             "last_served": state.get("last_served"),
             "last_error": state.get("last_error"),
         })
-    return {"providers": out}
+    return {"providers": out, "order": order, "order_source": source}
+
+
+@app.put("/api/providers/order")
+async def api_provider_order(body: ProviderOrder) -> Any:
+    """Set the runtime failover order (dashboard reorder).
+
+    Body: {"order": ["brave", "tavily", ...]} to reorder, or {"order": null}
+    to reset to the env default (SEARCH_PROVIDERS). The list must be a
+    permutation of the configured provider pool.
+    """
+    gw = get_gateway()
+    pool = gw._env_order
+    if body.order is None:
+        await db.set_provider_order([])
+        await _ev("provider order reset to env default", {})
+        return {"ok": True, "order": list(pool), "order_source": "env"}
+
+    names = [n.strip().lower() for n in body.order if isinstance(n, str) and n.strip()]
+    if len(names) != len(set(names)):
+        raise HTTPException(400, "order contains duplicate providers")
+    if sorted(names) != sorted(pool):
+        raise HTTPException(
+            400,
+            f"order must be a permutation of the configured providers: {pool}",
+        )
+    await db.set_provider_order(names)
+    await _ev("provider order changed", {"order": names})
+    return {"ok": True, "order": names, "order_source": "runtime"}
 
 
 @app.patch("/api/providers/{name}")
 async def api_provider_patch(name: str, body: ProviderPatch) -> Any:
-    s = get_settings()
-    if name not in s.provider_order:
+    gw = get_gateway()
+    if name not in gw._env_order:
         raise HTTPException(404, f"unknown provider {name!r}")
     if body.enabled is not None:
         await db.set_provider_state(name, enabled=body.enabled)

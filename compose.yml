@@ -48,7 +48,7 @@ services:
   #   - LLM reasoning-effort hook (deploy/docker/llm-hook/, via Dockerfile)
   # Bumping the fork's base version: re-verify those four against the new release.
   crawl4ai:
-    build: https://github.com/WellingtonHQ/crawl4ai.git#wellington
+    build: https://github.com/WellingtonHQ/crawl4ai.git
     image: wellingtonhq/crawl4ai:0.9.2-wellisearch
     container_name: crawl4ai
     restart: always

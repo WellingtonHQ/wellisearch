@@ -270,6 +270,35 @@ class Database:
         )
         await self.execute(sql, tuple(vals))
 
+    # ------------------------------------------------------- provider order
+
+    async def get_provider_order(self) -> list[str] | None:
+        """The runtime failover order (dashboard override) or None = env default."""
+        rows = await self.fetch_all(
+            "SELECT provider, sort_order FROM provider_state WHERE sort_order IS NOT NULL"
+        )
+        if not rows:
+            return None
+        return [
+            r["provider"]
+            for r in sorted(rows, key=lambda r: (r["sort_order"] or 0, r["provider"]))
+        ]
+
+    async def set_provider_order(self, order: list[str]) -> None:
+        """Persist a full failover order (positions 0..n-1). An empty list
+        clears the override (falls back to the env default order)."""
+        await self.execute(
+            "UPDATE provider_state SET sort_order = NULL WHERE sort_order IS NOT NULL"
+        )
+        for i, name in enumerate(order):
+            await self.execute(
+                """
+                INSERT INTO provider_state (provider, sort_order) VALUES (%s, %s)
+                ON CONFLICT (provider) DO UPDATE SET sort_order = EXCLUDED.sort_order
+                """,
+                (name, i),
+            )
+
     # ------------------------------------------------------------ logs
 
     async def log_search(

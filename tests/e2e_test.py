@@ -202,6 +202,57 @@ async def main() -> None:
         r = await c.patch("/api/providers/tavily", json={"enabled": True})
         check("provider toggle: tavily re-enabled", r.status_code == 200 and r.json().get("enabled") is True, r.text[:120])
 
+        # 8.5 provider order: runtime reorder + validation + reset ------------------
+        r = await c.get("/api/providers")
+        j = r.json()
+        base_order = j.get("order", [])
+        check("order: GET /api/providers exposes order + order_source",
+              r.status_code == 200 and isinstance(base_order, list) and len(base_order) >= 1
+              and j.get("order_source") in ("env", "runtime")
+              and all(isinstance(p.get("order"), int) for p in j.get("providers", [])),
+              json.dumps({"order": base_order, "source": j.get("order_source")})[:160])
+
+        # invalid: duplicate provider -> 400
+        if base_order:
+            dup = [base_order[0], base_order[0]] + base_order[1:]
+            r = await c.put("/api/providers/order", json={"order": dup})
+            check("order: duplicate provider -> 400", r.status_code == 400, f"status={r.status_code} {r.text[:100]}")
+        # invalid: missing a provider (not a permutation) -> 400
+        if len(base_order) >= 2:
+            r = await c.put("/api/providers/order", json={"order": base_order[:-1]})
+            check("order: non-permutation (missing provider) -> 400", r.status_code == 400, f"status={r.status_code} {r.text[:100]}")
+
+        # reorder: reverse the base order and confirm it sticks
+        if len(base_order) >= 2:
+            rev = list(reversed(base_order))
+            r = await c.put("/api/providers/order", json={"order": rev})
+            check("order: PUT reorder -> 200 + runtime source",
+                  r.status_code == 200 and r.json().get("order") == rev and r.json().get("order_source") == "runtime",
+                  r.text[:120])
+            r = await c.get("/api/providers")
+            j = r.json()
+            check("order: GET reflects runtime order (reversed)",
+                  j.get("order") == rev and j.get("order_source") == "runtime"
+                  and [p["name"] for p in j.get("providers", [])] == rev
+                  and [p["order"] for p in j.get("providers", [])] == list(range(len(rev))),
+                  json.dumps(j.get("order"))[:160])
+            # stats surface the same order
+            r = await c.get("/api/stats")
+            gw = r.json().get("gateway", {})
+            check("order: /api/stats gateway.provider_order matches",
+                  r.status_code == 200 and gw.get("provider_order") == rev and gw.get("order_source") == "runtime",
+                  json.dumps(gw)[:160])
+
+            # reset -> back to env default order
+            r = await c.put("/api/providers/order", json={"order": None})
+            check("order: PUT order=null resets -> env source",
+                  r.status_code == 200 and r.json().get("order_source") == "env" and r.json().get("order") == base_order,
+                  r.text[:120])
+            r = await c.get("/api/providers")
+            check("order: GET back to env default after reset",
+                  r.json().get("order") == base_order and r.json().get("order_source") == "env",
+                  json.dumps(r.json().get("order"))[:160])
+
         # 9. stats / logs ----------------------------------------------------------------
         r = await c.get("/api/stats")
         j = r.json()

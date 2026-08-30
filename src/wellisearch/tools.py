@@ -18,6 +18,7 @@ from mcp.server.mcpserver import MCPServer
 from . import queue
 from .config import get_settings
 from .db import db
+from .providers import get_gateway
 from .fetch import fetch_page as _fetch_page
 from .fetch import fetch_pages as _fetch_pages
 from .fetch import render_fetch_page_markdown
@@ -105,6 +106,8 @@ async def _index_stats_data() -> dict:
         "WHERE ts >= now() - interval '30 days' GROUP BY status"
     )
 
+    order, order_source = await get_gateway().order_names()
+
     return {
         "at": now.isoformat(),
         "index": {
@@ -112,6 +115,10 @@ async def _index_stats_data() -> dict:
             "chunks": chunks["total"],
             "oldest_crawl": pages["oldest"].isoformat() if pages["oldest"] else None,
             "newest_crawl": pages["newest"].isoformat() if pages["newest"] else None,
+        },
+        "gateway": {
+            "provider_order": order,
+            "order_source": order_source,
         },
         "search_trends": trends,
         "crawl_queue": {**queue_depth, "oldest_pending": oldest_pending["oldest"]},
@@ -216,9 +223,10 @@ def register_tools(server: MCPServer) -> None:
         name="index_stats",
         description=(
             "Snapshot of the local index + provider gateway: page/chunk "
-            "counts, freshness, search hit-rate by provider (24h/7d/30d), "
-            "crawl queue depth, monthly quota usage vs limit. Use to gauge "
-            "index freshness before relying on it."
+            "counts, freshness, the current provider failover order and its "
+            "source (runtime override vs env default), search hit-rate by "
+            "provider (24h/7d/30d), crawl queue depth, monthly quota usage "
+            "vs limit. Use to gauge index freshness before relying on it."
         ),
     )
     async def index_stats() -> dict:

@@ -120,6 +120,19 @@ async def main() -> None:
     await db.set_provider_state("brave", enabled=True, last_error=None)
     print("OK provider state toggle")
 
+    # --- provider order: runtime override roundtrip (NULL = env default)
+    assert await db.get_provider_order() is None, "expected no override at start"
+    await db.set_provider_order(["brave", "tavily"])
+    assert await db.get_provider_order() == ["brave", "tavily"], await db.get_provider_order()
+    # toggling a provider's enabled flag must not clobber its sort_order
+    await db.set_provider_state("brave", enabled=False)
+    assert await db.get_provider_order() == ["brave", "tavily"], await db.get_provider_order()
+    await db.set_provider_state("brave", enabled=True, last_error=None)
+    # reset clears the override
+    await db.set_provider_order([])
+    assert await db.get_provider_order() is None, "reset should clear the override"
+    print("OK provider order roundtrip")
+
     # --- event_log: roundtrip + prune
     await db.log_event("test event", {"foo": "bar", "n": 42})
     row = await db.fetch_one("SELECT message, info FROM event_log ORDER BY id DESC LIMIT 1")
