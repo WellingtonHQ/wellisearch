@@ -24,7 +24,14 @@ from pydantic import BaseModel, Field
 from . import __version__, crawler, queue
 from .config import get_settings
 from .db import db
-from .fetch import _OMITTED, _valid_url, fetch_page, fetch_pages, render_fetch_page_markdown, render_fetch_pages_markdown
+from .fetch import (
+    _OMITTED,
+    _valid_url,
+    fetch_page,
+    fetch_pages,
+    render_fetch_page_markdown,
+    render_fetch_pages_markdown,
+)
 from .mcp import mcp_asgi, mcp_http_lifespan
 from .providers import get_gateway
 from .search_web import render_search_markdown, search_web as search_web_pipeline
@@ -156,7 +163,11 @@ async def api_fetch_bulk(request: Request) -> Any:
     # budget) from explicit null/0 (→ unlimited), per BLUEPRINT §7/§10
     raw = await request.json()
     if not isinstance(raw, dict) or not isinstance(raw.get("urls"), list):
-        raise HTTPException(400, "body must be JSON: {urls: [...], max_chars?, per_page_chars?, strategy?, format?}")
+        raise HTTPException(
+            400,
+            "body must be JSON: {urls: [...], max_chars?, per_page_chars?, "
+            "strategy?, format?}",
+        )
     out = await fetch_pages(
         raw.get("urls", []),
         max_chars=raw["max_chars"] if "max_chars" in raw else _OMITTED,
@@ -579,7 +590,10 @@ async def _auth(request: Request, call_next):
         elif request.headers.get("x-api-key"):
             token = request.headers["x-api-key"].strip()
         if token is None or not hmac.compare_digest(token, key):
-            return JSONResponse({"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"}, status_code=401)
+            return JSONResponse(
+                {"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"},
+                status_code=401,
+            )
     return await call_next(request)
 
 

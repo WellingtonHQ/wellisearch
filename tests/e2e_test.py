@@ -63,7 +63,9 @@ async def test_auth() -> None:
     async with httpx.AsyncClient(base_url=BASE, timeout=30) as open_c:
         r = await open_c.get("/api/stats")
         check("REST auth: missing key -> 401", r.status_code == 401, str(r.status_code))
-    async with httpx.AsyncClient(base_url=BASE, headers={"Authorization": f"Bearer {KEY}"}, timeout=30) as b_c:
+    async with httpx.AsyncClient(
+        base_url=BASE, headers={"Authorization": f"Bearer {KEY}"}, timeout=30
+    ) as b_c:
         r = await b_c.get("/api/stats")
         check("REST auth: Bearer key -> 200", r.status_code == 200, str(r.status_code))
 
@@ -95,8 +97,11 @@ async def test_local_search(c: httpx.AsyncClient, url: str) -> None:
     """GET /api/search (local index hit): zero provider cost, real Title != URL."""
     r = await c.get("/api/search", params={"query": url.split("/")[2] + " introduction"})
     md = r.text
-    check("local search: 200 + degraded=false", r.status_code == 200 and "Degraded: false" in md and "URL:" in md,
-          md[:120].replace("\n", " | "))
+    check(
+        "local search: 200 + degraded=false",
+        r.status_code == 200 and "Degraded: false" in md and "URL:" in md,
+        md[:120].replace("\n", " | "),
+    )
     # the locally-indexed result must carry a real Title, not the URL —
     # the original bug had every local `Title:` line equal to its `URL:`
     title_url = re.findall(r"^Title: (.+)$\n^URL: (.+)$", md, re.M)
@@ -127,7 +132,12 @@ async def test_search_mode_provider(c: httpx.AsyncClient) -> None:
 
 async def test_search_mode_local(c: httpx.AsyncClient, url: str) -> None:
     """GET /api/search search_mode=local: index only (a query the index has)."""
-    params = {"query": url.split("/")[2] + " introduction", "k": "5", "search_mode": "local", "format": "json"}
+    params = {
+        "query": url.split("/")[2] + " introduction",
+        "k": "5",
+        "search_mode": "local",
+        "format": "json",
+    }
     r = await c.get("/api/search", params=params)
     j = r.json() if r.status_code in (200, 502) else {}
     t = j.get("timing", {}) if isinstance(j, dict) else {}
@@ -169,8 +179,12 @@ async def test_page_indexed(c: httpx.AsyncClient, url: str) -> None:
     r = await c.get("/api/pages")
     rows = (r.json() or {}).get("pages", []) if r.status_code == 200 else []
     row = next((p for p in rows if p.get("url") == url), None)
-    check("page row exists (indexed)", row is not None and (row.get("crawl_count") or 0) >= 1,
-          f"crawl_count={row.get('crawl_count') if row else 'NO ROW'} status={row.get('last_status') if row else '-'}")
+    check(
+        "page row exists (indexed)",
+        row is not None and (row.get("crawl_count") or 0) >= 1,
+        f"crawl_count={row.get('crawl_count') if row else 'NO ROW'} "
+        f"status={row.get('last_status') if row else '-'}",
+    )
 
 
 async def test_fetch_bulk(c: httpx.AsyncClient) -> None:
@@ -202,7 +216,11 @@ async def test_provider_failover(c: httpx.AsyncClient) -> None:
     """PATCH /api/providers/tavily + gateway failover: disable tavily + local index -> brave serves."""
     # (local-first is correct behavior, so the index is disabled to force the gateway)
     r = await c.patch("/api/providers/tavily", json={"enabled": False})
-    check("provider toggle: tavily disabled", r.status_code == 200 and r.json().get("enabled") is False, r.text[:120])
+    check(
+        "provider toggle: tavily disabled",
+        r.status_code == 200 and r.json().get("enabled") is False,
+        r.text[:120],
+    )
 
     # local-first is correct, so force the gateway two ways: disable the
     # most-read pages, AND use a query the index cannot cover ("quixotic
@@ -215,14 +233,22 @@ async def test_provider_failover(c: httpx.AsyncClient) -> None:
         r = await c.get("/api/search", params={"query": "quixotic zzyzx", "k": "5"})
         if r.status_code == 200 and "Source: local" not in r.text:
             break
-    check("failover: search 200 via brave",
-          r.status_code == 200 and len(re.findall(r"^URL: ", r.text, re.M)) >= 3 and "Source: brave" in r.text,
-          r.text[:120].replace("\n", " | "))
+    check(
+        "failover: search 200 via brave",
+        r.status_code == 200
+        and len(re.findall(r"^URL: ", r.text, re.M)) >= 3
+        and "Source: brave" in r.text,
+        r.text[:120].replace("\n", " | "),
+    )
 
     # restore state
     await _set_pages_disabled(c, await _all_page_urls(c), False)
     r = await c.patch("/api/providers/tavily", json={"enabled": True})
-    check("provider toggle: tavily re-enabled", r.status_code == 200 and r.json().get("enabled") is True, r.text[:120])
+    check(
+        "provider toggle: tavily re-enabled",
+        r.status_code == 200 and r.json().get("enabled") is True,
+        r.text[:120],
+    )
 
 
 async def test_provider_order(c: httpx.AsyncClient) -> None:
@@ -240,7 +266,11 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
     if base_order:
         dup = [base_order[0], base_order[0]] + base_order[1:]
         r = await c.put("/api/providers/order", json={"order": dup})
-        check("order: duplicate provider -> 400", r.status_code == 400, f"status={r.status_code} {r.text[:100]}")
+        check(
+            "order: duplicate provider -> 400",
+            r.status_code == 400,
+            f"status={r.status_code} {r.text[:100]}",
+        )
     # invalid: missing a provider (not a permutation) -> 400
     if len(base_order) >= 2:
         r = await c.put("/api/providers/order", json={"order": base_order[:-1]})
@@ -271,9 +301,13 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
 
     # reset -> back to env default order
     r = await c.put("/api/providers/order", json={"order": None})
-    check("order: PUT order=null resets -> env source",
-          r.status_code == 200 and r.json().get("order_source") == "env" and r.json().get("order") == base_order,
-          r.text[:120])
+    check(
+        "order: PUT order=null resets -> env source",
+        r.status_code == 200
+        and r.json().get("order_source") == "env"
+        and r.json().get("order") == base_order,
+        r.text[:120],
+    )
     r = await c.get("/api/providers")
     check("order: GET back to env default after reset",
           r.json().get("order") == base_order and r.json().get("order_source") == "env",
@@ -314,7 +348,11 @@ async def test_window_logs(c: httpx.AsyncClient) -> None:
           json.dumps(j)[:160])
     r = await c.get("/api/window", params={"secs": "1"})
     j = r.json()
-    check("window: secs clamped to 600 floor", r.status_code == 200 and j.get("secs") == 600, f"secs={j.get('secs')}")
+    check(
+        "window: secs clamped to 600 floor",
+        r.status_code == 200 and j.get("secs") == 600,
+        f"secs={j.get('secs')}",
+    )
     r = await c.get("/api/logs", params={"secs": "86400", "limit": "50"})
     j = r.json()
     logs = j.get("logs", [])
@@ -362,7 +400,11 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
           json.dumps(j.get("timing")))
 
     # search: Accept header only (no format param) -> JSON
-    r = await c.get("/api/search", params={"query": "fastapi mcp server"}, headers={"Accept": "application/json"})
+    r = await c.get(
+        "/api/search",
+        params={"query": "fastapi mcp server"},
+        headers={"Accept": "application/json"},
+    )
     check("search json via Accept header",
           r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
           and "results" in r.json(), r.headers.get("content-type", ""))
@@ -370,9 +412,13 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
     # precedence: format=markdown + Accept: application/json -> param wins
     r = await c.get("/api/search", params={"query": "fastapi mcp server", "format": "markdown"},
                     headers={"Accept": "application/json"})
-    check("search precedence: format param wins over Accept",
-          r.status_code == 200 and r.headers.get("content-type", "").startswith("text/markdown") and "Source:" in r.text,
-          r.headers.get("content-type", ""))
+    check(
+        "search precedence: format param wins over Accept",
+        r.status_code == 200
+        and r.headers.get("content-type", "").startswith("text/markdown")
+        and "Source:" in r.text,
+        r.headers.get("content-type", ""),
+    )
 
     # invalid format -> 400
     r = await c.get("/api/search", params={"query": "fastapi", "format": "yaml"})

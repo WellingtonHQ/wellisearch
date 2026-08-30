@@ -130,7 +130,12 @@ async def test_tavily() -> None:
     payload = {
         "query": QUERY,
         "results": [
-            {"url": "https://a.com/1", "title": "<b>Title A</b>", "content": "Snippet A content", "score": 0.91},
+            {
+                "url": "https://a.com/1",
+                "title": "<b>Title A</b>",
+                "content": "Snippet A content",
+                "score": 0.91,
+            },
             {"url": "https://a.com/2", "title": "Title B", "content": "Snippet B", "score": 0.8},
             {"title": "no url -> skipped", "content": "x", "score": 0.5},
         ],
@@ -225,7 +230,13 @@ async def test_youcom() -> None:
 
     payload = {
         "results": {"web": [
-            {"url": "https://y.com/1", "title": "You One", "description": "You desc one", "favicon_url": "f", "snippets": []},
+            {
+                "url": "https://y.com/1",
+                "title": "You One",
+                "description": "You desc one",
+                "favicon_url": "f",
+                "snippets": [],
+            },
             {"url": "https://y.com/2", "title": "You Two", "description": "You desc two"},
             {"title": "no url -> skipped", "description": "x"},
         ]},

@@ -41,7 +41,11 @@ async def store_page(
 
     # unchanged? (hash + model must both match, else re-embed is required)
     existing = await db.page_get(url)
-    if existing and existing.get("content_hash") == digest and existing.get("embedding_model") == s.EMBED_MODEL:
+    if (
+        existing
+        and existing.get("content_hash") == digest
+        and existing.get("embedding_model") == s.EMBED_MODEL
+    ):
         # Backfill the title too: pages crawled before titles were stored have
         # title IS NULL, and recrawl/refresh must refresh crawl-time values
         # even when the content hash matches. COALESCE keeps the stored title

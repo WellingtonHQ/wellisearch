@@ -134,7 +134,10 @@ async def _check_queue_quota_provider_state() -> None:
     print("OK queue dedupe")
     assert await db.queue_claim("https://example.com/queued-page")
     await db.queue_done("https://example.com/queued-page", ok=True)
-    row = await db.fetch_one("SELECT status FROM crawl_queue WHERE url = %s", ("https://example.com/queued-page",))
+    row = await db.fetch_one(
+        "SELECT status FROM crawl_queue WHERE url = %s",
+        ("https://example.com/queued-page",),
+    )
     assert row["status"] == "done", row
 
     await db.quota_bump("tavily")

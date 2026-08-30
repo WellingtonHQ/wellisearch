@@ -39,7 +39,9 @@ def format_timing(timing: dict | None) -> str | None:
     if not timing:
         return None
     total = timing.get("total_ms", 0)
-    parts = [f"{key[:-3]}: {timing[key]} ms" for key in ("index_ms", "provider_ms", "crawl_ms") if key in timing]
+    parts = [
+        f"{key[:-3]}: {timing[key]} ms" for key in ("index_ms", "provider_ms", "crawl_ms") if key in timing
+    ]
     if parts:
         return f"Time: {total} ms ({', '.join(parts)})"
     return f"Time: {total} ms"

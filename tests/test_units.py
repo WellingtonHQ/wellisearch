@@ -122,7 +122,15 @@ out = {"ok": False, "url": "https://x.com/bad", "error": "boom", "timing": {"tot
 md = render_fetch_page_markdown(out)
 assert "Status: failed" in md and "Time: 30 ms" in md, md
 # fetch_page renderer: no timing -> no Time line
-out = {"ok": True, "url": "u", "title": "t", "markdown": "m", "chars": 1, "truncated": False, "from_index": True}
+out = {
+    "ok": True,
+    "url": "u",
+    "title": "t",
+    "markdown": "m",
+    "chars": 1,
+    "truncated": False,
+    "from_index": True,
+}
 md = render_fetch_page_markdown(out)
 assert "Time:" not in md, md
 print("OK render_fetch_page_markdown timing")
@@ -131,7 +139,16 @@ print("OK render_fetch_page_markdown timing")
 out = {
     "ok": True, "pages_fetched": 1, "truncated": False, "total_chars": 10,
     "strategy": "smart", "budget": None,
-    "pages": [{"url": "https://x.com/a", "title": "A", "content": "body", "chars": 4, "truncated": False, "from_index": True}],
+    "pages": [
+        {
+            "url": "https://x.com/a",
+            "title": "A",
+            "content": "body",
+            "chars": 4,
+            "truncated": False,
+            "from_index": True,
+        },
+    ],
     "timing": {"total_ms": 500, "index_ms": 20, "crawl_ms": 450},
 }
 md = render_fetch_pages_markdown(out)
@@ -143,7 +160,16 @@ assert "Status: failed" in md and "Time: 5 ms" in md, md
 # fetch_pages renderer: no timing -> no Time line
 out = {"ok": True, "pages_fetched": 1, "truncated": False, "total_chars": 10,
        "strategy": "smart", "budget": None,
-       "pages": [{"url": "u", "title": "t", "content": "c", "chars": 1, "truncated": False, "from_index": True}]}
+       "pages": [
+           {
+               "url": "u",
+               "title": "t",
+               "content": "c",
+               "chars": 1,
+               "truncated": False,
+               "from_index": True,
+           }
+       ]}
 md = render_fetch_pages_markdown(out)
 assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")

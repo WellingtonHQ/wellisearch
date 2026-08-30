@@ -189,11 +189,17 @@ class TorchRunner:
         self.model = SentenceTransformer(model_id, device="cpu", trust_remote_code=True)
         self.load_s = time.perf_counter() - t0
         self.tok = self.model.tokenizer
-        _get_dim = getattr(self.model, "get_embedding_dimension", None) or self.model.get_sentence_embedding_dimension
+        _get_dim = (
+            getattr(self.model, "get_embedding_dimension", None)
+            or self.model.get_sentence_embedding_dimension
+        )
         self.dim = int(_get_dim())
         import sentence_transformers
 
-        self.engine_version = f"sentence-transformers {sentence_transformers.__version__}, torch {torch.__version__}"
+        self.engine_version = (
+            f"sentence-transformers {sentence_transformers.__version__}, "
+            f"torch {torch.__version__}"
+        )
         self.max_len = _effective_max_len(self.tok, args.max_len)
         self.doc_prefix, self.query_prefix = model_prefixes(model_id)
         self.batch = args.batch
@@ -253,7 +259,9 @@ class FastEmbedRunner:
         return _tok_len(self.tok, text, self.max_len)
 
     def encode(self, texts: list[str]) -> np.ndarray:
-        X = np.stack([np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)])
+        X = np.stack(
+            [np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)]
+        )
         return _l2_normalize(X)
 
     def encode_one(self, text: str) -> np.ndarray:
@@ -351,7 +359,10 @@ def run_model(
 
     S = (Q @ D.T).astype(np.float32)
     quality = score_quality(S, queries, truth, chunks, order, args.topk)
-    latency = None if args.no_latency else measure_latency(runner.encode_one, runner.tok_count, doc_texts, args.latency_n)
+    latency = (
+        None if args.no_latency
+        else measure_latency(runner.encode_one, runner.tok_count, doc_texts, args.latency_n)
+    )
 
     return {
         "model": model_id,

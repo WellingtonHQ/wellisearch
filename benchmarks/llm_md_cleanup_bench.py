@@ -243,7 +243,9 @@ def load_config(args: argparse.Namespace) -> Config:
 
     return Config(
         postgres_dsn=dsn,
-        ollama_base_url=(args.ollama_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1").rstrip("/"),
+        ollama_base_url=(
+            args.ollama_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1"
+        ).rstrip("/"),
         ollama_api_key=os.environ.get("OLLAMA_API_KEY", "ollama"),
         judge_base_url=judge_base_url,
         judge_model=os.environ.get("JUDGE_MODEL", "qwen3.8-27b"),
@@ -357,7 +359,9 @@ def save_sample(cfg: Config, pages: list[dict[str, Any]]) -> None:
 
 def load_sample(cfg: Config) -> list[dict[str, Any]]:
     if not cfg.sample_file.exists():
-        raise SystemExit(f"no sample at {cfg.sample_file} — run `python llm_md_cleanup_bench.py sample` first")
+        raise SystemExit(
+            f"no sample at {cfg.sample_file} — run `python llm_md_cleanup_bench.py sample` first"
+        )
     payload = json.loads(cfg.sample_file.read_text(encoding="utf-8"))
     pages = payload["pages"]
     if cfg.smoke:
@@ -532,17 +536,25 @@ async def run_model(
                         {"role": "user", "content": page["fit_markdown"]},
                     ],
                 )
-                rec.update({k: out[k] for k in ("ttft_ms", "total_ms", "prompt_tokens", "completion_tokens", "tok_s")})
+                rec.update(
+                    {
+                        k: out[k]
+                        for k in ("ttft_ms", "total_ms", "prompt_tokens", "completion_tokens", "tok_s")
+                    }
+                )
                 rec["output"] = out["text"]
                 rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
                 stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
-                         f"(ttft {out['ttft_ms'] or 0:.0f}ms, {out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
+                         f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
+                         f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
                 if cfg.use_judge and out["text"].strip():
                     log(f"{who} — {stats} → awaiting judge …")
                     rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
                     sc = rec["judge"].get("scores") or {}
                     log(f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
-                        f"(faith={sc.get('faithfulness')} noise={sc.get('noise_removal')} presv={sc.get('preservation')})")
+                        f"(faith={sc.get('faithfulness')} "
+                        f"noise={sc.get('noise_removal')} "
+                        f"presv={sc.get('preservation')})")
                 else:
                     log(f"{who} — {stats}")
             except Exception as e:
@@ -647,9 +659,21 @@ def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "completion_tokens": _stat([r["completion_tokens"] for r in ok if r.get("completion_tokens")]),
         }
         if payload["config"].get("judge_model"):
-            jf = [r["judge"]["scores"].get("faithfulness") for r in ok if r.get("judge", {}).get("scores", {}).get("faithfulness") is not None]
-            jn = [r["judge"]["scores"].get("noise_removal") for r in ok if r.get("judge", {}).get("scores", {}).get("noise_removal") is not None]
-            jp = [r["judge"]["scores"].get("preservation") for r in ok if r.get("judge", {}).get("scores", {}).get("preservation") is not None]
+            jf = [
+                r["judge"]["scores"].get("faithfulness")
+                for r in ok
+                if r.get("judge", {}).get("scores", {}).get("faithfulness") is not None
+            ]
+            jn = [
+                r["judge"]["scores"].get("noise_removal")
+                for r in ok
+                if r.get("judge", {}).get("scores", {}).get("noise_removal") is not None
+            ]
+            jp = [
+                r["judge"]["scores"].get("preservation")
+                for r in ok
+                if r.get("judge", {}).get("scores", {}).get("preservation") is not None
+            ]
             agg["judge_faithfulness"] = _stat([float(x) for x in jf])
             agg["judge_noise_removal"] = _stat([float(x) for x in jn])
             agg["judge_preservation"] = _stat([float(x) for x in jp])
@@ -747,7 +771,10 @@ def main() -> None:
     p.add_argument("--models", help="comma list label=ollama_tag (default: the 5 benchmark models)")
     p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
     p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
-    p.add_argument("--concurrency", type=int, default=1, help="parallel pages per model (default 1 = fair CPU timing)")
+    p.add_argument(
+        "--concurrency", type=int, default=1,
+        help="parallel pages per model (default 1 = fair CPU timing)",
+    )
     p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")
     p.add_argument("--judge-url", help="judge OpenAI-compatible base URL")
     p.add_argument("--out-dir", help="output directory (default benchmarks/results)")
@@ -974,7 +1001,11 @@ def _report_table_lines(
             _fmt_stat(a["length_ratio"]),
         ]
         if judge:
-            row += [_fmt_stat(a.get("judge_faithfulness", {})), _fmt_stat(a.get("judge_noise_removal", {})), _fmt_stat(a.get("judge_preservation", {}))]
+            row += [
+                _fmt_stat(a.get("judge_faithfulness", {})),
+                _fmt_stat(a.get("judge_noise_removal", {})),
+                _fmt_stat(a.get("judge_preservation", {})),
+            ]
         row += [
             _fmt_stat(a["ttft_ms"]),
             _fmt_stat(a["total_ms"]),
@@ -992,7 +1023,9 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
     for label in labels:
         lines.append(f"### {label}")
         lines.append("")
-        lines.append("| url | no_add | pres | boil_rm | len_ratio | ttft_ms | total_ms | tok_s | judge(f/n/p) |")
+        lines.append(
+            "| url | no_add | pres | boil_rm | len_ratio | ttft_ms | total_ms | tok_s | judge(f/n/p) |"
+        )
         lines.append("|---|---|---|---|---|---|---|---|---|")
         for r in payload["results"][label]:
             if "error" in r:
@@ -1000,7 +1033,11 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
                 continue
             mt = r.get("metrics", {})
             js = r.get("judge", {}).get("scores", {})
-            judge_cell = f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/{js.get('preservation','–')}" if js else "—"
+            judge_cell = (
+                f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
+                f"{js.get('preservation','–')}"
+                if js else "—"
+            )
             lines.append(
                 f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
                 f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
