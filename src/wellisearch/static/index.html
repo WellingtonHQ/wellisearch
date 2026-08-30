@@ -72,6 +72,7 @@
       <option value="600">10m</option>
       <option value="1800">30m</option>
       <option value="3600">1h</option>
+      <option value="10800">3h</option>
       <option value="21600">6h</option>
       <option value="43200">12h</option>
       <option value="86400">24h</option>
@@ -210,7 +211,15 @@ function saveKey() {
 }
 
 // ------------------------------------------------------------- window (10m..24h)
-const WIN_LABELS = { 600: "10m", 1800: "30m", 3600: "1h", 21600: "6h", 43200: "12h", 86400: "24h" };
+const WIN_LABELS = {
+  600: "10m",
+  1800: "30m",
+  3600: "1h",
+  10800: "3h",
+  21600: "6h",
+  43200: "12h",
+  86400: "24h"
+};
 let winSecs = parseInt(localStorage.getItem("wsec") || "86400", 10);
 if (!(winSecs in WIN_LABELS)) winSecs = 86400;
 const winLabel = () => WIN_LABELS[winSecs] || "24h";
