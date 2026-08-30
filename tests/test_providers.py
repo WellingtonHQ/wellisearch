@@ -78,18 +78,33 @@ async def expect_network_error(cls, settings):
 
 
 # --- base helpers (shared normalization point) -------------------------------
-assert Provider.clean_html("<b>Title</b> &amp; more") == "Title & more"
-assert Provider.clean_html("  a   b  ") == "a b"
-assert Provider.clean_html("") == ""
-long_text = "word " * 500
-s = Provider.snippet(long_text)
-assert len(s) <= 401 and s.endswith("…"), (len(s), s[-5:])
-assert Provider.snippet("short") == "short"
-print("OK base.clean_html / base.snippet")
+
+def test_base() -> None:
+    """Provider.clean_html + Provider.snippet (the shared normalization point)."""
+    assert Provider.clean_html("<b>Title</b> &amp; more") == "Title & more"
+    assert Provider.clean_html("  a   b  ") == "a b"
+    assert Provider.clean_html("") == ""
+    s = Provider.snippet("word " * 500)
+    assert len(s) <= 401 and s.endswith("…"), (len(s), s[-5:])
+    assert Provider.snippet("short") == "short"
+    print("OK base.clean_html / base.snippet")
 
 
-async def main() -> None:
-    # --- Tavily (POST, Bearer auth, `results[]`, carries score) --------------
+async def test_error_mapping(cls: type[Provider], settings: Settings) -> None:
+    """Status-code + network error mapping, shared by every provider."""
+    for status, msg in [(401, "auth rejected"), (403, "auth rejected"),
+                        (402, "quota exhausted"), (429, "quota exhausted"),
+                        (500, "http 500")]:
+        await expect_provider_error(cls, settings, status, msg)
+    await expect_network_error(cls, settings)
+
+
+# --- per-provider tests --------------------------------------------------------
+# One function per adapter: configured flag, request contract, response
+# normalization, and the ProviderError mapping the gateway relies on.
+
+async def test_tavily() -> None:
+    """Tavily: POST, Bearer auth, `results[]`, carries score."""
     s = Settings(TAVILY_API_KEY="tav-key-123")
     assert Tavily(s, None).configured is True
     assert Tavily(Settings(TAVILY_API_KEY=""), None).configured is False
@@ -117,7 +132,12 @@ async def main() -> None:
     assert json.loads(cap0["body"])["max_results"] == 1
     print("OK tavily contract + normalization")
 
-    # --- Brave (GET, X-Subscription-Token, `web.results[]`, no score) --------
+    await test_error_mapping(Tavily, s)
+    print("OK tavily error mapping (401/403/402/429/500 + network)")
+
+
+async def test_brave() -> None:
+    """Brave: GET, X-Subscription-Token, `web.results[]`, no score."""
     s = Settings(BRAVE_API_KEY="brave-key-123")
     assert Brave(s, None).configured is True
     assert Brave(Settings(BRAVE_API_KEY=""), None).configured is False
@@ -144,7 +164,12 @@ async def main() -> None:
     assert results[1].snippet.endswith("…") and len(results[1].snippet) <= 401  # trimmed
     print("OK brave contract + normalization")
 
-    # --- EXA (POST, x-api-key, `results[]`, asks for page text) --------------
+    await test_error_mapping(Brave, s)
+    print("OK brave error mapping (401/403/402/429/500 + network)")
+
+
+async def test_exa() -> None:
+    """EXA: POST, x-api-key, `results[]`, asks for page text."""
     s = Settings(EXA_API_KEY="exa-key-123")
     assert Exa(s, None).configured is True
     assert Exa(Settings(EXA_API_KEY=""), None).configured is False
@@ -170,7 +195,12 @@ async def main() -> None:
     assert results[0].score is None
     print("OK exa contract + normalization")
 
-    # --- You.com (POST, X-API-Key, `results.web[]`) ---------------------------
+    await test_error_mapping(Exa, s)
+    print("OK exa error mapping (401/403/402/429/500 + network)")
+
+
+async def test_youcom() -> None:
+    """You.com: POST, X-API-Key, `results.web[]`."""
     s = Settings(YOUCOM_API_KEY="you-key-123")
     assert YouCom(s, None).configured is True
     assert YouCom(Settings(YOUCOM_API_KEY=""), None).configured is False
@@ -193,21 +223,16 @@ async def main() -> None:
     assert results[0].score is None
     print("OK youcom contract + normalization")
 
-    # --- error mapping: every provider maps the same way ---------------------
-    providers = [
-        (Tavily, Settings(TAVILY_API_KEY="k")),
-        (Brave, Settings(BRAVE_API_KEY="k")),
-        (Exa, Settings(EXA_API_KEY="k")),
-        (YouCom, Settings(YOUCOM_API_KEY="k")),
-    ]
-    for cls, st in providers:
-        for status, msg in [(401, "auth rejected"), (403, "auth rejected"),
-                            (402, "quota exhausted"), (429, "quota exhausted"),
-                            (500, "http 500")]:
-            await expect_provider_error(cls, st, status, msg)
-        await expect_network_error(cls, st)
-        print(f"OK {cls.name.lower()} error mapping (401/403/402/429/500 + network)")
+    await test_error_mapping(YouCom, s)
+    print("OK youcom error mapping (401/403/402/429/500 + network)")
 
+
+async def main() -> None:
+    test_base()
+    await test_tavily()
+    await test_brave()
+    await test_exa()
+    await test_youcom()
     print("ALL PROVIDER TESTS PASSED")
 
 
