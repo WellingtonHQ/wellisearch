@@ -29,6 +29,7 @@ Design goals (see `BLUEPRINT.md` for the full plan):
 | [api.md](api.md) | REST endpoint reference and the six MCP tools, with request/response shapes. |
 | [deployment.md](deployment.md) | Docker/compose, shared Postgres and network, full configuration reference, operations (health, reindex, manual worker run). |
 | [trigram-rewrite.md](trigram-rewrite.md) | 2026-08 post-mortem: why the trigram leg of `fn_search_local` was rewritten (full-corpus scans → index-bounded), plus the pool/CPU hygiene fixes. |
+| [native-crawler-design.md](native-crawler-design.md) | Proposed native crawl engine (patchright + Scrapling, general flow + per-site extractors, yt-dlp style) — design ahead of the Crawl4AI/AGPL migration. Status: proposal. |
 
 ## Diagrams
 
@@ -40,6 +41,7 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
 - `images/ranking.svg` — `fn_search_local` internals
 - `images/data-model.svg` — ER diagram
 - `images/indexing.svg` — indexing pipeline and worker
+- `images/native-crawler.svg` — native crawl engine (policy → tier ladder → extractors → gate)
 
 ## Quick orientation (5-minute tour)
 
