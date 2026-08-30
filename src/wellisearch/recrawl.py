@@ -30,6 +30,8 @@ from .config import get_settings
 from .db import db
 from .worker import crawl_url
 
+log = logging.getLogger("wellisearch.recrawl")
+
 # Live-coroutine cap per gather batch. The global crawl semaphore (set from
 # CRAWL_MAX_PARALLEL) is what actually bounds concurrent crawls; this just keeps
 # the number of waiting coroutines bounded so a 20k-URL run doesn't hold 20k
@@ -68,7 +70,6 @@ async def _run(
     them in BATCH-sized batches, reporting progress and stats."""
     s = get_settings()
     conc = s.CRAWL_MAX_PARALLEL
-    log = logging.getLogger("wellisearch.recrawl")
     await db.startup()
     try:
         q = ("SELECT url FROM pages "

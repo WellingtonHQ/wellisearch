@@ -256,7 +256,7 @@ async def _provider_search(
         return source, results, False, errors, provider_ms
     except GatewayExhausted as e:
         provider_ms = int((time.monotonic() - t_prov) * 1000)
-        log.error("all providers failed: %s", e)
+        log.warning("all providers failed: %s", e)
         errors = e.errors
         if search_mode == "auto" and local_rows:
             # degraded mode: serve whatever local results we have (§14.12)

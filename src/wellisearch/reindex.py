@@ -20,6 +20,8 @@ from .db import db
 from .embed import model_name
 from .index import store_page
 
+log = logging.getLogger("wellisearch.reindex")
+
 PROGRESS_INTERVAL = 10  # print progress every N pages
 
 
@@ -68,7 +70,7 @@ async def _run(force: bool, dry_run: bool) -> None:
                 status, chunks = await store_page(url, p["fit_markdown"], title=p["title"])
             except Exception as e:
                 failed += 1
-                logging.getLogger("wellisearch.reindex").error("reindex %s failed: %s", url, e)
+                log.warning("reindex %s failed: %s", url, e)
                 continue
             if status == "unchanged":
                 unchanged += 1
