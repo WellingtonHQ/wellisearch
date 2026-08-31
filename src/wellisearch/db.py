@@ -459,6 +459,23 @@ class Database:
                     (error, url),
                 )
 
+    async def queue_route_to_cf(self, url: str) -> bool:
+        """Move an in-flight fast-lane row onto the CF challenge lane.
+
+        Sets lane='cf', status='pending' (so the CF drain can claim it), and
+        resets attempts so the CF lane gets a fresh retry budget. Returns True
+        if a row was routed.
+        """
+        return (
+            await self.execute(
+                "UPDATE crawl_queue SET lane = 'cf', status = 'pending', attempts = 0, "
+                "last_error = 'routed to cf lane' "
+                "WHERE url = %s AND status = 'in_flight'",
+                (url,),
+            )
+            > 0
+        )
+
 
 # module-level singleton
 db = Database()

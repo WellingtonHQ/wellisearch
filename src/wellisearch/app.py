@@ -439,6 +439,9 @@ async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
     )
     by_source = {r["source"]: r["n"] for r in srows}
     s_total = sum(by_source.values())
+    by_status = {r["status"]: r["n"] for r in crows}
+    c_total = sum(by_status.values())
+    c_success = by_status.get("ok", 0) + by_status.get("unchanged", 0)
     return {
         "secs": secs,
         "searches": {
@@ -447,8 +450,10 @@ async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
             "local_rate": round(by_source.get("local", 0) / s_total, 3) if s_total else 0.0,
         },
         "crawls": {
-            "total": sum(r["n"] for r in crows),
-            "by_status": {r["status"]: r["n"] for r in crows},
+            "total": c_total,
+            "successful": c_success,
+            "successful_per_minute": round(c_success / (secs / 60), 2) if secs else 0.0,
+            "by_status": by_status,
         },
     }
 

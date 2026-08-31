@@ -15,9 +15,10 @@ from urllib.parse import quote_plus, urlparse
 
 from ...config import get_settings
 from ..botwall import is_botwall
+from ..lane import CF, get_lane
 from ..policy import Policy
-from ..pool import get_pool
-from ..results import Rendered
+from ..pool import get_cf_pool, get_pool
+from ..results import ChallengeDetected, Rendered
 from ..wait import network_idle, settle
 from . import register
 
@@ -50,9 +51,13 @@ class BrowserTier:
     name = "browser"
 
     async def fetch(self, url: str, p: Policy) -> Rendered:
-        """Fetch one URL in a pooled browser; always closes the page + releases."""
+        """Fetch one URL in a pooled browser; always closes the page + releases.
+
+        The CF lane uses its own pool (get_cf_pool) so a challenge crawl holding
+        a context for the whole turnstile loop never starves the fast lane.
+        """
         key = _profile_key(url, p)
-        pool = get_pool()
+        pool = get_cf_pool() if get_lane() == CF else get_pool()
         ctx = await pool.acquire(key)
         try:
             page = await ctx.new_page()
@@ -65,9 +70,11 @@ class BrowserTier:
 
     async def _crawl(self, page: Page, url: str, p: Policy) -> Rendered:
         s = get_settings()
+        is_cf = get_lane() == CF
+        timeout_s = s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S
         start = time.monotonic()
         resp = await page.goto(
-            url, wait_until="domcontentloaded", timeout=s.CRAWL_TIMEOUT_S * 1000
+            url, wait_until="domcontentloaded", timeout=timeout_s * 1000
         )
         status = resp.status if resp is not None else 200
         await settle(page)
@@ -75,7 +82,14 @@ class BrowserTier:
             await network_idle(page)
         html = await page.content()
 
-        html = await self._resolve_challenge(page, url, html, status)
+        if is_cf:
+            # CF lane: run the full turnstile loop with the high budget.
+            html = await self._resolve_challenge(page, url, html, status, budget=timeout_s)
+        else:
+            # Fast lane: probe only — a bot-wall means route to the CF lane
+            # instead of spending the fast lane's time on the challenge loop.
+            if is_botwall(html, status) is not None:
+                raise ChallengeDetected(url)
 
         notes: str | None = None
         if _is_walmart_item_404(url, html):
@@ -84,7 +98,7 @@ class BrowserTier:
             if recovered is not None:
                 log.info("recovered walmart item: %s", recovered)
                 resp2 = await page.goto(
-                    recovered, wait_until="domcontentloaded", timeout=s.CRAWL_TIMEOUT_S * 1000
+                    recovered, wait_until="domcontentloaded", timeout=timeout_s * 1000
                 )
                 status = resp2.status if resp2 is not None else status
                 await settle(page)
@@ -96,9 +110,11 @@ class BrowserTier:
         ms = int((time.monotonic() - start) * 1000)
         return Rendered(html=html, title=title, status=status, ms=ms, engine="browser", notes=notes)
 
-    async def _resolve_challenge(self, page: Page, url: str, html: str, status: int) -> str:
+    async def _resolve_challenge(
+        self, page: Page, url: str, html: str, status: int, budget: int | None = None
+    ) -> str:
         """Click the turnstile checkbox until clean or the budget is exhausted."""
-        budget = get_settings().CRAWL_CHALLENGE_BUDGET_S
+        budget = budget if budget is not None else get_settings().CRAWL_CHALLENGE_BUDGET_S
         start = time.monotonic()
         round_no = 0
         while is_botwall(html, status) is not None and (time.monotonic() - start) < budget:

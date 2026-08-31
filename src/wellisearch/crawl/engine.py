@@ -11,10 +11,27 @@ import time
 
 from ..config import get_settings
 from . import botwall, extractors, tiers
+from .lane import CF, get_lane
 from .policy import match
-from .results import CrawlResult, Escalate, Fitted
+from .results import ChallengeDetected, CrawlResult, Escalate, Fitted
 
 log = logging.getLogger("wellisearch.crawl.engine")
+
+
+def _tier_wait_timeout(name: str) -> int:
+    """Per-tier asyncio.wait_for backstop.
+
+    Generous on purpose: each tier manages its own goto/challenge timeouts
+    internally; this only guards against a hang. The CF-lane browser tier needs
+    goto (CF timeout) + the full challenge loop (CF timeout budget), so it gets
+    2× the CF timeout.
+    """
+    s = get_settings()
+    if name == "stealth":
+        return s.CRAWL_STEALTH_TIMEOUT_S
+    if name == "browser" and get_lane() == CF:
+        return s.CRAWL_CF_TIMEOUT_S * 2
+    return s.CRAWL_TIMEOUT_S
 
 
 async def crawl(url: str) -> CrawlResult:
@@ -39,12 +56,11 @@ async def crawl(url: str) -> CrawlResult:
             i += 1
             continue
         try:
-            timeout = (
-                get_settings().CRAWL_STEALTH_TIMEOUT_S
-                if name == "stealth"
-                else get_settings().CRAWL_TIMEOUT_S
-            )
-            r = await asyncio.wait_for(tier.fetch(url, p), timeout=timeout)
+            r = await asyncio.wait_for(tier.fetch(url, p), timeout=_tier_wait_timeout(name))
+        except ChallengeDetected:
+            # Fast-lane probe hit a bot-wall: route to the CF lane rather than
+            # trying the next tier (the challenge needs the CF lane's loop).
+            raise
         except Exception as e:
             attempts.append({"tier": name, "error": f"{type(e).__name__}: {e}"})
             i += 1

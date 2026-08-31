@@ -98,6 +98,13 @@ class Settings(BaseSettings):
     CRAWL_HEADLESS: bool = False
     CRAWL_SETTLE_S: float = 2.0
     CRAWL_STEALTH_TIMEOUT_S: int = 120
+    # CF (challenge) lane: a dedicated low-concurrency, high-timeout lane so a
+    # Cloudflare/turnstile crawl never blocks the fast lane. The fast lane only
+    # probes for a bot-wall and routes it here; the CF lane runs the full
+    # challenge loop with its own pool + semaphore + timeout.
+    CRAWL_CHALLENGE_PARALLEL: int = 2
+    CRAWL_CF_TIMEOUT_S: int = 300
+    CRAWL_CF_POOL_SIZE: int = 1
 
     # --- server ---
     BIND_PORT: int = 8780

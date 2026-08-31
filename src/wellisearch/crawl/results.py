@@ -50,3 +50,17 @@ class Escalate(Exception):
     def __init__(self, tier: str) -> None:
         super().__init__(f"escalate to {tier}")
         self.tier = tier
+
+
+class ChallengeDetected(Exception):
+    """Raised by the browser tier (fast lane) when a bot-wall is present and the
+    page should be routed to the CF challenge lane instead of retried here.
+
+    The engine re-raises it (it is not a tier failure to escalate past), and the
+    worker catches it to move the queue row onto the CF lane. Carries the URL
+    for logging.
+    """
+
+    def __init__(self, url: str) -> None:
+        super().__init__(f"challenge detected: {url}")
+        self.url = url

@@ -24,6 +24,8 @@ import time
 
 from . import crawler, queue
 from .config import get_settings
+from .crawl.lane import CF, FAST, reset_lane, set_lane
+from .crawl.results import ChallengeDetected
 from .db import db
 from .index import store_page
 
@@ -64,6 +66,7 @@ async def tick() -> dict:
 
         stats = {
             "queue": await _drain_queue(deadline),
+            "cf_queue": await _drain_cf_queue(deadline),
             "refresh": await _refresh_watchlist(deadline),
             "ms": int((time.monotonic() - t0) * 1000),
         }
@@ -126,6 +129,11 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     ms = 0
     try:
         title, md = await crawler.fit_markdown(url)
+    except ChallengeDetected:
+        # Fast-lane probe hit a bot-wall: the worker routes this row to the CF
+        # lane. It is a control-flow signal, not a crawl error — re-raise
+        # without logging a traceback.
+        raise
     except crawler.CrawlError as e:
         ms = int((time.monotonic() - t0) * 1000)
         label = e.status_label()
@@ -154,34 +162,93 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
 
 
 async def _drain_queue(deadline: float) -> dict:
-    """Claim and crawl pending queue rows, up to the per-tick budget."""
+    """Claim and crawl pending FAST-lane queue rows, up to the per-tick budget.
+
+    A fast-lane crawl that hits a bot-wall raises ChallengeDetected; we route
+    that row to the CF lane (db.queue_route_to_cf) instead of marking it done,
+    so the CF drain can run it with the full challenge loop.
+    """
     s = get_settings()
     processed = 0
     sem = asyncio.Semaphore(s.CRAWL_MAX_PARALLEL)
 
     rows = await db.fetch_all(
-        "SELECT url FROM crawl_queue WHERE status = 'pending' "
+        "SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'fast' "
         "ORDER BY enqueued_at LIMIT %s",
         (s.WORKER_BUDGET_PER_RUN * 2,),
     )
-    log.info("tick: draining queue (%d pending in budget window)", len(rows))
+    log.info("tick: draining fast lane (%d pending in budget window)", len(rows))
 
     async def process(url: str) -> None:
-        """Claim one queue row and crawl it (bounded by the parallelism semaphore)."""
+        """Claim one fast-lane row and crawl it (bounded by the parallelism cap)."""
         nonlocal processed
         if time.monotonic() > deadline:
             return
         if not await db.queue_claim(url):
             return
-        async with sem:
-            try:
-                await crawl_url(url, "search")
-                await db.queue_done(url, ok=True)
-            except Exception as e:
-                log.warning("queue crawl failed for %s: %s", url, e)
-                await db.queue_done(url, ok=False, error=str(e)[:1000])
-            finally:
-                processed += 1
+        token = set_lane(FAST)
+        try:
+            async with sem:
+                try:
+                    await crawl_url(url, "search")
+                    await db.queue_done(url, ok=True)
+                except ChallengeDetected:
+                    log.info("challenge detected — routing %s to the CF lane", url)
+                    await db.queue_route_to_cf(url)
+                except Exception as e:
+                    log.warning("queue crawl failed for %s: %s", url, e)
+                    await db.queue_done(url, ok=False, error=str(e)[:1000])
+                finally:
+                    processed += 1
+        finally:
+            reset_lane(token)
+
+    await asyncio.gather(*(process(r["url"]) for r in rows))
+    return {"processed": processed}
+
+
+async def _drain_cf_queue(deadline: float) -> dict:
+    """Claim and crawl pending CF-lane rows (challenges routed from the fast
+    lane), bounded by the low CF concurrency cap.
+
+    These run in the CF lane: the browser tier runs the full turnstile loop
+    with the high budget, on the CF pool. A failure here re-enqueues (pending)
+    up to QUEUE_MAX_ATTEMPTS via queue_done, so a stubborn challenge is retried
+    on later ticks.
+    """
+    s = get_settings()
+    processed = 0
+    sem = crawler.cf_crawl_semaphore()
+
+    rows = await db.fetch_all(
+        "SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'cf' "
+        "ORDER BY enqueued_at LIMIT %s",
+        (s.CRAWL_CHALLENGE_PARALLEL * 2,),
+    )
+    if not rows:
+        return {"processed": 0}
+    log.info("tick: draining CF lane (%d pending challenges)", len(rows))
+
+    async def process(url: str) -> None:
+        """Claim one CF-lane row and crawl it (bounded by the CF concurrency cap)."""
+        nonlocal processed
+        if time.monotonic() > deadline:
+            return
+        if not await db.queue_claim(url):
+            return
+        token = set_lane(CF)
+        try:
+            async with sem:
+                try:
+                    await crawl_url(url, "search")
+                    await db.queue_done(url, ok=True)
+                except Exception as e:
+                    log.warning("CF lane crawl failed for %s: %s", url, e)
+                    await db.queue_done(url, ok=False, error=str(e)[:1000])
+                finally:
+                    processed += 1
+        finally:
+            reset_lane(token)
 
     await asyncio.gather(*(process(r["url"]) for r in rows))
     return {"processed": processed}

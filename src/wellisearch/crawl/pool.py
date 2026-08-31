@@ -94,8 +94,10 @@ def _reap_orphans(profile_dir: str) -> None:
 class BrowserPool:
     """Bounded pool of warm persistent browser contexts, keyed by profile."""
 
-    def __init__(self) -> None:
-        self._sem = asyncio.Semaphore(get_settings().CRAWL_POOL_SIZE)
+    def __init__(self, size: int | None = None) -> None:
+        # size defaults to the fast-lane pool size; the CF lane passes its own
+        # (smaller) CRAWL_CF_POOL_SIZE so challenge crawls get their own contexts.
+        self._sem = asyncio.Semaphore(size if size is not None else get_settings().CRAWL_POOL_SIZE)
         self._contexts: dict[str, BrowserContext] = {}
         self._last_used: dict[str, float] = {}
         self._in_use: dict[str, int] = {}
@@ -221,11 +223,25 @@ class BrowserPool:
 
 
 _pool: BrowserPool | None = None
+_cf_pool: BrowserPool | None = None
 
 
 def get_pool() -> BrowserPool:
-    """Module-level singleton pool."""
+    """Module-level singleton pool (fast lane, CRAWL_POOL_SIZE contexts)."""
     global _pool
     if _pool is None:
         _pool = BrowserPool()
     return _pool
+
+
+def get_cf_pool() -> BrowserPool:
+    """Module-level singleton pool for the CF lane (CRAWL_CF_POOL_SIZE contexts).
+
+    Kept separate from the fast-lane pool so a challenge crawl (which holds a
+    context for the whole turnstile loop) never starves the fast lane's
+    contexts.
+    """
+    global _cf_pool
+    if _cf_pool is None:
+        _cf_pool = BrowserPool(size=get_settings().CRAWL_CF_POOL_SIZE)
+    return _cf_pool

@@ -20,6 +20,7 @@ log = logging.getLogger("wellisearch.crawler")
 # request, which could saturate the crawler and hold DB pool connections
 # for the whole burst.
 _crawl_sem: asyncio.Semaphore | None = None
+_cf_crawl_sem: asyncio.Semaphore | None = None
 
 
 def crawl_semaphore() -> asyncio.Semaphore:
@@ -28,6 +29,18 @@ def crawl_semaphore() -> asyncio.Semaphore:
     if _crawl_sem is None:
         _crawl_sem = asyncio.Semaphore(get_settings().CRAWL_MAX_PARALLEL)
     return _crawl_sem
+
+
+def cf_crawl_semaphore() -> asyncio.Semaphore:
+    """CF-lane crawl concurrency cap (CRAWL_CHALLENGE_PARALLEL), created lazily.
+
+    Kept separate from the fast-lane cap so a slow challenge crawl never holds
+    a fast-lane slot (and vice versa).
+    """
+    global _cf_crawl_sem
+    if _cf_crawl_sem is None:
+        _cf_crawl_sem = asyncio.Semaphore(get_settings().CRAWL_CHALLENGE_PARALLEL)
+    return _cf_crawl_sem
 
 
 class CrawlError(Exception):
