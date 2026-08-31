@@ -27,7 +27,7 @@ from .youcom import YouCom
 log = logging.getLogger("wellisearch.providers")
 
 ERROR_MAX_LEN = 300        # max chars kept in a provider error message
-CRASH_REPR_MAX_LEN = 500   # max chars kept in a crash repr (provider_state)
+CRASH_REPR_MAX_LEN = 1000   # max chars kept in a crash repr (provider_state)
 CRASH_ERROR_MAX_LEN = 200  # max chars kept in a crash error (error chain)
 
 REGISTRY: dict[str, type[Provider]] = {
