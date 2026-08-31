@@ -53,20 +53,20 @@ async def _drain_queue(deadline: float) -> dict: ...
 
 ## 3. Alphabetical Sorting
 
-Sort lists of equal elements alphabetically — imports, enum members, list
+Sort collections of equal elements alphabetically — enum members, list
 literals, provider lists, and comment enumerations — unless business logic
-dictates a specific order (e.g. `SEARCH_PROVIDERS = "tavily,brave,exa,youcom"` is
-priority order, not alphabetical).
+dictates a specific order (e.g. `SEARCH_PROVIDERS = "tavily,brave,exa,youcom"`
+is priority order, not alphabetical). Import ordering is covered by Rule 7.
 
 **Do:**
 ```python
-from . import crawler, queue
-from .config import get_settings
-from .db import db
-from .index import store_page
+class CrawlStatus(str, Enum):
+    failed = "failed"
+    ok = "ok"
+    unchanged = "unchanged"
 ```
 
-**Don't:** interleave local and third-party imports or leave them in arbitrary order.
+**Don't:** leave such collections in arbitrary order.
 
 ---
 
@@ -126,30 +126,35 @@ log.info(
 
 ---
 
-## 7. Import Ordering
+## 7. Imports
 
 `from __future__ import annotations` first, then three groups separated by
 blank lines: standard library, third-party packages, local modules (relative
-`from . import ...` in this package). Sort alphabetically within each group.
+imports in this package). Sort alphabetically **within each group**, by the
+full import path — so parent-package (`..`) imports come before sibling (`.`)
+imports. Business logic may dictate a specific order (e.g. a provider priority
+list); that overrides alphabetical.
 
 **Do:**
 ```python
-"""Background worker (asyncio task in the app; plan §8)."""
+"""Provider gateway: ordered failover + monthly quota ledger."""
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 import logging
-import time
 
-from . import crawler, queue
-from .config import get_settings
-from .db import db
-from .index import store_page
+import httpx
+
+from ..config import get_settings
+from ..db import db
+from .base import Provider, ProviderError, Result
+from .brave import Brave
+from .exa import Exa
 ```
 
-**Don't:** skip the `__future__` import, intermix groups, or leave them in
-arbitrary order.
+**Don't:** skip the `__future__` import, intermix groups, interleave local and
+third-party imports, or leave any group in arbitrary order (e.g. sandwiching
+`..config`/`..db` between `.brave` and `.exa`).
 
 ---
 
