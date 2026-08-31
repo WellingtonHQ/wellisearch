@@ -16,10 +16,10 @@ import logging
 
 import httpx
 
-from .base import Provider, ProviderError, Result
-from .brave import Brave
 from ..config import get_settings
 from ..db import db
+from .base import Provider, ProviderError, Result
+from .brave import Brave
 from .exa import Exa
 from .tavily import Tavily
 from .youcom import YouCom
