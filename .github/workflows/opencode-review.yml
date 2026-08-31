@@ -52,10 +52,10 @@ jobs:
           USE_GITHUB_TOKEN: "true"
           PROMPT: |
             Review this pull request:
-            - Check for code quality issues
-            - Look for potential bugs or vulnerabilities
-            - Focus only on the code changes in this pull request
-            - Suggest improvements for readability, performance, and maintainability
+            - Check for violations of project's CODING_STYLES.md and code quality issues.
+            - Look for potential bugs or vulnerabilities.
+            - Focus only on the code changes in this pull request.
+            - Explain why something is a problem and what can be done about it.
 
             Your final reply is posted to the PR verbatim as a GitHub comment - it IS the deliverable.
             Never end with a description of your process or intentions (e.g. "I was assembling the review") - output the review itself.
