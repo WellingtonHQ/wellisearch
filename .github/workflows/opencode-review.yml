@@ -18,7 +18,6 @@ jobs:
       )
     runs-on: self-hosted
     permissions:
-      id-token: write
       contents: read
       pull-requests: write
       issues: write
@@ -44,20 +43,30 @@ jobs:
         with:
           preferred-model: qwen/qwen3.8-27b
 
-      - name: Run opencode
+      - name: Run opencode (local) and post review
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
           MODEL: ${{ steps.lmstudio.outputs.model }}
-          USE_GITHUB_TOKEN: "true"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          OPENCODE_AUTO_SHARE: "false"
           PROMPT: |
-            Review this pull request:
+            You are reviewing a GitHub pull request. The PR number is in the PR_NUMBER environment variable.
+            You have the `gh` CLI and GITHUB_TOKEN available for gathering context.
+
+            First, gather the PR context:
+            - Run `gh pr diff "$PR_NUMBER"` to see the code changes.
+            - Run `gh pr view "$PR_NUMBER" --comments` to read the PR description and any existing review comments.
+            - Read CODING_STYLES.md and the changed files in the working directory.
+
+            Then review the changes:
             - Check for violations of project's CODING_STYLES.md and code quality issues.
             - Look for potential bugs or vulnerabilities.
             - Focus only on the code changes in this pull request.
             - Explain why something is a problem and what can be done about it.
 
-            Your final reply is posted to the PR verbatim as a GitHub comment - it IS the deliverable.
+            Write your final review to a file named `review.md` in the current directory.
+            It will be posted to the PR verbatim as a GitHub comment - it IS the deliverable.
             Never end with a description of your process or intentions (e.g. "I was assembling the review") - output the review itself.
 
             Format the review exactly like this:
@@ -79,11 +88,18 @@ jobs:
 
             Rules:
             - Number the findings and order them by priority, most severe first (Critical, then Warning, then Nit).
-            - In the "Previous review issues" table, list every issue raised in earlier review comments on this PR (in the conversation above): ✅ if you verified it is now fixed in the code, ❌ if it is still present.
+            - In the "Previous review issues" table, list every issue raised in earlier review comments on this PR (from `gh pr view --comments`): ✅ if you verified it is now fixed in the code, ❌ if it is still present.
             - Verify each previous issue against the current code before marking it; do not trust the table from the previous review.
             - If there was no earlier review on this PR, omit the "Previous review issues" table.
             - If you find no issues, say so in one line instead of the findings list.
-        run: ~/.opencode/bin/opencode github run
+        run: |
+          set -euo pipefail
+          ~/.opencode/bin/opencode run -m "$MODEL" "$PROMPT"
+          if [ ! -f review.md ]; then
+            echo "::error::opencode did not produce review.md"
+            exit 1
+          fi
+          gh pr comment "$PR_NUMBER" --body-file review.md
 
       - name: Cleanup Comments
         uses: ./.github/actions/cleanup-comments
