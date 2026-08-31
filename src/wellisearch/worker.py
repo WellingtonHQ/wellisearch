@@ -218,7 +218,6 @@ async def _drain_cf_queue(deadline: float) -> dict:
     """
     s = get_settings()
     processed = 0
-    sem = crawler.cf_crawl_semaphore()
 
     rows = await db.fetch_all(
         "SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'cf' "
@@ -230,7 +229,12 @@ async def _drain_cf_queue(deadline: float) -> dict:
     log.info("tick: draining CF lane (%d pending challenges)", len(rows))
 
     async def process(url: str) -> None:
-        """Claim one CF-lane row and crawl it (bounded by the CF concurrency cap)."""
+        """Claim one CF-lane row and crawl it.
+
+        Concurrency is bounded by the CF semaphore inside crawl_deduped (the
+        same non-reentrant semaphore we must NOT also hold here, or ≥2 rows
+        deadlock: each holds an outer slot and blocks on the inner acquire).
+        """
         nonlocal processed
         if time.monotonic() > deadline:
             return
@@ -238,15 +242,14 @@ async def _drain_cf_queue(deadline: float) -> dict:
             return
         token = set_lane(CF)
         try:
-            async with sem:
-                try:
-                    await crawl_url(url, "search")
-                    await db.queue_done(url, ok=True)
-                except Exception as e:
-                    log.warning("CF lane crawl failed for %s: %s", url, e)
-                    await db.queue_done(url, ok=False, error=str(e)[:1000])
-                finally:
-                    processed += 1
+            try:
+                await crawl_url(url, "search")
+                await db.queue_done(url, ok=True)
+            except Exception as e:
+                log.warning("CF lane crawl failed for %s: %s", url, e)
+                await db.queue_done(url, ok=False, error=str(e)[:1000])
+            finally:
+                processed += 1
         finally:
             reset_lane(token)
 

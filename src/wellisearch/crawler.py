@@ -70,7 +70,10 @@ async def fit_markdown(url: str) -> tuple[str | None, str]:
     the page has none — callers then store/keep no title.
     """
     result = await crawl(url)
-    if result.md and result.md.strip():
+    # result.ok is the success signal (the engine's gate passed). A failed crawl
+    # can still carry a non-empty partial markdown (e.g. a bot-wall page with
+    # some text); storing that as a success would poison the index, so require ok.
+    if result.ok and result.md and result.md.strip():
         return result.title, result.md
     raise CrawlError(url, "all tiers failed or empty markdown")
 

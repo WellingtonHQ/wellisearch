@@ -49,9 +49,17 @@ def _sanitize_key(key: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", key)
 
 
-def _profile_dir(key: str) -> str:
-    """Absolute profile dir for a key under CRAWL_PROFILE_DIR."""
-    return os.path.join(get_settings().CRAWL_PROFILE_DIR, _sanitize_key(key))
+def _profile_dir(key: str, prefix: str = "") -> str:
+    """Absolute profile dir for a key under CRAWL_PROFILE_DIR.
+
+    ``prefix`` namespaces the dir (e.g. ``cf`` for the CF lane) so two pools
+    never target the same user-data-dir — otherwise one pool's _reap_orphans
+    would SIGKILL the other pool's live warm browser.
+    """
+    base = get_settings().CRAWL_PROFILE_DIR
+    if prefix:
+        base = os.path.join(base, prefix)
+    return os.path.join(base, _sanitize_key(key))
 
 
 def _remove_singleton_lock(profile_dir: str) -> None:
@@ -94,10 +102,13 @@ def _reap_orphans(profile_dir: str) -> None:
 class BrowserPool:
     """Bounded pool of warm persistent browser contexts, keyed by profile."""
 
-    def __init__(self, size: int | None = None) -> None:
+    def __init__(self, size: int | None = None, prefix: str = "") -> None:
         # size defaults to the fast-lane pool size; the CF lane passes its own
         # (smaller) CRAWL_CF_POOL_SIZE so challenge crawls get their own contexts.
+        # prefix namespaces the profile dir so the CF pool never reaps the fast
+        # pool's live browser (see _profile_dir).
         self._sem = asyncio.Semaphore(size if size is not None else get_settings().CRAWL_POOL_SIZE)
+        self._prefix = prefix
         self._contexts: dict[str, BrowserContext] = {}
         self._last_used: dict[str, float] = {}
         self._in_use: dict[str, int] = {}
@@ -203,7 +214,7 @@ class BrowserPool:
 
     async def _launch(self, key: str, pw) -> BrowserContext:
         s = get_settings()
-        profile_dir = _profile_dir(key)
+        profile_dir = _profile_dir(key, self._prefix)
         os.makedirs(profile_dir, exist_ok=True)
         if key not in self._reaped:
             _reap_orphans(profile_dir)  # full cleanup before first launch for this dir
@@ -243,5 +254,5 @@ def get_cf_pool() -> BrowserPool:
     """
     global _cf_pool
     if _cf_pool is None:
-        _cf_pool = BrowserPool(size=get_settings().CRAWL_CF_POOL_SIZE)
+        _cf_pool = BrowserPool(size=get_settings().CRAWL_CF_POOL_SIZE, prefix="cf")
     return _cf_pool
