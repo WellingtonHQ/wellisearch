@@ -2,7 +2,7 @@
 
 Two jobs per tick:
   1. drain crawl_queue (search/manual enqueues) — up to the per-tick budget,
-     CRAWL_MAX_PARALLEL at a time → Crawl4AI /md → store_page → done/failed
+      CRAWL_MAX_PARALLEL at a time → native crawler → store_page → done/failed
      (transient errors re-enqueued up to QUEUE_MAX_ATTEMPTS).
   2. refresh watchlist — only pages crawled > REFRESH_MIN_AGE_HOURS ago
      (or never), ORDER BY fetch_count DESC, last_crawled ASC

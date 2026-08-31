@@ -510,7 +510,7 @@ async function refresh() {
       const ok = health.status === "ok";
       el.className = "pill " + (ok ? "ok" : "bad");
       el.textContent = health.status;
-      el.title = `db: ${health.database}\ncrawl4ai: ${health.crawl4ai}`;
+      el.title = `db: ${health.database}\ncrawler: ${health.crawler}`;
     }
     renderNow(st);
     renderProviders(prov);

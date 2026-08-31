@@ -22,8 +22,7 @@
 - `restart: unless-stopped`.
 - a `healthcheck` (Python `urllib` probe of `/health`, 60 s start period).
 - **two external networks**:
-  - `wellington_default` — the OWUI/agent stack network: reach `crawl4ai`
-    by service name, and be reachable as
+  - `wellisearch_default` — the OWUI/agent stack network: be reachable as
     `wellisearch:8780` for the MCP endpoints.
   - `postgres-net` — the infra project network: reach the shared Postgres
     container by the `postgres` alias.
@@ -70,11 +69,8 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 | `POSTGRES_DB` | `wellisearch` | app DB (self-created) |
 | `POSTGRES_ADMIN_DB` | `postgres` | maintenance DB used only to self-create the app DB |
 
-### Crawl4AI
-| Var | Default | Notes |
-|---|---|---|
-| `CRAWL4AI_URL` | `http://crawl4ai:11235` | the `/md` endpoint base |
-| `CRAWL4AI_API_KEY` | `change-me` | **set this** (must match the crawler's `CRAWL4AI_API_TOKEN`) |
+### Crawler
+The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars). Its knobs are the `CRAWL_*` variables in the worker/queue section below.
 
 ### Search providers
 | Var | Default | Notes |
@@ -121,7 +117,7 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 | `WORKER_TICK_BUDGET_MIN` | `15` | wall-clock budget per tick |
 | `KICK_DEBOUNCE_S` | `5` | coalesce burst enqueues into one tick |
 | `QUEUE_MAX_ATTEMPTS` | `3` | retries before a queue row is `failed` |
-| `CRAWL_TIMEOUT_S` | `45` | Crawl4AI per-URL timeout |
+| `CRAWL_TIMEOUT_S` | `45` | per-URL crawl timeout |
 | `CRAWL_MAX_PARALLEL` | `3` | concurrent crawls |
 
 ### Server
@@ -137,7 +133,7 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 curl http://localhost:8780/health
 curl -H "Authorization: Bearer $KEY" http://localhost:8780/api/stats
 ```
-`/health` probes the DB, Crawl4AI, and each provider (configured + state).
+`/health` probes the DB, the native crawler, and each provider (configured + state).
 
 ### Manual worker run (drain now)
 ```
@@ -189,8 +185,8 @@ curl -H "Authorization: Bearer $KEY" http://localhost:8780/api/providers
   (`wellisearch.loopfix:loop_factory`) because uvicorn 0.36+ defaults to the
   proactor loop, which psycopg's async driver needs the selector loop for.
   `db.py` also sets `WindowsSelectorEventLoopPolicy` early as a backstop.
-- The shared Postgres / Crawl4AI hosts must be reachable from the
-  host (adjust `CRAWL4AI_URL`, `POSTGRES_HOST` accordingly).
+- The shared Postgres host must be reachable from the host
+  (adjust `POSTGRES_HOST` accordingly).
 
 ## Security notes
 

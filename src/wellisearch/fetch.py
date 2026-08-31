@@ -1,8 +1,8 @@
 """fetch_page (single) + fetch_pages (bulk, budgeted) — the authoritative
 on-demand read path (plan §7).
 
-- Returns stored fit_markdown if indexed, else crawls on demand via Crawl4AI
-  and stores it (the read path is the real indexing loop).
+- Returns stored fit_markdown if indexed, else crawls on demand via the
+  native crawler and stores it (the read path is the real indexing loop).
 - Bumps fetch_count for every page fetched (priority + prominence).
 - Never crawls a URL twice concurrently (shared in-flight set).
 - fetch_pages allocates a shared char budget with swappable, boundary-safe
@@ -289,7 +289,7 @@ async def _resolve_page(url: str) -> dict:
     """Content for one URL: from index when present, else crawl on demand.
 
     Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
-    (the crawl4ai round-trip + store) so callers can report the timing split.
+    (the native-crawler round-trip + store) so callers can report the timing split.
     """
     t_index = time.monotonic()
     page = await db.page_get(url)

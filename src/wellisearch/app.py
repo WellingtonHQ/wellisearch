@@ -110,7 +110,7 @@ class PagePatch(BaseModel):
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
-    """Liveness probe with dependency status: database, crawl4ai, and each
+    """Liveness probe with dependency status: database, crawler, and each
     search provider. ``status`` is ``degraded`` when any check fails."""
     out: dict[str, Any] = {"status": "ok", "time": dt.datetime.now(dt.timezone.utc).isoformat()}
     try:
@@ -121,9 +121,9 @@ async def health() -> dict[str, Any]:
         out["status"] = "degraded"
     try:
         ok, detail = await crawler.health()
-        out["crawl4ai"] = detail if ok else f"error: {detail}"
+        out["crawler"] = detail if ok else f"error: {detail}"
     except Exception as e:
-        out["crawl4ai"] = f"error: {e}"
+        out["crawler"] = f"error: {e}"
     try:
         gw = get_gateway()
         out["providers"] = [

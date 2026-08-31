@@ -9,16 +9,16 @@ images/architecture.svg
 ![architecture](images/architecture.svg)
 
 wellisearch is **one container** (FastAPI + uvicorn, a single Python process)
-talking to **three external services**:
+talking to **two external services**:
 
 | Dependency | Role | Config |
 |---|---|---|
 | shared Postgres 18 | index, logs, queue, quota ledger, ranking function | `POSTGRES_*` (defaults host `postgres`, db `wellisearch`, admin db `postgres`) |
-| Crawl4AI server | the only crawling path (`POST /md` → fit markdown) | `CRAWL4AI_URL` (default `http://crawl4ai:11235`), `CRAWL4AI_API_KEY` |
 | search providers | fallback web search, ordered failover | `SEARCH_PROVIDERS`, `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`, `YOUCOM_API_KEY` |
 
-All three are reachable via the shared Docker network (hostnames `postgres`,
-`crawl4ai`). Postgres is **shared infrastructure outside this
+The crawler is **native and in-process** (no external crawler service) — see
+`crawler.py` and the `crawl/` package. Both external services are reachable
+via the shared Docker network (hostname `postgres`). Postgres is **shared infrastructure outside this
 repo** — wellisearch self-creates its app database at startup
 (`POSTGRES_ADMIN_DB`, default `postgres`) and applies `schema.sql` idempotently.
 
@@ -54,7 +54,7 @@ psycopg pool released. At boot, any `crawl_queue` rows stuck in
 | Provider gateway | `providers/__init__.py` + adapters | ordered failover, availability gates, quota ledger |
 | Ranking core | `schema.sql` → `fn_search_local` | hybrid FTS/trigram/vector RRF in Postgres |
 | Indexing | `index.py`, `chunk.py`, `embed.py` | `store_page`: hash → chunk → embed → upsert |
-| Crawling | `crawler.py` | Crawl4AI client, `fit_markdown`, health check |
+| Crawling | `crawler.py` + `crawl/` | native in-process crawler (http/browser/stealth tiers), `fit_markdown`, health check |
 | Queue | `queue.py` | enqueue/dedupe, in-flight set, debounced kick |
 | Worker | `worker.py` | tick: drain queue + watchlist refresh |
 | Read path | `fetch.py`, `truncation.py` | `fetch_page` / `fetch_pages` under a char budget |
@@ -103,10 +103,13 @@ Notes:
 ## Deployment topology (typical stack)
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│ wellisearch  │────▶│ shared PG 18 │     │ Crawl4AI     │     │ EXA          │     │ You.com      │
-│ (this repo)  │     │ (infra)      │     │ (infra)      │     │ (api.exa.ai) │     │ (api.you.com)│
-└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+┌────────────────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│ wellisearch            │────▶│ shared PG 18 │     │ EXA          │     │ You.com      │
+│ (this repo)            │     │ (infra)      │     │ (api.exa.ai) │     │ (api.you.com)│
+│  · REST + MCP + UI     │     └──────────────┘     └──────────────┘     └──────────────┘
+│  · native crawler      │
+│  · background worker   │
+└────────────────────────┘
       │  (optional: Tavily/Brave APIs — outbound HTTPS)
 ```
 

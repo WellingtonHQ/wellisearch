@@ -10,8 +10,8 @@ Design goals (see `BLUEPRINT.md` for the full plan):
 
 - **Quota preservation** — a local hit costs zero provider credits; the index
   is the cache and the gateway is the fallback.
-- **One crawling path** — every crawl goes through Crawl4AI `POST /md`
-  (fit-markdown). No raw-HTML scraping anywhere.
+- **One crawling path** — every crawl goes through the native in-process
+  crawler (fit-markdown). No raw-HTML scraping anywhere.
 - **One pipeline** — REST and MCP share the same handler functions
   (`search_web.py`, `fetch.py`, `queue.py`); the dashboard is a thin client.
 - **Boring runtime** — one container, one process, one Postgres, one asyncio
@@ -25,7 +25,7 @@ Design goals (see `BLUEPRINT.md` for the full plan):
 | [search-pipeline.md](search-pipeline.md) | `search_web` step by step: local-first, threshold, gateway failover, degraded mode, logging, speculative indexing. |
 | [ranking.md](ranking.md) | `fn_search_local` internals: the three legs, RRF fusion, top-3 cap, prominence and freshness, worked score examples, and the `coverage` local-vs-gateway gate. |
 | [data-model.md](data-model.md) | Every table, column, index and stored function in `schema.sql`, with an ER diagram. |
-| [indexing.md](indexing.md) | Triggers → `crawl_queue` → worker tick → Crawl4AI → `store_page` (chunk/embed/upsert), in-flight dedupe, the `unchanged` short-circuit. |
+| [indexing.md](indexing.md) | Triggers → `crawl_queue` → worker tick → native crawler → `store_page` (chunk/embed/upsert), in-flight dedupe, the `unchanged` short-circuit. |
 | [api.md](api.md) | REST endpoint reference and the six MCP tools, with request/response shapes. |
 | [deployment.md](deployment.md) | Docker/compose, shared Postgres and network, full configuration reference, operations (health, reindex, manual worker run). |
 | [trigram-rewrite.md](trigram-rewrite.md) | 2026-08 post-mortem: why the trigram leg of `fn_search_local` was rewritten (full-corpus scans → index-bounded), plus the pool/CPU hygiene fixes. |
@@ -62,8 +62,8 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
    `crawl_log` with trigger, status, and timing.
 5. The **background worker** (one asyncio task) drains the crawl queue and
    refreshes the most-fetched pages on a 30-minute tick (or a debounced kick
-   when the queue receives work). Crawls go through Crawl4AI, then
-   `store_page()` chunks, embeds, and upserts — transactionally.
+    when the queue receives work). Crawls go through the native crawler, then
+    `store_page()` chunks, embeds, and upserts — transactionally.
 6. **Reading pages** (`fetch_page` / `fetch_pages`) returns stored
    fit-markdown when indexed, else crawls on demand and stores it; bulk
    reads run under a shared character budget with swappable truncation
@@ -82,7 +82,7 @@ src/wellisearch/
   index.py          store_page: hash → chunk → embed → upsert
   chunk.py          markdown chunker (≤ MAX_CHUNK_TOKENS)
   embed.py          fastembed singleton (EMBED_MODEL / EMBED_DIMS)
-  crawler.py        Crawl4AI client (the single crawling path)
+  crawler.py        native crawler facade (the single crawling path)
   queue.py          crawl_queue enqueue/dedupe + in-flight set + kick
   worker.py         background worker (drain queue + watchlist refresh)
   db.py             psycopg pool + all SQL helpers

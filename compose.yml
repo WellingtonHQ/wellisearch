@@ -1,12 +1,11 @@
-# wellisearch — app + crawl4ai containers (one project, one network pair).
+# wellisearch — app container (one project, one network pair).
 #
 # Networks:
 #   - wellisearch_default : managed by THIS project — `docker compose up -d`
 #                          creates it (project name "wellisearch" + _default).
 #                          OpenWebUI (if present) joins it by name so it keeps
-#                          reaching `crawl4ai:11235` for its external web
-#                          loader; wellisearch stays reachable as
-#                          `wellisearch:8780` from OWUI.
+#                          reaching `wellisearch:8780` for its external web
+#                          loader.
 #   - postgres-net       : infra project network (external — the only way to
 #                          reach the shared Postgres container by the
 #                          `postgres` alias). Requires the infra stack to be
@@ -25,56 +24,20 @@ services:
     env_file: .env
     ports:
       - "8780:8780"
+    volumes:
+      - profiles:/profiles   # warm browser profiles (CRAWL_PROFILE_DIR=/profiles)
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8780/health', timeout=5).status==200 else 1)\""]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-    depends_on:
-      - crawl4ai
     networks:
       - wellisearch_default
       - postgres-net
 
-  # Crawl4AI Web Crawler Service (moved here from open-webui/wellington).
-  # Stays on wellisearch_default so OpenWebUI resolves it by service name.
-  #
-  # Built from OUR fork (github.com/WellingtonHQ/crawl4ai, branch wellington), not
-  # the official image. The fork bakes in what used to be volume-mounted patches:
-  #   - /md returns the page title (metadata.title) alongside the markdown
-  #   - monitor 24h retention (deploy/docker/monitor.py)
-  #   - gunicorn --workers 3 (deploy/docker/supervisord.conf)
-  #   - LLM reasoning-effort hook (deploy/docker/llm-hook/, via Dockerfile)
-  # Bumping the fork's base version: re-verify those four against the new release.
-  crawl4ai:
-    build: https://github.com/WellingtonHQ/crawl4ai.git#feature/nodriver
-    image: wellingtonhq/crawl4ai:0.9.2-wellisearch
-    container_name: crawl4ai
-    restart: always
-    # 12G: gunicorn runs 3 workers (baked into the fork's supervisord.conf);
-    # each owns a chrome pool, so the single-worker 4G cap OOMs at 3x concurrency.
-    mem_limit: 16G
-    environment:
-      - GUNICORN_BIND=0.0.0.0:11235
-      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_KEY:-change-me}
-      # LLM content filter (md f:llm) -> local LM Studio on the Docker host
-      - LLM_PROVIDER=openai/qwen/qwen3.8-27b
-      - OPENAI_BASE_URL=http://host.docker.internal:1234/v1
-      - OPENAI_API_KEY=lm-studio
-      - LLM_TEMPERATURE=0.1
-      # Qwen3.8 thinking control, injected by the c4ai_llm_thinking.py hook (baked into the image; low = faster f:llm; none = off)
-      - LLM_REASONING_EFFORT=low
-    ports:
-      - "11235:11235"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:11235/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 24
-      start_period: 30s
-    networks:
-      - wellisearch_default
+volumes:
+  profiles:   # warm browser profiles (CRAWL_PROFILE_DIR=/profiles)
 
 networks:
   wellisearch_default:   # managed: created/removed by this project

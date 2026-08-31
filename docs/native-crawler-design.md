@@ -29,8 +29,7 @@ beat Crawl4AI `f=fit` on 3 of 4 retail pages.
 4. **General flow + per-site extractors** (yt-dlp style): one generic
    pipeline that works everywhere, with a registry of per-site extractors
    that take over when the domain is known — each with its own quality gate.
-5. **Reversible.** `CRAWL_ENGINE=native|crawl4ai` flag; the Crawl4AI path
-   stays until parity is proven, then is removed.
+5. **Remove crawl4ai.** once parity is proven, remove crawl4ai.
 
 ---
 
@@ -312,10 +311,9 @@ flowchart TD
 
 | Env | Default | Meaning |
 |---|---|---|
-| `CRAWL_ENGINE` | `crawl4ai` (→ `native` at Phase 3) | which backend `fit_markdown` dispatches to |
-| `CRAWL_POOL_SIZE` | `2` | concurrent patchright browsers (T1) |
+| `CRAWL_POOL_SIZE` | `3` | concurrent patchright browsers (T1) |
 | `CRAWL_CHALLENGE_BUDGET_S` | `40` | max seconds spent in the CF/Akamai challenge loop per page |
-| `CRAWL_MD_MAX_CHARS` | `120000` | fit-markdown cap after trim |
+| `CRAWL_MD_MAX_CHARS` | `150000` | fit-markdown cap after trim |
 | `CRAWL_PROFILE_DIR` | `/profiles` | volume-backed warm profiles |
 | `CRAWL_HTTP_TIER` | `on` | enable/disable T0 |
 | `CRAWL_STEALTH_TIER` | `on` | enable/disable T2 (Scrapling) |

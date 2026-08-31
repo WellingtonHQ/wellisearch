@@ -37,7 +37,7 @@ One row per indexed URL. `url` is the natural primary key.
 | `url` | `text` **PK** | the indexed page |
 | `title` | `text` | from crawl, or first `#` heading of the markdown |
 | `domain` | `text` | lowercased netloc; indexed (`pages_domain_idx`) |
-| `fit_markdown` | `text` | the Crawl4AI fit-markdown body (the stored content) |
+| `fit_markdown` | `text` | the crawler's fit-markdown body (the stored content) |
 | `content_hash` | `text` | `sha256(fit_markdown)`; the `unchanged` short-circuit key |
 | `embedding_model` | `text` | model that produced the vectors; a model change invalidates them |
 | `first_seen` | `timestamptz` | set once at insert |

@@ -71,19 +71,19 @@ fresh (and therefore above the ranking freshness decay).
 `python -m wellisearch.worker --once` runs a single tick and exits (manual
 drain; it resets stuck `in_flight` rows first).
 
-## Crawl4AI (the only crawler)
+## Native crawler (the only crawling path)
 
-`crawler.fit_markdown(url)` POSTs to Crawl4AI's `/md` endpoint and returns
+`crawler.fit_markdown(url)` runs the native in-process crawler and returns
 `(title, markdown)` — the page's `<title>`/`og:title` (`None` when the page
 has none) plus clean "fit" markdown (main content, no chrome). Details:
 
-- Base URL: `CRAWL4AI_URL` (default `http://crawl4ai:11235`); auth via
-  `CRAWL4AI_API_KEY` (Bearer).
+- Engine: `crawl/` package — http → browser → stealth tiers with per-site
+  extractors (see `docs/native-crawler-design.md`).
 - Timeout: `CRAWL_TIMEOUT_S` (45 s).
-- A non-2xx or empty body raises `CrawlError` carrying an `http_<code>` /
+- A blocked/failed crawl raises `CrawlError` carrying an `http_<code>` /
   `error` status label, which becomes `last_status` and the `crawl_log`
   status. Transient codes (503/504/timeout) are the ones the queue retries.
-- `crawler.health()` backs `GET /health`'s `crawl4ai` field.
+- `crawler.health()` backs `GET /health`'s `crawler` field.
 
 ## store_page (hash → chunk → embed → upsert)
 
@@ -145,8 +145,8 @@ page never half-updates. `seq` preserves document order.
 `queue.crawl_deduped(url, trigger, fn)` wraps every direct crawl (watchlist,
 fetch, refresh, manual) with a shared in-flight set. If two requests for the
 same URL arrive concurrently (e.g. two `fetch_page`s, or a fetch racing the
-worker), the second waits for the first and reuses its result — Crawl4AI gets
-one request per URL per moment, and the result is consistent.
+worker), the second waits for the first and reuses its result — the crawler
+gets one request per URL per moment, and the result is consistent.
 
 ## Reading stored pages (fetch path)
 

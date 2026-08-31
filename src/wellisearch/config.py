@@ -31,12 +31,6 @@ class Settings(BaseSettings):
     DB_POOL_MIN_SIZE: int = 2
     DB_POOL_MAX_SIZE: int = 12
 
-    # --- crawl4ai (the single crawling path) ---
-    CRAWL4AI_URL: str = "http://crawl4ai:11235"
-    CRAWL4AI_API_KEY: str = "change-me"
-    # /health reachability check timeout (crawler.health).
-    CRAWL4AI_HEALTH_TIMEOUT_S: int = 5
-
     # --- search providers (failover pool + default order; the dashboard can
     # override the order at runtime — see provider_state.sort_order) ---
     SEARCH_PROVIDERS: str = "tavily,brave,exa,youcom"
@@ -92,6 +86,18 @@ class Settings(BaseSettings):
     CRAWL_TIMEOUT_S: int = 45
     CRAWL_MAX_PARALLEL: int = 8
     LOG_RETENTION_DAYS: int = 30  # event_log / crawl_log / search_log prune age
+
+    # --- native crawl engine (replaces the Crawl4AI path; design §6) ---
+    CRAWL_POOL_SIZE: int = 3
+    CRAWL_CHALLENGE_BUDGET_S: int = 40
+    CRAWL_MD_MAX_CHARS: int = 150000
+    CRAWL_PROFILE_DIR: str = "/profiles"
+    CRAWL_PROFILE_MAX: int = 8
+    CRAWL_HTTP_TIER: bool = True
+    CRAWL_STEALTH_TIER: bool = True
+    CRAWL_HEADLESS: bool = False
+    CRAWL_SETTLE_S: float = 2.0
+    CRAWL_STEALTH_TIMEOUT_S: int = 120
 
     # --- server ---
     BIND_PORT: int = 8780

@@ -29,7 +29,7 @@ are always open.
 
 ### `GET /health`
 Liveness + dependency probe. Returns `status` (`ok` | `degraded`), `database`,
-`crawl4ai`, and per-provider `configured`/`state`. No key required.
+`crawler`, and per-provider `configured`/`state`. No key required.
 
 ### `GET /api/search`
 The search pipeline.
@@ -71,7 +71,7 @@ By default returns the Markdown page document (`Content-Type: text/markdown`,
 no JSON envelope): a `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:`
 header plus a `Time:` line, then the page body. The `Time:` line shows the
 total ms split into `index:` (Postgres lookup) and — only when the page had to
-be crawled — `crawl:` (crawl4ai round-trip). A failed fetch returns a `URL:` /
+be crawled — `crawl:` (native-crawler round-trip). A failed fetch returns a `URL:` /
 `Status: failed` / `Error:` header (HTTP 200). Bumps the page's `fetch_count`.
 Set `format=json` (or send `Accept: application/json`) for the structured JSON
 envelope instead (`Content-Type: application/json`):

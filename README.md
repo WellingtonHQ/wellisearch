@@ -38,7 +38,7 @@ Think of it as a personal, always-learning search box for your LLM. Ask a questi
 
 ## Quick start
 
-**Requirements:** Docker, a running Postgres (with `pgvector`), and optionally API keys for Tavily / Brave (below). Crawl4AI — the crawler — is bundled and starts with the stack.
+**Requirements:** Docker, a running Postgres (with `pgvector`), and optionally API keys for Tavily / Brave (below). The crawler is native and in-process — no separate crawler service.
 
 ```bash
 # 1. Get the code
@@ -49,7 +49,7 @@ cd wellisearch
 cp .env.example .env
 #    open .env and set your Postgres password and (optionally) provider keys
 
-# 3. Build and start (also brings up the bundled Crawl4AI)
+# 3. Build and start
 docker compose up -d --build
 
 # 4. Watch it boot
@@ -136,7 +136,7 @@ All four are interchangeable — a search is answered by **one of** them, in wha
 
 ## Under the hood (for the curious)
 
-Everything above is **one process in one container**: a FastAPI app serving the REST API, the MCP server, and the dashboard, plus a background worker task. Postgres (with `pgvector`) is the single store; Crawl4AI is the single crawling path. The full reference docs live in [`docs/`](docs/README.md):
+Everything above is **one process in one container**: a FastAPI app serving the REST API, the MCP server, and the dashboard, plus a background worker task. Postgres (with `pgvector`) is the single store; the native in-process crawler is the single crawling path. The full reference docs live in [`docs/`](docs/README.md):
 
 | Document | What it covers |
 |---|---|
@@ -166,13 +166,12 @@ curl -s http://localhost:8780/health | python3 -m json.tool          # dependenc
 
 ### Configuration
 
-All knobs are environment variables in `.env` (annotated in [`.env.example`](.env.example)): Postgres, Crawl4AI, provider order/keys/timeouts/quotas, embedding model, search thresholds, fetch truncation budgets, worker pacing, and the API key. The complete reference with defaults is in [docs/deployment.md](docs/deployment.md#configuration-reference).
+All knobs are environment variables in `.env` (annotated in [`.env.example`](.env.example)): Postgres, provider order/keys/timeouts/quotas, embedding model, search thresholds, fetch truncation budgets, worker pacing, and the API key. The complete reference with defaults is in [docs/deployment.md](docs/deployment.md#configuration-reference).
 
 ### Troubleshooting
 
 - **`Source:` shows a provider you didn't expect** — check the current order (`GET /api/providers` → `order` / `order_source`, or the dashboard) and the `last_error` per provider; the gateway always fails over in the active order and captures the error chain.
 - **Search works but the index stays empty** — the worker may not be draining; check the queue depth in the dashboard, run `worker --once` manually, and read the logs.
-- **Crawl4AI 401** — the auth header is `Authorization: Bearer <CRAWL4AI_API_KEY>`; make sure it matches what the bundled crawler expects.
 - **Slow first search** — the embedding model loads on first use (pre-downloaded into the Docker image at build time).
 - **Dashboard 401** — set the API key in the header bar (stored in your browser).
 
@@ -186,7 +185,7 @@ src/wellisearch/
   tools.py          the six MCP tools
   providers/        gateway: tavily, brave, exa, youcom adapters + failover
   index.py          store_page: chunk → embed → upsert
-  crawler.py        Crawl4AI client (the single crawling path)
+  crawler.py        native crawler facade (the single crawling path)
   queue.py          crawl queue: enqueue/dedupe + worker kick
   worker.py         background worker (drain queue + watchlist refresh)
   truncation.py     fetch_pages budget strategies (smart/head/tail/even/priority)

@@ -1,36 +1,26 @@
-"""Crawl4AI REST client — the single crawling path (plan §3).
+"""Native in-process crawler facade — the single crawl path.
 
-Verified live (2026-08) against crawl4ai 0.9.2:
-  - auth header is `Authorization: Bearer <CRAWL4AI_API_KEY>`
-    (401 without; `x-api-key` is rejected)
-  - markdown endpoint: POST {CRAWL4AI_URL}/md  body {"url": "..."}
-    → {"url", "filter", "query", "cache", "markdown", "success"}
+Delegates to `crawl.engine.crawl` (policy → tier ladder → extractor → gate)
+and keeps the historical public contract: `fit_markdown(url) -> (title, md)`,
+`CrawlError`, `crawl_semaphore()`, and `health()`.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 
-import httpx
-
 from .config import get_settings
+from .crawl.engine import crawl
 
 log = logging.getLogger("wellisearch.crawler")
 
-ERROR_TEXT_MAX_LEN = 1000  # max response body kept in a crawl error message
-ERROR_DATA_MAX_LEN = 500   # max JSON payload kept in a crawl error message
-
 # Global crawl cap shared by the worker (queue drain + watchlist refresh)
 # AND the fetch/refresh request paths: at most CRAWL_MAX_PARALLEL concurrent
-# Crawl4AI calls in total (matches crawl4ai's 3 gunicorn workers). fetch_pages
-# used to fan out unbounded crawls per request, which could saturate Crawl4AI
-# and hold DB pool connections for the whole burst.
+# native crawls in total. fetch_pages used to fan out unbounded crawls per
+# request, which could saturate the crawler and hold DB pool connections
+# for the whole burst.
 _crawl_sem: asyncio.Semaphore | None = None
 
-
-# ---------------------------------------------------------------------------
-# Client
-# ---------------------------------------------------------------------------
 
 def crawl_semaphore() -> asyncio.Semaphore:
     """Process-wide crawl concurrency cap (CRAWL_MAX_PARALLEL), created lazily."""
@@ -63,53 +53,22 @@ class CrawlError(Exception):
 async def fit_markdown(url: str) -> tuple[str | None, str]:
     """Crawl one URL → (page title, clean fit-markdown). Raises CrawlError on failure.
 
-    title is the page's <title>/og:title from Crawl4AI's metadata (our fork's /md
-    returns it); None when the page has none — callers then store/keep no title.
+    title is the page's <title> captured by the engine's extractor; None when
+    the page has none — callers then store/keep no title.
     """
-    s = get_settings()
-    base = s.CRAWL4AI_URL.rstrip("/")
-    async with httpx.AsyncClient(timeout=s.CRAWL_TIMEOUT_S) as client:
-        try:
-            r = await client.post(f"{base}/md", json={"url": url}, headers=_headers())
-        except httpx.HTTPError as e:
-            raise CrawlError(url, f"network: {e}") from e
-
-    if r.status_code in (401, 403):
-        raise CrawlError(url, f"auth rejected ({r.status_code})", status=r.status_code)
-    if r.status_code >= 400:
-        raise CrawlError(url, f"crawl4ai http {r.status_code}: {r.text[:ERROR_TEXT_MAX_LEN]}", status=r.status_code)
-
-    data = r.json()
-    if not data.get("success"):
-        raise CrawlError(url, f"crawl4ai failed: {str(data)[:ERROR_DATA_MAX_LEN]}")
-    md = data.get("markdown") or ""
-    if not md.strip():
-        raise CrawlError(url, "empty markdown returned")
-    return data.get("title"), md
+    result = await crawl(url)
+    if result.md and result.md.strip():
+        return result.title, result.md
+    raise CrawlError(url, "all tiers failed or empty markdown")
 
 
 async def health() -> tuple[bool, str]:
-    """Reachability + auth check for /health."""
-    s = get_settings()
-    base = s.CRAWL4AI_URL.rstrip("/")
+    """Wired-up check for /health: the native stack imports and the primary
+    (browser) tier is registered. Fast and deterministic — no browser launch."""
     try:
-        async with httpx.AsyncClient(timeout=s.CRAWL4AI_HEALTH_TIMEOUT_S) as client:
-            r = await client.get(f"{base}/health", headers=_headers())
-            if r.status_code == 200:
-                return True, "ok"
-            return False, f"http {r.status_code}"
-    except httpx.HTTPError as e:
+        from .crawl import engine, tiers
+    except Exception as e:
         return False, str(e)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _headers() -> dict[str, str]:
-    """Crawl4AI request headers (Bearer auth when CRAWL4AI_API_KEY is set)."""
-    h = {"Content-Type": "application/json"}
-    key = get_settings().CRAWL4AI_API_KEY
-    if key:
-        h["Authorization"] = f"Bearer {key}"
-    return h
+    if tiers.by_name("browser") is None:
+        return False, "browser tier not registered"
+    return True, "ok"
