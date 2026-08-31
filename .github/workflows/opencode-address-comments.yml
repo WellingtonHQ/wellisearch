@@ -20,7 +20,6 @@ jobs:
       )
     runs-on: self-hosted
     permissions:
-      id-token: write
       contents: write
       pull-requests: write
       issues: write
@@ -83,19 +82,40 @@ jobs:
         with:
           preferred-model: qwen/qwen3.8-27b
 
-      - name: Run opencode
+      - name: Write triggering comment
+        shell: bash
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          printf '%s' "$COMMENT_BODY" > triggering_comment.txt
+
+      - name: Run opencode (local) and post reply
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
           MODEL: ${{ steps.lmstudio.outputs.model }}
-          USE_GITHUB_TOKEN: "true"
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          OPENCODE_AUTO_SHARE: "false"
           PROMPT: |
+            You are responding to a comment on a GitHub pull request. The PR/issue number is in the PR_NUMBER environment variable.
+            You have the `gh` CLI and GITHUB_TOKEN available.
+
+            Read the triggering comment from the file `triggering_comment.txt` in the current directory.
+
             Before pushing any changes, fetch and rebase from origin just before pushing to avoid diverged history conflicts.
-            Read this pull request comment and implement the suggestion in the codebase.
+            Read the comment and implement the suggestion in the codebase.
             Test and verify changes to make sure they compile and work as expected.
-            If no changes are currently pending, do not post a new comment.
-            If the comment is not a suggestion or is a question, respond to the thread and give your response or explanation. Do not make code changes unless told to do so.
-        run: ~/.opencode/bin/opencode github run
+            If you make code changes, commit and push them to the current branch.
+            If the comment is not a suggestion or is a question, write your response or explanation to a file named `reply.md` in the current directory (it will be posted to the PR). Do not make code changes unless told to do so.
+            If no changes are currently pending and there is nothing to reply, do not create reply.md.
+        run: |
+          set -euo pipefail
+          ~/.opencode/bin/opencode run -m "$MODEL" "$PROMPT"
+          if [ -f reply.md ]; then
+            gh pr comment "$PR_NUMBER" --body-file reply.md
+          else
+            echo "No reply to post."
+          fi
 
       - name: Cleanup Comments
         uses: ./.github/actions/cleanup-comments
