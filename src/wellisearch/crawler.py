@@ -18,7 +18,7 @@ from .config import get_settings
 log = logging.getLogger("wellisearch.crawler")
 
 ERROR_TEXT_MAX_LEN = 1000  # max response body kept in a crawl error message
-ERROR_DATA_MAX_LEN = 200   # max JSON payload kept in a crawl error message
+ERROR_DATA_MAX_LEN = 500   # max JSON payload kept in a crawl error message
 
 # Global crawl cap shared by the worker (queue drain + watchlist refresh)
 # AND the fetch/refresh request paths: at most CRAWL_MAX_PARALLEL concurrent
