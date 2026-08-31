@@ -71,7 +71,46 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
 )
 
 
-# ----------------------------------------------------------------------- runtime
+# ---------------------------------------------------------------------------
+# Public
+# ---------------------------------------------------------------------------
+
+
+def mcp_asgi() -> _MCPMount:
+    """Stateless streamable HTTP ASGI app: /mcp/http.
+
+    Mount at "/mcp" (§7); the auth middleware's startswith("/mcp") prefix
+    covers the endpoint. The returned app is stable across lifespan
+    restarts — it resolves the active session manager per request.
+    """
+    return _MOUNT
+
+
+@asynccontextmanager
+async def mcp_http_lifespan() -> AsyncIterator[None]:
+    """Hold the streamable-HTTP session manager's task group for app lifetime.
+
+    Starlette does not run lifespans of mounted sub-apps, and without an
+    entered task group the first POST to /mcp/http 500s with
+    "Task group is not initialized. Make sure to use run()".
+
+    A fresh MCPServer is built per entry: the SDK's `run()` is one-shot per
+    instance (a second entry raises RuntimeError), so reusing an import-time
+    server would crash any second lifespan start in the same process
+    (uvicorn --reload, a second TestClient, an in-process restart).
+    """
+    runtime = _build_runtime()
+    _MOUNT.set_runtime(runtime)
+    try:
+        async with runtime.server.session_manager.run():
+            yield
+    finally:
+        _MOUNT.set_runtime(None)
+
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
 
 
 class _Runtime:
@@ -79,7 +118,12 @@ class _Runtime:
 
     __slots__ = ("app", "server")
 
-    def __init__(self, server: MCPServer, app: Starlette) -> None:
+    def __init__(
+        self,
+        server: MCPServer,
+        app: Starlette,
+    ) -> None:
+        """Bind the MCPServer and its Starlette app."""
         self.server = server
         self.app = app
 
@@ -124,12 +168,20 @@ class _MCPMount:
     """
 
     def __init__(self) -> None:
+        """Starts with no active runtime (requests 503 until the lifespan sets one)."""
         self._runtime: _Runtime | None = None
 
     def set_runtime(self, runtime: _Runtime | None) -> None:
+        """Track the active runtime (None on lifespan exit)."""
         self._runtime = runtime
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        """Dispatch the ASGI request to the active runtime's app, or 503 if none."""
         runtime = self._runtime
         if runtime is None:
             await _respond_not_started(scope, send)
@@ -138,38 +190,3 @@ class _MCPMount:
 
 
 _MOUNT = _MCPMount()
-
-
-# ------------------------------------------------------------------------ public
-
-
-def mcp_asgi() -> _MCPMount:
-    """Stateless streamable HTTP ASGI app: /mcp/http.
-
-    Mount at "/mcp" (§7); the auth middleware's startswith("/mcp") prefix
-    covers the endpoint. The returned app is stable across lifespan
-    restarts — it resolves the active session manager per request.
-    """
-    return _MOUNT
-
-
-@asynccontextmanager
-async def mcp_http_lifespan() -> AsyncIterator[None]:
-    """Hold the streamable-HTTP session manager's task group for app lifetime.
-
-    Starlette does not run lifespans of mounted sub-apps, and without an
-    entered task group the first POST to /mcp/http 500s with
-    "Task group is not initialized. Make sure to use run()".
-
-    A fresh MCPServer is built per entry: the SDK's `run()` is one-shot per
-    instance (a second entry raises RuntimeError), so reusing an import-time
-    server would crash any second lifespan start in the same process
-    (uvicorn --reload, a second TestClient, an in-process restart).
-    """
-    runtime = _build_runtime()
-    _MOUNT.set_runtime(runtime)
-    try:
-        async with runtime.server.session_manager.run():
-            yield
-    finally:
-        _MOUNT.set_runtime(None)

@@ -17,11 +17,32 @@ import logging
 
 from .config import get_settings
 from .db import db
-from .index import store_page
 from .embed import model_name
+from .index import store_page
+
+log = logging.getLogger("wellisearch.reindex")
+
+PROGRESS_INTERVAL = 10  # print progress every N pages
+
+
+def main() -> None:
+    """CLI entry point: parse args and run the re-embed."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--force", action="store_true", help="re-embed every page, even if fresh")
+    ap.add_argument("--dry-run", action="store_true", help="report what would be re-embedded")
+    args = ap.parse_args()
+    asyncio.run(_run(force=args.force, dry_run=args.dry_run))
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 async def _run(force: bool, dry_run: bool) -> None:
+    """Find pages needing (re)embedding (all when --force) and re-chunk +
+    re-embed each, reporting progress."""
     s = get_settings()
     await db.startup()
     try:
@@ -49,27 +70,18 @@ async def _run(force: bool, dry_run: bool) -> None:
                 status, chunks = await store_page(url, p["fit_markdown"], title=p["title"])
             except Exception as e:
                 failed += 1
-                logging.getLogger("wellisearch.reindex").error("reindex %s failed: %s", url, e)
+                log.warning("reindex %s failed: %s", url, e)
                 continue
             if status == "unchanged":
                 unchanged += 1
             else:
                 ok += 1
-            if i % 10 == 0 or i == len(stale):
+            if i % PROGRESS_INTERVAL == 0 or i == len(stale):
                 print(f"  {i}/{len(stale)} (ok={ok} unchanged={unchanged} failed={failed})")
 
         print(f"done: ok={ok} unchanged={unchanged} failed={failed}")
     finally:
         await db.close()
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--force", action="store_true", help="re-embed every page, even if fresh")
-    ap.add_argument("--dry-run", action="store_true", help="report what would be re-embedded")
-    args = ap.parse_args()
-    asyncio.run(_run(force=args.force, dry_run=args.dry_run))
 
 
 if __name__ == "__main__":

@@ -33,19 +33,43 @@ def model_name() -> str:
     return name
 
 
+def embed(texts: list[str]) -> list[list[float]]:
+    """Embed a batch of texts (documents or queries)."""
+    if not texts:
+        return []
+    m = _get_model()
+    return [list(v) for v in m.embed(list(texts))]
+
+
+def embed_one(text: str) -> list[float]:
+    """Embed a single text and return its vector."""
+    return embed([text])[0]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 def _cache_dir() -> str:
+    """fastembed's model cache dir (FASTEMBED_CACHE_DIR, or ~/.cache/fastembed)."""
     return os.environ.get("FASTEMBED_CACHE_DIR") or str(pathlib.Path.home() / ".cache" / "fastembed")
 
 
 def _get_model() -> Any:
+    """Load the fastembed model once (thread-safe) and verify its dimension
+    matches EMBED_DIMS."""
     global _model
     with _lock:
         if _model is None:
             from fastembed import TextEmbedding
 
             s = get_settings()
-            log.info("loading embedding model %s (threads=%s, first use may download ~90 MB)…",
-                     model_name(), s.EMBED_THREADS)
+            log.info(
+                "loading embedding model %s (threads=%s, first use may download ~90 MB)…",
+                model_name(),
+                s.EMBED_THREADS
+            )
             _model = TextEmbedding(
                 model_name=model_name(),
                 cache_dir=_cache_dir(),
@@ -59,15 +83,3 @@ def _get_model() -> Any:
                 )
             log.info("embedding model ready (dim=%d)", dim)
     return _model
-
-
-def embed(texts: list[str]) -> list[list[float]]:
-    """Embed a batch of texts (documents or queries)."""
-    if not texts:
-        return []
-    m = _get_model()
-    return [list(v) for v in m.embed(list(texts))]
-
-
-def embed_one(text: str) -> list[float]:
-    return embed([text])[0]

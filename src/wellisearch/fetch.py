@@ -33,6 +33,9 @@ from .worker import crawl_url
 
 log = logging.getLogger("wellisearch.fetch")
 
+TITLE_MAX_LEN = 120  # max chars kept when deriving a title from the first line
+ERROR_MAX_LEN = 300  # max chars kept in a per-URL fetch error message
+
 _OMITTED = object()  # sentinel: "parameter not provided"
 
 
@@ -123,69 +126,12 @@ def render_fetch_pages_markdown(out: dict) -> str:
     return "\n\n".join(["\n".join(lines), "\n\n".join(sections)])
 
 
-def _valid_url(url: str) -> bool:
-    try:
-        p = urlparse(url)
-        return p.scheme in ("http", "https") and bool(p.netloc)
-    except Exception:
-        return False
-
-
-def _title_from_markdown(md: str) -> str | None:
-    m = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
-    if m:
-        return m.group(1).strip()
-    for line in md.splitlines():
-        line = line.strip()
-        if line:
-            return line[:120]
-    return None
-
-
-async def _resolve_page(url: str) -> dict:
-    """Content for one URL: from index when present, else crawl on demand.
-
-    Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
-    (the crawl4ai round-trip + store) so callers can report the timing split.
-    """
-    t_index = time.monotonic()
-    page = await db.page_get(url)
-    index_ms = int((time.monotonic() - t_index) * 1000)
-    if page and not page.get("disabled") and page.get("fit_markdown"):
-        return {
-            "url": url,
-            "title": page.get("title") or _title_from_markdown(page["fit_markdown"]) or url,
-            "content": page["fit_markdown"],
-            "from_index": True,
-            "fetch_count": page.get("fetch_count") or 0,
-            "index_ms": index_ms,
-            "crawl_ms": 0,
-        }
-
-    # crawl on demand (in-flight-deduped inside crawl_url)
-    t_crawl = time.monotonic()
-    r = await crawl_url(url, trigger="fetch")
-    page = await db.page_get(url)
-    crawl_ms = int((time.monotonic() - t_crawl) * 1000)
-    md = (page or {}).get("fit_markdown") or ""
-    if not md:
-        raise RuntimeError(f"crawl succeeded but no content stored for {url}")
-    return {
-        "url": url,
-        "title": (page or {}).get("title") or _title_from_markdown(md) or url,
-        "content": md,
-        "from_index": False,
-        "fetch_count": (page or {}).get("fetch_count") or 0,
-        "index_ms": index_ms,
-        "crawl_ms": crawl_ms,
-    }
-
-
 async def fetch_page(url: str, max_chars: int | None = None) -> dict:
     """Single-URL read: stored or crawled-on-demand, fetch_count bumped."""
     t_start = time.monotonic()
 
     def _timing(**extra: int) -> dict:
+        """Timing dict: elapsed ms since the call started, plus any extras."""
         t: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
         t.update(extra)
         return t
@@ -237,21 +183,13 @@ async def fetch_pages(
     t_start = time.monotonic()
 
     def _timing(**extra: int) -> dict:
+        """Timing dict: elapsed ms since the call started, plus any extras."""
         t: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
         t.update(extra)
         return t
 
     # --- validate + dedupe (preserve first-seen order)
-    seen: set[str] = set()
-    clean: list[str] = []
-    bad: list[dict] = []
-    for u in urls or []:
-        if not isinstance(u, str) or not _valid_url(u):
-            bad.append({"url": str(u), "error": "invalid or non-http(s) url"})
-            continue
-        if u not in seen:
-            seen.add(u)
-            clean.append(u)
+    clean, bad = _validate_urls(urls)
 
     if not clean:
         return {
@@ -283,17 +221,7 @@ async def fetch_pages(
         per_page = per_page_chars if per_page_chars and per_page_chars > 0 else None
 
     # --- resolve all pages in parallel (in-flight-deduped)
-    resolved: list[dict] = []
-    failed: list[dict] = []
-
-    async def _one(u: str) -> None:
-        try:
-            resolved.append(await _resolve_page(u))
-        except Exception as e:
-            log.warning("fetch_pages: %s failed: %s", u, e)
-            failed.append({"url": u, "error": str(e)[:300]})
-
-    await asyncio.gather(*(_one(u) for u in clean))
+    resolved, failed = await _resolve_all(clean)
     if not resolved:
         return {
             "ok": False,
@@ -307,6 +235,136 @@ async def fetch_pages(
         await db.bump_fetch_count(p["url"])
 
     # --- allocate the budget per strategy
+    pages_out, total_chars, any_truncated = _allocate_pages(resolved, strat, budget, per_page)
+
+    # Pages resolved in parallel, so each leg is the critical path (max), not
+    # the sum. Legs are per-leg critical paths: when different pages dominate
+    # different legs the sum of the legs can approach or slightly exceed the
+    # total (each leg individually still does not).
+    index_ms = max(p.get("index_ms", 0) for p in resolved)
+    crawl_ms = max(p.get("crawl_ms", 0) for p in resolved)
+    timing = _timing(index_ms=index_ms)
+    if crawl_ms:
+        timing["crawl_ms"] = crawl_ms
+
+    return {
+        "ok": True,
+        "pages_fetched": len(resolved),
+        "truncated": any_truncated,
+        "total_chars": total_chars,
+        "strategy": strat,
+        "budget": budget,
+        "pages": pages_out + failed + bad,
+        "timing": timing,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _valid_url(url: str) -> bool:
+    """True when the URL is http(s) with a host."""
+    try:
+        p = urlparse(url)
+        return p.scheme in ("http", "https") and bool(p.netloc)
+    except Exception:
+        return False
+
+
+def _title_from_markdown(md: str) -> str | None:
+    """First H1, else the first non-empty line (120 chars), else None."""
+    m = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
+    if m:
+        return m.group(1).strip()
+    for line in md.splitlines():
+        line = line.strip()
+        if line:
+            return line[:TITLE_MAX_LEN]
+    return None
+
+
+async def _resolve_page(url: str) -> dict:
+    """Content for one URL: from index when present, else crawl on demand.
+
+    Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
+    (the crawl4ai round-trip + store) so callers can report the timing split.
+    """
+    t_index = time.monotonic()
+    page = await db.page_get(url)
+    index_ms = int((time.monotonic() - t_index) * 1000)
+    if page and not page.get("disabled") and page.get("fit_markdown"):
+        return {
+            "url": url,
+            "title": page.get("title") or _title_from_markdown(page["fit_markdown"]) or url,
+            "content": page["fit_markdown"],
+            "from_index": True,
+            "fetch_count": page.get("fetch_count") or 0,
+            "index_ms": index_ms,
+            "crawl_ms": 0,
+        }
+
+    # crawl on demand (in-flight-deduped inside crawl_url)
+    t_crawl = time.monotonic()
+    r = await crawl_url(url, trigger="fetch")
+    page = await db.page_get(url)
+    crawl_ms = int((time.monotonic() - t_crawl) * 1000)
+    md = (page or {}).get("fit_markdown") or ""
+    if not md:
+        raise RuntimeError(f"crawl succeeded but no content stored for {url}")
+    return {
+        "url": url,
+        "title": (page or {}).get("title") or _title_from_markdown(md) or url,
+        "content": md,
+        "from_index": False,
+        "fetch_count": (page or {}).get("fetch_count") or 0,
+        "index_ms": index_ms,
+        "crawl_ms": crawl_ms,
+    }
+
+
+def _validate_urls(urls: list[str]) -> tuple[list[str], list[dict]]:
+    """Validate + dedupe (preserve first-seen order). Returns (clean, bad)."""
+    seen: set[str] = set()
+    clean: list[str] = []
+    bad: list[dict] = []
+    for u in urls or []:
+        if not isinstance(u, str) or not _valid_url(u):
+            bad.append({"url": str(u), "error": "invalid or non-http(s) url"})
+            continue
+        if u not in seen:
+            seen.add(u)
+            clean.append(u)
+    return clean, bad
+
+
+async def _resolve_all(urls: list[str]) -> tuple[list[dict], list[dict]]:
+    """Resolve every URL in parallel (in-flight-deduped).
+    Returns (resolved, failed)."""
+    resolved: list[dict] = []
+    failed: list[dict] = []
+
+    async def _one(u: str) -> None:
+        """Resolve one URL, routing it to resolved or failed."""
+        try:
+            resolved.append(await _resolve_page(u))
+        except Exception as e:
+            log.warning("fetch_pages: %s failed: %s", u, e)
+            failed.append({"url": u, "error": str(e)[:ERROR_MAX_LEN]})
+
+    await asyncio.gather(*(_one(u) for u in urls))
+    return resolved, failed
+
+
+def _allocate_pages(
+    resolved: list[dict],
+    strat: str,
+    budget: int | None,
+    per_page: int | None,
+) -> tuple[list[dict], int, bool]:
+    """Allocate the shared char budget per strategy and assemble the page
+    dicts. Returns (pages_out, total_chars, any_truncated)."""
     lens = [len(p["content"]) for p in resolved]
     weights = [p["fetch_count"] for p in resolved]
     budgets = allocate_budgets(strat, lens, weights, budget, per_page)
@@ -331,24 +389,4 @@ async def fetch_pages(
             "omitted": omitted if truncated else 0,
             "from_index": p["from_index"],
         })
-
-    # Pages resolved in parallel, so each leg is the critical path (max), not
-    # the sum. Legs are per-leg critical paths: when different pages dominate
-    # different legs the sum of the legs can approach or slightly exceed the
-    # total (each leg individually still does not).
-    index_ms = max(p.get("index_ms", 0) for p in resolved)
-    crawl_ms = max(p.get("crawl_ms", 0) for p in resolved)
-    timing = _timing(index_ms=index_ms)
-    if crawl_ms:
-        timing["crawl_ms"] = crawl_ms
-
-    return {
-        "ok": True,
-        "pages_fetched": len(resolved),
-        "truncated": any_truncated,
-        "total_chars": total_chars,
-        "strategy": strat,
-        "budget": budget,
-        "pages": pages_out + failed + bad,
-        "timing": timing,
-    }
+    return pages_out, total_chars, any_truncated

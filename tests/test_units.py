@@ -1,8 +1,10 @@
 """Unit tests: chunker + truncation + renderers (pure logic, no DB)."""
+from __future__ import annotations
+
 from wellisearch.chunk import chunk_markdown
 from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_markdown
-from wellisearch.serialize import format_timing
 from wellisearch.search_web import render_search_markdown
+from wellisearch.serialize import format_timing
 from wellisearch.truncation import (
     allocate_budgets,
     boundary_cut_head,
@@ -10,7 +12,9 @@ from wellisearch.truncation import (
     truncate_page,
 )
 
-# --- chunker ---------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Chunker
+# ---------------------------------------------------------------------------
 md = "Intro paragraph. " * 100
 md += "\n\n# Section One\n" + "text " * 300
 md += "\n\n" + "```python\n" + "x = 1\n" * 200 + "```\n"
@@ -24,7 +28,9 @@ for c in chunks:
 print("chunks:", len(chunks))
 print("OK chunker")
 
-# --- boundary cuts ----------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Boundary Cuts
+# ---------------------------------------------------------------------------
 t = "word " * 5000
 h = boundary_cut_head(t, 1000)
 assert len(h) <= 1000
@@ -38,7 +44,9 @@ h3 = boundary_cut_head(t2, 7)  # tiny budget must not crash
 assert len(h3) <= 7
 print("OK boundary cuts")
 
-# --- allocation -------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Allocation
+# ---------------------------------------------------------------------------
 b = allocate_budgets("even", [1000, 2000, 3000], [0, 0, 0], 6000, None)
 # even split = 2000 each, clamped to page length (page 1 only has 1000)
 assert b == [1000, 2000, 2000], b
@@ -58,7 +66,9 @@ b = allocate_budgets("smart", [100, 100], [5, 1], 1000, None)
 assert b == [100, 100], b  # budget bigger than content: no truncation
 print("OK allocation")
 
-# --- per-page trim ----------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Per-Page Trim
+# ---------------------------------------------------------------------------
 text, trunc = truncate_page("x" * 100, 50, "head")
 assert trunc and len(text) <= 50
 text, trunc = truncate_page("x" * 100, 50, "tail")
@@ -67,7 +77,9 @@ text, trunc = truncate_page("x" * 100, 500, "head")
 assert not trunc and text == "x" * 100
 print("OK per-page trim")
 
-# --- timing header (feature: response timing) ------------------------------
+# ---------------------------------------------------------------------------
+# Timing Header (feature: response timing)
+# ---------------------------------------------------------------------------
 # format_timing: None/empty -> no line
 assert format_timing(None) is None
 assert format_timing({}) is None
@@ -122,7 +134,15 @@ out = {"ok": False, "url": "https://x.com/bad", "error": "boom", "timing": {"tot
 md = render_fetch_page_markdown(out)
 assert "Status: failed" in md and "Time: 30 ms" in md, md
 # fetch_page renderer: no timing -> no Time line
-out = {"ok": True, "url": "u", "title": "t", "markdown": "m", "chars": 1, "truncated": False, "from_index": True}
+out = {
+    "ok": True,
+    "url": "u",
+    "title": "t",
+    "markdown": "m",
+    "chars": 1,
+    "truncated": False,
+    "from_index": True,
+}
 md = render_fetch_page_markdown(out)
 assert "Time:" not in md, md
 print("OK render_fetch_page_markdown timing")
@@ -131,7 +151,16 @@ print("OK render_fetch_page_markdown timing")
 out = {
     "ok": True, "pages_fetched": 1, "truncated": False, "total_chars": 10,
     "strategy": "smart", "budget": None,
-    "pages": [{"url": "https://x.com/a", "title": "A", "content": "body", "chars": 4, "truncated": False, "from_index": True}],
+    "pages": [
+        {
+            "url": "https://x.com/a",
+            "title": "A",
+            "content": "body",
+            "chars": 4,
+            "truncated": False,
+            "from_index": True,
+        },
+    ],
     "timing": {"total_ms": 500, "index_ms": 20, "crawl_ms": 450},
 }
 md = render_fetch_pages_markdown(out)
@@ -143,12 +172,23 @@ assert "Status: failed" in md and "Time: 5 ms" in md, md
 # fetch_pages renderer: no timing -> no Time line
 out = {"ok": True, "pages_fetched": 1, "truncated": False, "total_chars": 10,
        "strategy": "smart", "budget": None,
-       "pages": [{"url": "u", "title": "t", "content": "c", "chars": 1, "truncated": False, "from_index": True}]}
+       "pages": [
+           {
+               "url": "u",
+               "title": "t",
+               "content": "c",
+               "chars": 1,
+               "truncated": False,
+               "from_index": True,
+           }
+       ]}
 md = render_fetch_pages_markdown(out)
 assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")
 
-# --- version single-source-of-truth ----------------------------------------
+# ---------------------------------------------------------------------------
+# Version Single-Source-Of-Truth
+# ---------------------------------------------------------------------------
 # installed package metadata (pyproject, via hatch) must equal the source
 # of truth (wellisearch.__version__). Skipped for source-tree dev runs where
 # the package is not installed.

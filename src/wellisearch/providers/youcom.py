@@ -13,14 +13,22 @@ from .base import Provider, ProviderError, Result
 
 
 class YouCom(Provider):
+    """You.com Search API adapter (web-scale search endpoint)."""
     name = "youcom"
     ENDPOINT = "https://api.you.com/v1/search"
 
     @property
     def configured(self) -> bool:
+        """True when YOUCOM_API_KEY is set."""
         return bool(self.s.YOUCOM_API_KEY)
 
-    async def search(self, query: str, num: int) -> list[Result]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> list[Result]:
+        """Run a web search and return canonical Results; auth/quota/HTTP
+        failures raise ProviderError."""
         headers = {"X-API-Key": self.s.YOUCOM_API_KEY}
         body = {"query": query, "count": max(1, num)}
         try:

@@ -39,20 +39,12 @@ def format_timing(timing: dict | None) -> str | None:
     if not timing:
         return None
     total = timing.get("total_ms", 0)
-    parts = [f"{key[:-3]}: {timing[key]} ms" for key in ("index_ms", "provider_ms", "crawl_ms") if key in timing]
+    parts = [
+        f"{key[:-3]}: {timing[key]} ms" for key in ("index_ms", "provider_ms", "crawl_ms") if key in timing
+    ]
     if parts:
         return f"Time: {total} ms ({', '.join(parts)})"
     return f"Time: {total} ms"
-
-
-def _json_default(o: Any) -> Any:
-    if isinstance(o, (dt.datetime, dt.date, dt.time)):
-        return o.isoformat()
-    if isinstance(o, decimal.Decimal):
-        return float(o)
-    if isinstance(o, set):
-        return sorted(o)
-    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
 
 def to_json(obj: Any) -> str:
@@ -85,3 +77,20 @@ def resolve_format(format_param: str | None, accept_header: str | None = None) -
         if "application/json" in accept and "markdown" not in accept:
             return "json"
     return "markdown"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _json_default(o: Any) -> Any:
+    """json.dumps fallback for Postgres types: datetime/date/time → ISO
+    string, Decimal → float, set → sorted list."""
+    if isinstance(o, (dt.datetime, dt.date, dt.time)):
+        return o.isoformat()
+    if isinstance(o, decimal.Decimal):
+        return float(o)
+    if isinstance(o, set):
+        return sorted(o)
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")

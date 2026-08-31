@@ -11,22 +11,32 @@ import httpx
 
 from .base import Provider, ProviderError, Result
 
+EXA_MAX_CHARS = 800  # max page-text chars requested per result (snippet source)
+
 
 class Exa(Provider):
+    """EXA Search API adapter (semantic search endpoint)."""
     name = "exa"
     ENDPOINT = "https://api.exa.ai/search"
 
     @property
     def configured(self) -> bool:
+        """True when EXA_API_KEY is set."""
         return bool(self.s.EXA_API_KEY)
 
-    async def search(self, query: str, num: int) -> list[Result]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> list[Result]:
+        """Run a semantic search and return canonical Results; auth/quota/HTTP
+        failures raise ProviderError."""
         headers = {"x-api-key": self.s.EXA_API_KEY}
         body = {
             "query": query,
             "numResults": max(1, num),
             # ask for page text so we have a snippet; base.snippet() trims it
-            "contents": {"text": True, "maxChars": 800},
+            "contents": {"text": True, "maxChars": EXA_MAX_CHARS},
         }
         try:
             r = await self.client.post(self.ENDPOINT, json=body, headers=headers)

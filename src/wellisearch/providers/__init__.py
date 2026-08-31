@@ -26,6 +26,10 @@ from .youcom import YouCom
 
 log = logging.getLogger("wellisearch.providers")
 
+ERROR_MAX_LEN = 300        # max chars kept in a provider error message
+CRASH_REPR_MAX_LEN = 1000   # max chars kept in a crash repr (provider_state)
+CRASH_ERROR_MAX_LEN = 200  # max chars kept in a crash error (error chain)
+
 REGISTRY: dict[str, type[Provider]] = {
     "tavily": Tavily,
     "brave": Brave,
@@ -38,13 +42,18 @@ class GatewayExhausted(Exception):
     """All providers failed. Carries the per-provider error chain."""
 
     def __init__(self, errors: list[dict]) -> None:
+        """Keep the per-provider error chain and summarize it as the message."""
         self.errors = errors
         summary = "; ".join(f"{e['provider']}: {e['error']}" for e in errors) or "no providers configured"
         super().__init__(summary)
 
 
 class Gateway:
+    """The ordered failover pool of configured providers, sharing one HTTP client."""
+
     def __init__(self) -> None:
+        """Build the provider pool from SEARCH_PROVIDERS (skipping unknown
+        names) and open the shared HTTP client."""
         self.s = get_settings()
         self._client = httpx.AsyncClient(timeout=self.s.PROVIDER_TIMEOUT_S)
         self._by_name: dict[str, Provider] = {}
@@ -87,16 +96,26 @@ class Gateway:
             return list(self._env_order), "env"
         return [n for n in order if n in self._by_name] or list(self._env_order), "runtime"
 
-    async def _ev(self, message: str, info: dict | None = None) -> None:
+    async def _ev(
+        self,
+        message: str,
+        info: dict | None = None,
+    ) -> None:
         """Best-effort event logging (dashboard log view)."""
         try:
             await db.log_event(message, info)
         except Exception as e:
             log.warning("event logging failed: %s", e)
 
-    # ------------------------------------------------------------ queries
+    # ---------------------------------------------------------------------------
+    # Queries
+    # ---------------------------------------------------------------------------
 
-    async def search(self, query: str, num: int) -> tuple[list[Result], str, list[dict]]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> tuple[list[Result], str, list[dict]]:
         """Try providers in the current failover order (see ordered_providers).
 
         Returns (results, provider_name, error_chain).
@@ -115,13 +134,13 @@ class Gateway:
                 log.warning("provider %s failed: %s", p.name, e)
                 await db.set_provider_state(p.name, last_error=str(e))
                 errors.append({"provider": p.name, "error": str(e), "status": e.status})
-                await self._ev(f"provider {p.name} failed", {"error": str(e)[:300], "status": e.status})
+                await self._ev(f"provider {p.name} failed", {"error": str(e)[:ERROR_MAX_LEN], "status": e.status})
                 continue
             except Exception as e:  # defensive: never leak a provider bug to the LLM
                 log.exception("provider %s crashed", p.name)
-                await db.set_provider_state(p.name, last_error=f"crash: {e!r}"[:500])
-                errors.append({"provider": p.name, "error": f"crash: {e!r}"[:200]})
-                await self._ev(f"provider {p.name} crashed", {"error": repr(e)[:300]})
+                await db.set_provider_state(p.name, last_error=f"crash: {e!r}"[:CRASH_REPR_MAX_LEN])
+                errors.append({"provider": p.name, "error": f"crash: {e!r}"[:CRASH_ERROR_MAX_LEN]})
+                await self._ev(f"provider {p.name} crashed", {"error": repr(e)[:ERROR_MAX_LEN]})
                 continue
 
             ms = int((time.monotonic() - t0) * 1000)
@@ -145,7 +164,13 @@ class Gateway:
         await self._ev("search failed — all providers exhausted", {"query": query[:200], "errors": errors})
         raise GatewayExhausted(errors)
 
-    async def _provider_available(self, p: Provider, errors: list[dict]) -> bool:
+    async def _provider_available(
+        self,
+        p: Provider,
+        errors: list[dict],
+    ) -> bool:
+        """Failover gate: enabled, configured, and not quota-exhausted; the
+        skip reason is recorded in errors."""
         state = await db.get_provider_state(p.name)
         if state and not state["enabled"]:
             errors.append({"provider": p.name, "error": "disabled (runtime toggle)"})
@@ -162,6 +187,7 @@ class Gateway:
         return True
 
     async def close(self) -> None:
+        """Close the shared HTTP client."""
         await self._client.aclose()
 
 
@@ -169,6 +195,7 @@ _gateway: Gateway | None = None
 
 
 def get_gateway() -> Gateway:
+    """Process-wide Gateway singleton, created lazily."""
     global _gateway
     if _gateway is None:
         _gateway = Gateway()
@@ -176,6 +203,7 @@ def get_gateway() -> Gateway:
 
 
 async def shutdown_gateway() -> None:
+    """Close the gateway (if any) and clear the singleton."""
     global _gateway
     if _gateway is not None:
         await _gateway.close()

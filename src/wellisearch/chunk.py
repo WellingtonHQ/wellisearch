@@ -15,16 +15,19 @@ import re
 
 CHARS_PER_TOKEN = 4
 _MIN_CHUNK_TOKENS = 50
+STUB_MERGE_DIVISOR = 5  # trailing stub below budget//5 merges into the previous chunk
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 
-def _tokens(text: str) -> int:
-    return max(1, len(text) // CHARS_PER_TOKEN)
-
-
 def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
+    """Split markdown into ~``max_tokens``-token chunks, heading-aware.
+
+    Chunks start at heading boundaries and never split inside a fenced code
+    block or a table row; a small trailing stub is merged into the previous
+    chunk.
+    """
     if not markdown or not markdown.strip():
         return []
 
@@ -38,6 +41,8 @@ def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
     fence_marker = ""
 
     def flush() -> None:
+        """Append the accumulated lines as one chunk (if any) and reset the
+        accumulator."""
         nonlocal current, current_tokens
         if current:
             text = "\n".join(current).strip()
@@ -92,8 +97,18 @@ def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
     # merge a small trailing stub into the previous chunk
     if len(chunks) >= 2:
         last_tokens = _tokens(chunks[-1])
-        if last_tokens < max(_MIN_CHUNK_TOKENS, budget // 5):
+        if last_tokens < max(_MIN_CHUNK_TOKENS, budget // STUB_MERGE_DIVISOR):
             chunks[-2] = chunks[-2] + "\n\n" + chunks[-1]
             chunks.pop()
 
     return chunks
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token, minimum 1."""
+    return max(1, len(text) // CHARS_PER_TOKEN)

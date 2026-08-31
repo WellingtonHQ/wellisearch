@@ -17,6 +17,9 @@ from .config import get_settings
 
 log = logging.getLogger("wellisearch.crawler")
 
+ERROR_TEXT_MAX_LEN = 1000  # max response body kept in a crawl error message
+ERROR_DATA_MAX_LEN = 500   # max JSON payload kept in a crawl error message
+
 # Global crawl cap shared by the worker (queue drain + watchlist refresh)
 # AND the fetch/refresh request paths: at most CRAWL_MAX_PARALLEL concurrent
 # Crawl4AI calls in total (matches crawl4ai's 3 gunicorn workers). fetch_pages
@@ -25,7 +28,12 @@ log = logging.getLogger("wellisearch.crawler")
 _crawl_sem: asyncio.Semaphore | None = None
 
 
+# ---------------------------------------------------------------------------
+# Client
+# ---------------------------------------------------------------------------
+
 def crawl_semaphore() -> asyncio.Semaphore:
+    """Process-wide crawl concurrency cap (CRAWL_MAX_PARALLEL), created lazily."""
     global _crawl_sem
     if _crawl_sem is None:
         _crawl_sem = asyncio.Semaphore(get_settings().CRAWL_MAX_PARALLEL)
@@ -33,22 +41,23 @@ def crawl_semaphore() -> asyncio.Semaphore:
 
 
 class CrawlError(Exception):
-    def __init__(self, url: str, message: str, status: int | None = None) -> None:
+    """A failed crawl, carrying the URL, message, and optional HTTP status."""
+
+    def __init__(
+        self,
+        url: str,
+        message: str,
+        status: int | None = None,
+    ) -> None:
+        """Keep the URL, message, and optional HTTP status on the failure."""
         super().__init__(f"{url}: {message}")
         self.url = url
         self.message = message
         self.status = status
 
     def status_label(self) -> str:
+        """Short status for logs: ``http_<status>`` when present, else ``error``."""
         return f"http_{self.status}" if self.status else "error"
-
-
-def _headers() -> dict[str, str]:
-    h = {"Content-Type": "application/json"}
-    key = get_settings().CRAWL4AI_API_KEY
-    if key:
-        h["Authorization"] = f"Bearer {key}"
-    return h
 
 
 async def fit_markdown(url: str) -> tuple[str | None, str]:
@@ -68,11 +77,11 @@ async def fit_markdown(url: str) -> tuple[str | None, str]:
     if r.status_code in (401, 403):
         raise CrawlError(url, f"auth rejected ({r.status_code})", status=r.status_code)
     if r.status_code >= 400:
-        raise CrawlError(url, f"crawl4ai http {r.status_code}: {r.text[:1000]}", status=r.status_code)
+        raise CrawlError(url, f"crawl4ai http {r.status_code}: {r.text[:ERROR_TEXT_MAX_LEN]}", status=r.status_code)
 
     data = r.json()
     if not data.get("success"):
-        raise CrawlError(url, f"crawl4ai failed: {str(data)[:200]}")
+        raise CrawlError(url, f"crawl4ai failed: {str(data)[:ERROR_DATA_MAX_LEN]}")
     md = data.get("markdown") or ""
     if not md.strip():
         raise CrawlError(url, "empty markdown returned")
@@ -84,10 +93,23 @@ async def health() -> tuple[bool, str]:
     s = get_settings()
     base = s.CRAWL4AI_URL.rstrip("/")
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=s.CRAWL4AI_HEALTH_TIMEOUT_S) as client:
             r = await client.get(f"{base}/health", headers=_headers())
             if r.status_code == 200:
                 return True, "ok"
             return False, f"http {r.status_code}"
     except httpx.HTTPError as e:
         return False, str(e)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _headers() -> dict[str, str]:
+    """Crawl4AI request headers (Bearer auth when CRAWL4AI_API_KEY is set)."""
+    h = {"Content-Type": "application/json"}
+    key = get_settings().CRAWL4AI_API_KEY
+    if key:
+        h["Authorization"] = f"Bearer {key}"
+    return h

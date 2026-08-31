@@ -7,13 +7,15 @@ response (or raises), so we can assert exactly what each adapter sends and
 how it normalizes the reply — including the status-code -> ProviderError
 mapping the gateway relies on for failover.
 """
+from __future__ import annotations
+
 import asyncio
 import json
 
 import httpx
 
 from wellisearch.config import Settings
-from wellisearch.providers.base import Provider, ProviderError
+from wellisearch.providers.base import Provider, ProviderError, Result
 from wellisearch.providers.brave import Brave
 from wellisearch.providers.exa import Exa
 from wellisearch.providers.tavily import Tavily
@@ -22,7 +24,12 @@ from wellisearch.providers.youcom import YouCom
 QUERY = "query here"
 
 
-def make_client(status=200, payload=None, text="", raise_exc=None):
+def make_client(
+    status: int = 200,
+    payload: dict | None = None,
+    text: str = "",
+    raise_exc: Exception | None = None,
+) -> tuple[httpx.AsyncClient, dict]:
     """Build an AsyncClient backed by a MockTransport.
 
     Returns (client, captured) where captured records the last request's
@@ -31,6 +38,8 @@ def make_client(status=200, payload=None, text="", raise_exc=None):
     captured: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """MockTransport handler: raise the configured exception, or record the
+        request and return the canned response."""
         if raise_exc is not None:
             raise raise_exc
         captured["method"] = request.method
@@ -46,14 +55,31 @@ def make_client(status=200, payload=None, text="", raise_exc=None):
     return client, captured
 
 
-async def run_search(cls, settings, status=200, payload=None, text="", num=3, query=QUERY):
+async def run_search(
+    cls: type[Provider],
+    settings: Settings,
+    status: int = 200,
+    payload: dict | None = None,
+    text: str = "",
+    num: int = 3,
+    query: str = QUERY,
+) -> tuple[Provider, list[Result], dict]:
+    """Run one provider search against a mock client; return (provider,
+    results, captured request)."""
     client, captured = make_client(status=status, payload=payload, text=text)
     p = cls(settings, client)
     results = await p.search(query, num)
     return p, results, captured
 
 
-async def expect_provider_error(cls, settings, status, msg_substr):
+async def expect_provider_error(
+    cls: type[Provider],
+    settings: Settings,
+    status: int,
+    msg_substr: str,
+) -> None:
+    """Assert a given HTTP status maps to a ProviderError with the expected
+    message and status."""
     client, _ = make_client(status=status, text="boom")
     p = cls(settings, client)
     try:
@@ -66,7 +92,8 @@ async def expect_provider_error(cls, settings, status, msg_substr):
     raise AssertionError(f"{p.name}: expected ProviderError for http {status}")
 
 
-async def expect_network_error(cls, settings):
+async def expect_network_error(cls: type[Provider], settings: Settings) -> None:
+    """Assert a network failure maps to a ProviderError with a 'network' message."""
     client, _ = make_client(raise_exc=httpx.ConnectError("no route to host"))
     p = cls(settings, client)
     try:
@@ -77,7 +104,9 @@ async def expect_network_error(cls, settings):
     raise AssertionError(f"{p.name}: expected network ProviderError")
 
 
-# --- base helpers (shared normalization point) -------------------------------
+# ---------------------------------------------------------------------------
+# Base Helpers (shared normalization point)
+# ---------------------------------------------------------------------------
 
 def test_base() -> None:
     """Provider.clean_html + Provider.snippet (the shared normalization point)."""
@@ -99,7 +128,9 @@ async def test_error_mapping(cls: type[Provider], settings: Settings) -> None:
     await expect_network_error(cls, settings)
 
 
-# --- per-provider tests --------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Per-Provider Tests
+# ---------------------------------------------------------------------------
 # One function per adapter: configured flag, request contract, response
 # normalization, and the ProviderError mapping the gateway relies on.
 
@@ -112,7 +143,12 @@ async def test_tavily() -> None:
     payload = {
         "query": QUERY,
         "results": [
-            {"url": "https://a.com/1", "title": "<b>Title A</b>", "content": "Snippet A content", "score": 0.91},
+            {
+                "url": "https://a.com/1",
+                "title": "<b>Title A</b>",
+                "content": "Snippet A content",
+                "score": 0.91,
+            },
             {"url": "https://a.com/2", "title": "Title B", "content": "Snippet B", "score": 0.8},
             {"title": "no url -> skipped", "content": "x", "score": 0.5},
         ],
@@ -207,7 +243,13 @@ async def test_youcom() -> None:
 
     payload = {
         "results": {"web": [
-            {"url": "https://y.com/1", "title": "You One", "description": "You desc one", "favicon_url": "f", "snippets": []},
+            {
+                "url": "https://y.com/1",
+                "title": "You One",
+                "description": "You desc one",
+                "favicon_url": "f",
+                "snippets": [],
+            },
             {"url": "https://y.com/2", "title": "You Two", "description": "You desc two"},
             {"title": "no url -> skipped", "description": "x"},
         ]},
@@ -228,6 +270,7 @@ async def test_youcom() -> None:
 
 
 async def main() -> None:
+    """Run all provider adapter tests (base helpers + each provider)."""
     test_base()
     await test_tavily()
     await test_brave()

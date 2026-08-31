@@ -11,6 +11,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """All env knobs in one place; values come from the process environment
+    (compose `env_file: .env` in the container, or a loaded .env on the host)."""
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -25,10 +27,15 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "wellisearch"
     # Admin/maintenance DB used only to self-create the app DB at startup (§11).
     POSTGRES_ADMIN_DB: str = "postgres"
+    # Connection pool sizing (db.py AsyncConnectionPool).
+    DB_POOL_MIN_SIZE: int = 2
+    DB_POOL_MAX_SIZE: int = 12
 
     # --- crawl4ai (the single crawling path) ---
     CRAWL4AI_URL: str = "http://crawl4ai:11235"
     CRAWL4AI_API_KEY: str = "change-me"
+    # /health reachability check timeout (crawler.health).
+    CRAWL4AI_HEALTH_TIMEOUT_S: int = 5
 
     # --- search providers (failover pool + default order; the dashboard can
     # override the order at runtime — see provider_state.sort_order) ---
@@ -55,6 +62,9 @@ class Settings(BaseSettings):
     # --- search ---
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
+    # Local-hit gate: fetch at least this many rows so the coverage gate can
+    # see a full-coverage page that ranks just outside the top-k by score.
+    SEARCH_GATE_MIN_K: int = 10
     # Local-hit gate: serve local if any top result's `coverage`
     # (fn_search_local column, see docs/ranking.md) is >= this.
     LOCAL_MIN_COVERAGE: float = 0.75
@@ -87,10 +97,13 @@ class Settings(BaseSettings):
     BIND_PORT: int = 8780
     WELLISEARCH_API_KEY: str = ""  # empty = open; set = require on REST + MCP
 
-    # ------------------------------------------------------------------ helpers
+    # ---------------------------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------------------------
 
     @property
     def provider_order(self) -> list[str]:
+        """Provider failover order from SEARCH_PROVIDERS (comma list, lowercased)."""
         names = [p.strip().lower() for p in self.SEARCH_PROVIDERS.split(",")]
         return [n for n in names if n]
 
@@ -107,6 +120,7 @@ class Settings(BaseSettings):
         return int(raw)
 
     def conninfo(self, dbname: str | None = None) -> str:
+        """psycopg connection string for ``dbname`` (default: POSTGRES_DB)."""
         return (
             f"host={self.POSTGRES_HOST} port={self.POSTGRES_PORT} "
             f"user={self.POSTGRES_USER} password={self.POSTGRES_PASSWORD} "
@@ -117,4 +131,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Cached Settings instance (one per process)."""
     return Settings()

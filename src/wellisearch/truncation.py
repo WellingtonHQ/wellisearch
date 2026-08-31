@@ -115,11 +115,13 @@ def truncate_page(
 
 
 def truncation_marker(omitted: int, strategy: str) -> str:
+    """The `[truncated — N chars omitted, strategy=X]` marker carried by trimmed pages."""
     return f"[truncated — {omitted} chars omitted, strategy={strategy}]"
 
 
 @dataclass(slots=True)
 class TruncatedPage:
+    """A page after budget allocation: kept text, chars used, and chars omitted."""
     url: str
     title: str
     text: str

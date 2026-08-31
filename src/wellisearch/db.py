@@ -21,7 +21,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from .config import get_settings
+from .config import Settings, get_settings
 
 log = logging.getLogger("wellisearch.db")
 
@@ -37,30 +37,28 @@ STARTUP_RETRIES = 10
 STARTUP_RETRY_S = 3.0
 
 
-def _month() -> str:
-    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m")
-
-
-async def _register_vector(conn: psycopg.AsyncConnection) -> None:
-    """Register the pgvector type adapter on every pooled connection."""
-    from pgvector.psycopg import register_vector_async
-
-    await register_vector_async(conn)
-
-
 class Database:
+    """Postgres access: pool, startup (self-create app DB + DDL), and helpers
+    for pages, quotas, provider state, logs, and the crawl queue."""
+
     def __init__(self) -> None:
+        """Starts with no pool; call startup() before use."""
         self._pool: AsyncConnectionPool | None = None
 
-    # ------------------------------------------------------------- lifecycle
+    # ---------------------------------------------------------------------------
+    # Lifecycle
+    # ---------------------------------------------------------------------------
 
     @property
     def pool(self) -> AsyncConnectionPool:
+        """The live connection pool; raises if startup() has not been called."""
         if self._pool is None:
             raise RuntimeError("database not started (call startup() first)")
         return self._pool
 
     async def startup(self) -> None:
+        """Bring the database up: wait for Postgres, create the app DB if
+        missing, open the pool, and apply schema.sql."""
         s = get_settings()
 
         # 1+2. ensure the app DB exists (admin DB is guaranteed to exist)
@@ -83,8 +81,8 @@ class Database:
         # 3. open the main pool
         self._pool = AsyncConnectionPool(
             conninfo=s.conninfo(),
-            min_size=2,
-            max_size=12,
+            min_size=s.DB_POOL_MIN_SIZE,
+            max_size=s.DB_POOL_MAX_SIZE,
             open=False,
             kwargs={"row_factory": dict_row},
             configure=_register_vector,
@@ -97,7 +95,8 @@ class Database:
             await conn.execute(schema_sql)
         log.info("schema applied (extensions, tables, fn_search_local)")
 
-    async def _ensure_app_db(self, s) -> None:
+    async def _ensure_app_db(self, s: Settings) -> None:
+        """Idempotently create the app DB via the admin DB (guaranteed to exist)."""
         admin = await psycopg.AsyncConnection.connect(
             s.conninfo(s.POSTGRES_ADMIN_DB), autocommit=True
         )
@@ -117,13 +116,21 @@ class Database:
             await admin.close()
 
     async def close(self) -> None:
+        """Close the pool (if open) and clear the reference."""
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
 
-    # ------------------------------------------------------------- raw API
+    # ---------------------------------------------------------------------------
+    # Raw API
+    # ---------------------------------------------------------------------------
 
-    async def execute(self, sql: str, params: tuple | list | None = None) -> int:
+    async def execute(
+        self,
+        sql: str,
+        params: tuple | list | None = None,
+    ) -> int:
+        """Run one statement; returns the affected row count (0 when unknown)."""
         async with self.pool.connection() as conn:
             cur = await conn.execute(sql, params or ())
             return cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
@@ -149,7 +156,12 @@ class Database:
             cur = await conn.execute(sql, params or ())
             return list(await cur.fetchall())
 
-    async def fetch_one(self, sql: str, params: tuple | list | None = None) -> dict[str, Any] | None:
+    async def fetch_one(
+        self,
+        sql: str,
+        params: tuple | list | None = None,
+    ) -> dict[str, Any] | None:
+        """Run a SELECT and return the first row (or None)."""
         async with self.pool.connection() as conn:
             cur = await conn.execute(sql, params or ())
             row = await cur.fetchone()
@@ -157,16 +169,26 @@ class Database:
 
     @contextlib.asynccontextmanager
     async def transaction(self) -> AsyncIterator[psycopg.AsyncConnection]:
+        """Yield a pooled connection inside an explicit transaction (commit on
+        success, roll back on exception)."""
         async with self.pool.connection() as conn:
             async with conn.transaction():
                 yield conn
 
-    # ---------------------------------------------------------- pages / fetch
+    # ---------------------------------------------------------------------------
+    # Pages / Fetch
+    # ---------------------------------------------------------------------------
 
     async def page_get(self, url: str) -> dict[str, Any] | None:
+        """The page row for a URL, or None."""
         return await self.fetch_one("SELECT * FROM pages WHERE url = %s", (url,))
 
-    async def bump_fetch_count(self, url: str, n: int = 1) -> None:
+    async def bump_fetch_count(
+        self,
+        url: str,
+        n: int = 1,
+    ) -> None:
+        """Increment a page's fetch_count by n."""
         await self.execute(
             "UPDATE pages SET fetch_count = fetch_count + %s WHERE url = %s",
             (n, url),
@@ -183,7 +205,9 @@ class Database:
             (urls,),
         )
 
-    # -------------------------------------------------------------- quota
+    # ---------------------------------------------------------------------------
+    # Quota
+    # ---------------------------------------------------------------------------
 
     async def quota_used_limit(self, provider: str) -> tuple[int, int | None]:
         """Current-month (used, limit); limit = runtime override or env default."""
@@ -204,6 +228,8 @@ class Database:
         return used, limit
 
     async def quota_bump(self, provider: str) -> None:
+        """Record one provider call for the current month, preserving any
+        runtime limit override."""
         s = get_settings()
         limit = s.env_quota_limit(provider)
         await self.execute(
@@ -227,9 +253,12 @@ class Database:
             (provider, _month()),
         )
 
-    # -------------------------------------------------------- provider state
+    # ---------------------------------------------------------------------------
+    # Provider State
+    # ---------------------------------------------------------------------------
 
     async def get_provider_state(self, provider: str) -> dict[str, Any] | None:
+        """The provider_state row for a provider, or None."""
         return await self.fetch_one("SELECT * FROM provider_state WHERE provider = %s", (provider,))
 
     async def set_provider_state(
@@ -241,6 +270,8 @@ class Database:
         last_served: dt.datetime | None = None,
         last_error: Any = ...,  # ellipsis = "don't touch"
     ) -> None:
+        """Upsert the given provider_state fields; args left at the ellipsis
+        default are left untouched."""
         cols = ["provider"]
         vals: list[Any] = [provider]
         upsets: list[str] = []
@@ -270,7 +301,9 @@ class Database:
         )
         await self.execute(sql, tuple(vals))
 
-    # ------------------------------------------------------- provider order
+    # ---------------------------------------------------------------------------
+    # Provider Order
+    # ---------------------------------------------------------------------------
 
     async def get_provider_order(self) -> list[str] | None:
         """The runtime failover order (dashboard override) or None = env default."""
@@ -299,7 +332,9 @@ class Database:
                 (name, i),
             )
 
-    # ------------------------------------------------------------ logs
+    # ---------------------------------------------------------------------------
+    # Logs
+    # ---------------------------------------------------------------------------
 
     async def log_search(
         self,
@@ -308,6 +343,7 @@ class Database:
         local_hits: int | None,
         results: list[dict[str, Any]],
     ) -> None:
+        """Record one search (query, source, local hits, results)."""
         import json
 
         await self.execute(
@@ -324,13 +360,18 @@ class Database:
         chunks_written: int | None = None,
         detail: str | None = None,
     ) -> None:
+        """Record one crawl (url, trigger, status, timing, chunks, detail)."""
         await self.execute(
             "INSERT INTO crawl_log (url, trigger, status, ms, chunks_written, detail) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (url, trigger, status, ms, chunks_written, detail),
         )
 
-    async def log_event(self, message: str, info: dict[str, Any] | None = None) -> None:
+    async def log_event(
+        self,
+        message: str,
+        info: dict[str, Any] | None = None,
+    ) -> None:
         """One operational event (worker, provider gateway, admin, lifecycle)."""
         import json
 
@@ -349,9 +390,15 @@ class Database:
             )
         return out
 
-    # ------------------------------------------------------------- queue
+    # ---------------------------------------------------------------------------
+    # Queue
+    # ---------------------------------------------------------------------------
 
-    async def queue_enqueue(self, url: str, source: str) -> bool:
+    async def queue_enqueue(
+        self,
+        url: str,
+        source: str,
+    ) -> bool:
         """Enqueue unless already pending/in-flight. Returns True if inserted."""
         async with self.pool.connection() as conn:
             cur = await conn.execute(
@@ -371,6 +418,8 @@ class Database:
         )
 
     async def queue_claim(self, url: str) -> bool:
+        """Claim a pending queue row for processing (pending → in_flight,
+        attempts+1); False if it was not pending."""
         cur_ok = await self.execute(
             "UPDATE crawl_queue SET status = 'in_flight', attempts = attempts + 1 "
             "WHERE url = %s AND status = 'pending' RETURNING id",
@@ -378,7 +427,14 @@ class Database:
         )
         return cur_ok > 0
 
-    async def queue_done(self, url: str, ok: bool, error: str | None = None) -> None:
+    async def queue_done(
+        self,
+        url: str,
+        ok: bool,
+        error: str | None = None,
+    ) -> None:
+        """Finish a claimed row: done on success, else back to pending (attempts
+        left) or failed (attempts exhausted)."""
         if ok:
             await self.execute(
                 "UPDATE crawl_queue SET status = 'done' WHERE url = %s AND status = 'in_flight'",
@@ -406,3 +462,20 @@ class Database:
 
 # module-level singleton
 db = Database()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _month() -> str:
+    """Current UTC month as ``YYYY-MM`` (the provider_quota key)."""
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m")
+
+
+async def _register_vector(conn: psycopg.AsyncConnection) -> None:
+    """Register the pgvector type adapter on every pooled connection."""
+    from pgvector.psycopg import register_vector_async
+
+    await register_vector_async(conn)

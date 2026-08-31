@@ -1,6 +1,9 @@
 """Measure TRUE local scores (fts + trigram + vector legs, exactly as the
 API computes them) so a threshold can be chosen on the real scale."""
+from __future__ import annotations
+
 import asyncio
+
 from wellisearch.config import get_settings
 from wellisearch.db import db
 from wellisearch.embed import embed_one
@@ -16,7 +19,9 @@ QUERIES = [
     ("SPURIOUS", "quantum computing explained"),
 ]
 
-async def main():
+async def main() -> None:
+    """Print the top local scores per probe query and whether they pass the
+    SEARCH_MIN_SCORE gate."""
     s = get_settings()
     print("SEARCH_MIN_SCORE =", s.SEARCH_MIN_SCORE)
     await db.startup()

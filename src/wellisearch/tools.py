@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from collections.abc import Callable
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -18,16 +19,34 @@ from mcp.server.mcpserver import MCPServer
 from . import queue
 from .config import get_settings
 from .db import db
+from .fetch import (
+    fetch_page as _fetch_page,
+    fetch_pages as _fetch_pages,
+    render_fetch_page_markdown,
+    render_fetch_pages_markdown,
+)
 from .providers import get_gateway
-from .fetch import fetch_page as _fetch_page
-from .fetch import fetch_pages as _fetch_pages
-from .fetch import render_fetch_page_markdown
-from .fetch import render_fetch_pages_markdown
-from .search_web import render_search_markdown
-from .search_web import search_web as _search_web
+from .search_web import render_search_markdown, search_web as _search_web
 from .serialize import resolve_format, to_json
 from .truncation import STRATEGIES
 from .worker import crawl_url
+
+TREND_WINDOWS = {"24h": 1, "7d": 7, "30d": 30}  # index_stats search-trend windows (label → days)
+
+
+def register_tools(server: MCPServer) -> None:
+    """Register the six MCP tools on the server (BLUEPRINT §7)."""
+    _tool_search_web(server)
+    _tool_fetch_page(server)
+    _tool_fetch_pages(server)
+    _tool_index_stats(server)
+    _tool_seed_url(server)
+    _tool_refresh_page(server)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _clean(obj: Any) -> Any:
@@ -35,7 +54,11 @@ def _clean(obj: Any) -> Any:
     return json.loads(json.dumps(obj, default=str))
 
 
-def _fmt(out: dict, format_param: str | None, render_md) -> str:
+def _fmt(
+    out: dict,
+    format_param: str | None,
+    render_md: Callable[[dict], str],
+) -> str:
     """Render the pipeline dict in the requested format (json | markdown).
 
     The explicit `format` param decides; markdown is the default. MCP has no
@@ -50,6 +73,8 @@ def _fmt(out: dict, format_param: str | None, render_md) -> str:
 
 
 async def _index_stats_data() -> dict:
+    """Assemble the index_stats payload: index size/freshness, gateway order,
+    search trends, queue depth, quota, and the 30-day crawl mix."""
     s = get_settings()
     now = dt.datetime.now(dt.timezone.utc)
 
@@ -59,7 +84,7 @@ async def _index_stats_data() -> dict:
     )
     chunks = await db.fetch_one("SELECT count(*) AS total FROM chunks")
 
-    windows = {"24h": 1, "7d": 7, "30d": 30}
+    windows = TREND_WINDOWS
     trends: dict[str, dict[str, Any]] = {}
     for label, days in windows.items():
         rows = await db.fetch_all(
@@ -127,7 +152,8 @@ async def _index_stats_data() -> dict:
     }
 
 
-def register_tools(server: MCPServer) -> None:
+def _tool_search_web(server: MCPServer) -> None:
+    """Register the search_web tool."""
     @server.tool(
         name="search_web",
         description=(
@@ -156,6 +182,7 @@ def register_tools(server: MCPServer) -> None:
         search_mode: str = "auto",  # "auto" | "local" | "provider"
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:
+        """Run the search_web pipeline and render the result in the requested format."""
         try:
             out = await _search_web(
                 query,
@@ -170,6 +197,9 @@ def register_tools(server: MCPServer) -> None:
             return f"Error: {e}"
         return _fmt(out, format, render_search_markdown)
 
+
+def _tool_fetch_page(server: MCPServer) -> None:
+    """Register the fetch_page tool."""
     @server.tool(
         name="fetch_page",
         description=(
@@ -184,10 +214,18 @@ def register_tools(server: MCPServer) -> None:
             "instead of Markdown."
         ),
     )
-    async def fetch_page(url: str, max_chars: int | None = None, format: str = "markdown") -> str:
+    async def fetch_page(
+        url: str,
+        max_chars: int | None = None,
+        format: str = "markdown",
+    ) -> str:
+        """Load one URL and render the result in the requested format."""
         out = await _fetch_page(url, max_chars=max_chars)
         return _fmt(out, format, render_fetch_page_markdown)
 
+
+def _tool_fetch_pages(server: MCPServer) -> None:
+    """Register the fetch_pages tool."""
     @server.tool(
         name="fetch_pages",
         description=(
@@ -211,6 +249,8 @@ def register_tools(server: MCPServer) -> None:
         strategy: str = "smart",
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:
+        """Bulk-load multiple URLs under a shared budget and render the result
+        in the requested format."""
         out = await _fetch_pages(
             urls,
             max_chars=max_chars,
@@ -219,6 +259,9 @@ def register_tools(server: MCPServer) -> None:
         )
         return _fmt(out, format, render_fetch_pages_markdown)
 
+
+def _tool_index_stats(server: MCPServer) -> None:
+    """Register the index_stats tool."""
     @server.tool(
         name="index_stats",
         description=(
@@ -230,8 +273,12 @@ def register_tools(server: MCPServer) -> None:
         ),
     )
     async def index_stats() -> dict:
+        """Return the JSON-safe index_stats snapshot."""
         return _clean(await _index_stats_data())
 
+
+def _tool_seed_url(server: MCPServer) -> None:
+    """Register the seed_url tool."""
     @server.tool(
         name="seed_url",
         description=(
@@ -241,6 +288,7 @@ def register_tools(server: MCPServer) -> None:
         ),
     )
     async def seed_url(url: str) -> dict:
+        """Validate the URL, enqueue a background crawl, and report the queue position."""
         from .fetch import _valid_url
 
         if not _valid_url(url):
@@ -264,6 +312,9 @@ def register_tools(server: MCPServer) -> None:
             "ahead_in_queue": pos["ahead"],
         })
 
+
+def _tool_refresh_page(server: MCPServer) -> None:
+    """Register the refresh_page tool."""
     @server.tool(
         name="refresh_page",
         description=(
@@ -272,6 +323,7 @@ def register_tools(server: MCPServer) -> None:
         ),
     )
     async def refresh_page(url: str) -> dict:
+        """Force an immediate re-crawl of one page and return the new status."""
         from .fetch import _valid_url
 
         if not _valid_url(url):

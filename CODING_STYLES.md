@@ -32,18 +32,20 @@ async def db_log_crawl(url, trigger, status, ms, detail=None, chunks_written=Non
 ## 2. File Ordering
 
 Structure files from highest order to lowest: public APIs and entry points at
-the top, internal helpers (`_prefixed`) below. Separate sections with a dash
-divider and a short lowercase label.
+the top, internal helpers (`_prefixed`) below. Separate sections with a
+divider (as in the examples) and a short Title Cased label.
 
 **Do:**
 ```python
-# ------------------------------------------------------------------ single URL
+# ---------------------------------------------------------------------------
+# Single URL
+# ---------------------------------------------------------------------------
 
 async def crawl_url(url: str, trigger: str) -> dict: ...
 
-
-# --------------------------------------------------------------------- ticks
-
+# ---------------------------------------------------------------------------
+# Ticks
+# ---------------------------------------------------------------------------
 async def _drain_queue(deadline: float) -> dict: ...
 ```
 
@@ -51,20 +53,20 @@ async def _drain_queue(deadline: float) -> dict: ...
 
 ## 3. Alphabetical Sorting
 
-Sort lists of equal elements alphabetically — imports, enum members, list
+Sort collections of equal elements alphabetically — enum members, list
 literals, provider lists, and comment enumerations — unless business logic
-dictates a specific order (e.g. `SEARCH_PROVIDERS = "tavily,brave,exa,youcom"` is
-priority order, not alphabetical).
+dictates a specific order (e.g. `SEARCH_PROVIDERS = "tavily,brave,exa,youcom"`
+is priority order, not alphabetical). Import ordering is covered by Rule 7.
 
 **Do:**
 ```python
-from . import crawler, queue
-from .config import get_settings
-from .db import db
-from .index import store_page
+class CrawlStatus(str, Enum):
+    failed = "failed"
+    ok = "ok"
+    unchanged = "unchanged"
 ```
 
-**Don't:** interleave local and third-party imports or leave them in arbitrary order.
+**Don't:** leave such collections in arbitrary order.
 
 ---
 
@@ -124,30 +126,35 @@ log.info(
 
 ---
 
-## 7. Import Ordering
+## 7. Imports
 
 `from __future__ import annotations` first, then three groups separated by
 blank lines: standard library, third-party packages, local modules (relative
-`from . import ...` in this package). Sort alphabetically within each group.
+imports in this package). Sort alphabetically **within each group**, by the
+full import path — so parent-package (`..`) imports come before sibling (`.`)
+imports. Business logic may dictate a specific order (e.g. a provider priority
+list); that overrides alphabetical.
 
 **Do:**
 ```python
-"""Background worker (asyncio task in the app; plan §8)."""
+"""Provider gateway: ordered failover + monthly quota ledger."""
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 import logging
-import time
 
-from . import crawler, queue
-from .config import get_settings
-from .db import db
-from .index import store_page
+import httpx
+
+from ..config import get_settings
+from ..db import db
+from .base import Provider, ProviderError, Result
+from .brave import Brave
+from .exa import Exa
 ```
 
-**Don't:** skip the `__future__` import, intermix groups, or leave them in
-arbitrary order.
+**Don't:** skip the `__future__` import, intermix groups, interleave local and
+third-party imports, or leave any group in arbitrary order (e.g. sandwiching
+`..config`/`..db` between `.brave` and `.exa`).
 
 ---
 
@@ -265,4 +272,49 @@ Never log API keys, passwords, or full request bodies.
 log = logging.getLogger("wellisearch.worker")
 ...
 log.warning("queue crawl failed for %s: %s", url, e)
+```
+
+---
+
+## 14. Section Separators
+
+Separate top-level sections with a three-line divider: a line of dashes, a short
+Title Cased label, and a closing line of dashes (see Rule 2). This is the one
+way to do separators/headings in code — never a single-line `# ----...---- label`.
+
+**Do:**
+```python
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _helper() -> None: ...
+```
+
+**Don't:**
+```python
+# --------------------------------------------------------------------- main
+def main() -> None: ...
+```
+
+---
+
+## 15. Multi-line Call Parameters
+
+When a call spans multiple lines, indent the parameters with a 4-space hanging
+indent (not aligned to the opening paren) and put the closing paren on its own
+line.
+
+**Do:**
+```python
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s"
+)
+```
+
+**Don't:**
+```python
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(name)s %(levelname)s %(message)s")
 ```

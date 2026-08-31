@@ -12,14 +12,22 @@ from .base import Provider, ProviderError, Result
 
 
 class Tavily(Provider):
+    """Tavily Search API adapter (structured search endpoint)."""
     name = "tavily"
     ENDPOINT = "https://api.tavily.com/search"
 
     @property
     def configured(self) -> bool:
+        """True when TAVILY_API_KEY is set."""
         return bool(self.s.TAVILY_API_KEY)
 
-    async def search(self, query: str, num: int) -> list[Result]:
+    async def search(
+        self,
+        query: str,
+        num: int,
+    ) -> list[Result]:
+        """Run a search and return canonical Results (with relevance scores);
+        auth/quota/HTTP failures raise ProviderError."""
         headers = {"Authorization": f"Bearer {self.s.TAVILY_API_KEY}"}
         body = {"query": query, "max_results": max(1, num)}
         try:

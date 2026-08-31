@@ -66,7 +66,6 @@ import psycopg
 
 HERE = Path(__file__).resolve().parent
 
-
 def log(msg: str) -> None:
     """Emit a status line prefixed with a local timestamp, flushed immediately.
 
@@ -74,28 +73,6 @@ def log(msg: str) -> None:
     timestamp on every status line makes it obvious when each step happened.
     """
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
-
-
-def _load_dotenv() -> None:
-    """Load KEY=VALUE pairs from the repo-root ``.env`` into ``os.environ``.
-
-    Values already present in the environment win, so explicit exports
-    (e.g. ``POSTGRES_HOST=127.0.0.1``) override the file. Dependency-free and
-    best-effort: a missing/malformed file is simply ignored. This is what lets
-    the judge key (kept in the gitignored ``.env``) be picked up automatically.
-    """
-    env_file = HERE.parent / ".env"
-    if not env_file.is_file():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip("'\"")
-        if key and key not in os.environ:
-            os.environ[key] = value
 
 DEFAULT_MODELS: list[tuple[str, str]] = [
     ("qwen3-8b", "qwen3:8b"),
@@ -147,6 +124,7 @@ _BOILERPLATE_PATTERNS = [
     r"navigation", r"skip\s+to\s+content", r"accept\s+all", r"back\s+to\s+top",
     r"related\s+articles", r"share\s+this", r"follow\s+us",
 ]
+
 _BOILERPLATE_RE = re.compile("|".join(_BOILERPLATE_PATTERNS), re.IGNORECASE)
 
 _STOPWORDS = frozenset(
@@ -157,9 +135,9 @@ _STOPWORDS = frozenset(
     s t can just don don't should now""".split()
 )
 
-
 @dataclass
 class Config:
+    """Benchmark settings assembled from CLI args + environment."""
     postgres_dsn: str
     ollama_base_url: str
     ollama_api_key: str
@@ -180,13 +158,14 @@ class Config:
     report_file: Path = field(init=False)
 
     def __post_init__(self) -> None:
+        """Create the output dir and derive the sample/results/report paths."""
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.sample_file = self.out_dir / "llm-cleanup.sample.json"
         self.results_file = self.out_dir / "llm-cleanup.results.json"
         self.report_file = self.out_dir / "llm-cleanup.report.md"
 
-
 def load_config(args: argparse.Namespace) -> Config:
+    """Build a Config from CLI args + env, validating the judge is configured when needed."""
     pg_host = os.environ.get("POSTGRES_HOST", "127.0.0.1")
     pg_port = os.environ.get("POSTGRES_PORT", "5432")
     pg_user = os.environ.get("POSTGRES_USER", "wellington")
@@ -231,7 +210,9 @@ def load_config(args: argparse.Namespace) -> Config:
 
     return Config(
         postgres_dsn=dsn,
-        ollama_base_url=(args.ollama_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1").rstrip("/"),
+        ollama_base_url=(
+            args.ollama_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1"
+        ).rstrip("/"),
         ollama_api_key=os.environ.get("OLLAMA_API_KEY", "ollama"),
         judge_base_url=judge_base_url,
         judge_model=os.environ.get("JUDGE_MODEL", "qwen3.8-27b"),
@@ -247,8 +228,9 @@ def load_config(args: argparse.Namespace) -> Config:
         smoke=args.smoke,
     )
 
-
-# --------------------------------------------------------------------- sampling
+# ---------------------------------------------------------------------------
+# Sampling
+# ---------------------------------------------------------------------------
 
 # No single domain may contribute more than this many pages to the sample.
 PER_DOMAIN_CAP = 3
@@ -259,7 +241,6 @@ PER_DOMAIN_CAP = 3
 # random (ORDER BY random()), so the pool spans domains in proportion to the
 # index.
 SAMPLE_POOL_LIMIT = 200
-
 
 def select_random_pages(
     by_domain: dict[str, list[dict[str, Any]]], target: int
@@ -282,17 +263,12 @@ def select_random_pages(
         for d in domains:
             if len(picked) >= target:
                 break
-            if round_idx < min(cap, len(by_domain[d])):
-                row = by_domain[d][round_idx]
-                if row["url"] not in seen:
-                    seen.add(row["url"])
-                    picked.append(row)
-                    progressed = True
+            if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
+                progressed = True
         if not progressed:
             break
         round_idx += 1
     return picked
-
 
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     """Pull a random set of real pages (spread across domains) from the index."""
@@ -336,8 +312,8 @@ async def build_sample(cfg: Config) -> list[dict[str, Any]]:
         for r in picked
     ]
 
-
 def save_sample(cfg: Config, pages: list[dict[str, Any]]) -> None:
+    """Write the sample snapshot (reproducible input) to disk as JSON."""
     payload = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "sample_size": len(pages),
@@ -345,10 +321,12 @@ def save_sample(cfg: Config, pages: list[dict[str, Any]]) -> None:
     }
     cfg.sample_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
-
 def load_sample(cfg: Config) -> list[dict[str, Any]]:
+    """Read the sample snapshot from disk, capped by sample_size (or 2 in smoke)."""
     if not cfg.sample_file.exists():
-        raise SystemExit(f"no sample at {cfg.sample_file} — run `python llm_md_cleanup_bench.py sample` first")
+        raise SystemExit(
+            f"no sample at {cfg.sample_file} — run `python llm_md_cleanup_bench.py sample` first"
+        )
     payload = json.loads(cfg.sample_file.read_text(encoding="utf-8"))
     pages = payload["pages"]
     if cfg.smoke:
@@ -359,25 +337,13 @@ def load_sample(cfg: Config) -> list[dict[str, Any]]:
         pages = pages[: cfg.sample_size]
     return pages
 
-
-# --------------------------------------------------------------------- LLM calls
-
-def _headers(api_key: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-
-def _native_base(base_url: str) -> str:
-    """Ollama native-API root (``/api/...``) from a base URL that may be the
-    OpenAI-compatible one (``.../v1``)."""
-    base = base_url.rstrip("/")
-    if base.endswith("/v1"):
-        base = base[: -len("/v1")]
-    return base
-
-
 async def stream_chat(
-    client: httpx.AsyncClient, cfg: Config, base_url: str, api_key: str,
-    model: str, messages: list[dict[str, str]],
+    client: httpx.AsyncClient,
+    cfg: Config,
+    base_url: str,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, str]],
 ) -> dict[str, Any]:
     """One streaming chat completion via Ollama's native API (``/api/chat``).
 
@@ -397,30 +363,22 @@ async def stream_chat(
         },
     }
     t0 = time.perf_counter()
-    ttft_ms: float | None = None
-    parts: list[str] = []
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
+    state: dict[str, Any] = {
+        "ttft_ms": None,
+        "parts": [],
+        "prompt_tokens": None,
+        "completion_tokens": None,
+    }
     async with client.stream(
         "POST", f"{base}/api/chat", json=payload, headers=_headers(api_key)
     ) as resp:
         resp.raise_for_status()
         async for line in resp.aiter_lines():
-            if not line:
-                continue
-            try:
-                chunk = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            msg = chunk.get("message") or {}
-            content = msg.get("content")
-            if content:
-                if ttft_ms is None:
-                    ttft_ms = (time.perf_counter() - t0) * 1000
-                parts.append(content)
-            if chunk.get("done"):
-                prompt_tokens = chunk.get("prompt_eval_count")
-                completion_tokens = chunk.get("eval_count")
+            _process_stream_line(line, t0, state)
+    ttft_ms = state["ttft_ms"]
+    parts = state["parts"]
+    prompt_tokens = state["prompt_tokens"]
+    completion_tokens = state["completion_tokens"]
     total_ms = (time.perf_counter() - t0) * 1000
     text = "".join(parts)
     if completion_tokens is None and text:
@@ -436,8 +394,11 @@ async def stream_chat(
         "tok_s": round(tok_s, 2),
     }
 
-
-async def warmup(client: httpx.AsyncClient, cfg: Config, model: str) -> None:
+async def warmup(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    model: str,
+) -> None:
     """Load the model into RAM so measured runs exclude one-time load latency."""
     try:
         await stream_chat(
@@ -447,10 +408,13 @@ async def warmup(client: httpx.AsyncClient, cfg: Config, model: str) -> None:
     except Exception:
         pass
 
-
 async def judge_call(
-    client: httpx.AsyncClient, cfg: Config, original: str, cleaned: str
+    client: httpx.AsyncClient,
+    cfg: Config,
+    original: str,
+    cleaned: str,
 ) -> dict[str, Any]:
+    """Send original + cleaned markdown to the 27B judge; return parsed scores + raw text."""
     user = f"=== ORIGINAL ===\n{original}\n\n=== CLEANED ===\n{cleaned}"
     payload = {
         "model": cfg.judge_model,
@@ -467,52 +431,11 @@ async def judge_call(
     r.raise_for_status()
     data = r.json()
     text = data["choices"][0]["message"]["content"]
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    scores: dict[str, Any] = {}
-    if m:
-        try:
-            obj = json.loads(m.group(0))
-            for k in ("faithfulness", "noise_removal", "preservation"):
-                if isinstance(obj.get(k), (int, float)):
-                    scores[k] = int(obj[k])
-            if isinstance(obj.get("note"), str):
-                scores["note"] = obj["note"]
-        except json.JSONDecodeError:
-            pass
+    scores = _parse_judge_scores(text)
     return {"scores": scores, "raw": text, "ms": round((time.perf_counter() - t0) * 1000, 1)}
 
-
-# ------------------------------------------------------------- deterministic metrics
-
-def _words(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", text.lower())
-
-
-def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
-    if len(words) < n:
-        n = 1
-    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
-
-
-def _containment(needle: set, haystack: set) -> float:
-    if not needle:
-        return 0.0
-    return len(needle & haystack) / len(needle)
-
-
-def _structure(text: str) -> dict[str, int]:
-    lines = text.splitlines()
-    return {
-        "headings": sum(1 for l in lines if re.match(r"^\s{0,3}#{1,6}\s", l)),
-        "tables": sum(1 for l in lines if "|" in l and l.strip().startswith("|")),
-        "code_fences": sum(1 for l in lines if l.strip().startswith("```")),
-        "list_items": sum(
-            1 for l in lines if re.match(r"^\s*([-*+]|\d+\.)\s+", l)
-        ),
-    }
-
-
 def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
+    """Compute no-addition, preservation, boilerplate-removal, structure, and length metrics."""
     o_words = _words(original)
     c_words = _words(cleaned)
     o_8 = _ngrams(o_words, 8)
@@ -545,18 +468,24 @@ def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
         "output_chars": len(cleaned),
     }
 
-
-# --------------------------------------------------------------------- run
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
 
 async def run_model(
-    client: httpx.AsyncClient, cfg: Config, label: str, tag: str,
+    client: httpx.AsyncClient,
+    cfg: Config,
+    label: str,
+    tag: str,
     pages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Run one model over all pages (concurrency-limited), collecting outputs, metrics, and judge scores."""
     await warmup(client, cfg, tag)
     sem = asyncio.Semaphore(cfg.concurrency)
     results: list[dict[str, Any]] = []
 
     async def one(page: dict[str, Any], idx: int) -> dict[str, Any]:
+        """Process one page: stream the cleanup, compute metrics, and (optionally) call the judge."""
         async with sem:
             rec: dict[str, Any] = {
                 "model": label,
@@ -573,17 +502,25 @@ async def run_model(
                         {"role": "user", "content": page["fit_markdown"]},
                     ],
                 )
-                rec.update({k: out[k] for k in ("ttft_ms", "total_ms", "prompt_tokens", "completion_tokens", "tok_s")})
+                rec.update(
+                    {
+                        k: out[k]
+                        for k in ("ttft_ms", "total_ms", "prompt_tokens", "completion_tokens", "tok_s")
+                    }
+                )
                 rec["output"] = out["text"]
                 rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
                 stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
-                         f"(ttft {out['ttft_ms'] or 0:.0f}ms, {out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
+                         f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
+                         f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
                 if cfg.use_judge and out["text"].strip():
                     log(f"{who} — {stats} → awaiting judge …")
                     rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
                     sc = rec["judge"].get("scores") or {}
                     log(f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
-                        f"(faith={sc.get('faithfulness')} noise={sc.get('noise_removal')} presv={sc.get('preservation')})")
+                        f"(faith={sc.get('faithfulness')} "
+                        f"noise={sc.get('noise_removal')} "
+                        f"presv={sc.get('preservation')})")
                 else:
                     log(f"{who} — {stats}")
             except Exception as e:
@@ -593,8 +530,11 @@ async def run_model(
 
     return list(await asyncio.gather(*(one(p, i) for i, p in enumerate(pages))))
 
-
-async def ensure_models(client: httpx.AsyncClient, cfg: Config, tags: list[str]) -> None:
+async def ensure_models(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    tags: list[str],
+) -> None:
     """Auto-download any missing Ollama models before running.
 
     ``tags`` are the Ollama model names that will actually be used. Uses
@@ -633,8 +573,8 @@ async def ensure_models(client: httpx.AsyncClient, cfg: Config, tags: list[str])
             raise SystemExit(f"failed to pull {tag}: {e}")
         log(f"[models] {tag} ready in {time.perf_counter() - t0:.0f}s")
 
-
 async def run_all(cfg: Config) -> dict[str, Any]:
+    """Run all models over the sample and write the full results JSON."""
     pages = load_sample(cfg)
     models = cfg.models[:2] if cfg.smoke else cfg.models
     timeout = httpx.Timeout(cfg.timeout_s, connect=10.0)
@@ -663,26 +603,8 @@ async def run_all(cfg: Config) -> dict[str, Any]:
     cfg.results_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return payload
 
-
-# --------------------------------------------------------------------- report
-
-def _stat(values: list[float]) -> dict[str, float]:
-    if not values:
-        return {"n": 0}
-    s = sorted(values)
-    n = len(s)
-    p95 = s[min(n - 1, int(0.95 * n))]
-    return {
-        "n": n,
-        "median": round(statistics.median(s), 3),
-        "mean": round(statistics.fmean(s), 3),
-        "min": round(s[0], 3),
-        "max": round(s[-1], 3),
-        "p95": round(p95, 3),
-    }
-
-
 def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Aggregate per-model metrics + judge scores into summary statistics."""
     out: dict[str, dict[str, Any]] = {}
     for label, recs in payload["results"].items():
         ok = [r for r in recs if "error" not in r and r.get("output")]
@@ -702,25 +624,26 @@ def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "completion_tokens": _stat([r["completion_tokens"] for r in ok if r.get("completion_tokens")]),
         }
         if payload["config"].get("judge_model"):
-            jf = [r["judge"]["scores"].get("faithfulness") for r in ok if r.get("judge", {}).get("scores", {}).get("faithfulness") is not None]
-            jn = [r["judge"]["scores"].get("noise_removal") for r in ok if r.get("judge", {}).get("scores", {}).get("noise_removal") is not None]
-            jp = [r["judge"]["scores"].get("preservation") for r in ok if r.get("judge", {}).get("scores", {}).get("preservation") is not None]
+            jf = [
+                r["judge"]["scores"].get("faithfulness")
+                for r in ok
+                if r.get("judge", {}).get("scores", {}).get("faithfulness") is not None
+            ]
+            jn = [
+                r["judge"]["scores"].get("noise_removal")
+                for r in ok
+                if r.get("judge", {}).get("scores", {}).get("noise_removal") is not None
+            ]
+            jp = [
+                r["judge"]["scores"].get("preservation")
+                for r in ok
+                if r.get("judge", {}).get("scores", {}).get("preservation") is not None
+            ]
             agg["judge_faithfulness"] = _stat([float(x) for x in jf])
             agg["judge_noise_removal"] = _stat([float(x) for x in jn])
             agg["judge_preservation"] = _stat([float(x) for x in jp])
         out[label] = agg
     return out
-
-
-def _fmt_stat(s: dict[str, Any]) -> str:
-    if s.get("n", 0) == 0:
-        return "—"
-    return f"{s['median']} (p95 {s['p95']})"
-
-
-def _median(values: list[float]) -> float | None:
-    return statistics.median(values) if values else None
-
 
 def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     """Print a side-by-side model comparison to the console.
@@ -763,6 +686,7 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
         ]
         if judge:
             def jmed(key: str) -> str:
+                """Median judge score for one dimension, formatted to one decimal."""
                 vals = [float(r["judge"]["scores"][key]) for r in ok
                         if r.get("judge", {}).get("scores", {}).get(key) is not None]
                 med = _median(vals)
@@ -773,6 +697,7 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     widths = [max(len(cols[i]), *(len(r[i]) for r in data)) for i in range(len(cols))]
 
     def line(cells: list[str]) -> str:
+        """Format a row of cells to fixed widths (first left, rest right-aligned)."""
         return "  ".join(
             cell.ljust(w) if i == 0 else cell.rjust(w)
             for i, (cell, w) in enumerate(zip(cells, widths))
@@ -783,86 +708,8 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     for r in data:
         print(line(r), flush=True)
 
-
-def _report_meta_lines(payload: dict[str, Any]) -> list[str]:
-    """Title, run config, and the metric legend."""
-    c = payload["config"]
-    lines = [
-        "# LLM fit-markdown cleanup benchmark",
-        "",
-        f"- ran: {payload['ran_at']}",
-        f"- models: {', '.join(c['models'])}",
-        f"- sample: {c['sample_size']} pages (smoke={c['smoke']})",
-        f"- ollama: {c['ollama_base_url']}",
-        f"- judge: {c['judge_model'] or 'off'} @ {c['judge_base_url'] or '—'}",
-        f"- temperature={c['temperature']}, max_output_tokens={c['max_output_tokens']}",
-        "",
-        "Quality: `no_addition` = share of output 8-grams already in the input (≈1 = nothing fabricated). "
-        "`preservation` = share of input content-words kept (≈1 = not over-trimmed). "
-        "`boilerplate_removed` = fraction of boilerplate patterns removed. "
-        "Judge scores are 1-5 (5 = best).",
-        "",
-    ]
-    return lines
-
-
-def _report_table_lines(
-    agg: dict[str, dict[str, Any]], labels: list[str], judge: bool
-) -> list[str]:
-    """The side-by-side per-model summary table."""
-    header = ["model", "pages", "no_addition", "preservation", "boilerplate_rm", "len_ratio"]
-    if judge:
-        header += ["judge_faith", "judge_noise", "judge_preserve"]
-    header += ["ttft_ms", "total_ms", "tok_s", "out_tokens"]
-    lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
-    for label in labels:
-        a = agg[label]
-        row = [
-            label,
-            f"{a['pages_ok']}/{a['pages_total']}",
-            _fmt_stat(a["no_addition"]),
-            _fmt_stat(a["preservation"]),
-            _fmt_stat(a["boilerplate_removed"]),
-            _fmt_stat(a["length_ratio"]),
-        ]
-        if judge:
-            row += [_fmt_stat(a.get("judge_faithfulness", {})), _fmt_stat(a.get("judge_noise_removal", {})), _fmt_stat(a.get("judge_preservation", {}))]
-        row += [
-            _fmt_stat(a["ttft_ms"]),
-            _fmt_stat(a["total_ms"]),
-            _fmt_stat(a["tok_s"]),
-            _fmt_stat(a["completion_tokens"]),
-        ]
-        lines.append("| " + " | ".join(row) + " |")
-    lines.append("")
-    return lines
-
-
-def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str]:
-    """The per-page detail tables (one per model)."""
-    lines = ["## Per-page detail", ""]
-    for label in labels:
-        lines.append(f"### {label}")
-        lines.append("")
-        lines.append("| url | no_add | pres | boil_rm | len_ratio | ttft_ms | total_ms | tok_s | judge(f/n/p) |")
-        lines.append("|---|---|---|---|---|---|---|---|---|")
-        for r in payload["results"][label]:
-            if "error" in r:
-                lines.append(f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |")
-                continue
-            mt = r.get("metrics", {})
-            js = r.get("judge", {}).get("scores", {})
-            judge_cell = f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/{js.get('preservation','–')}" if js else "—"
-            lines.append(
-                f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
-                f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
-                f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
-            )
-        lines.append("")
-    return lines
-
-
 def write_report(cfg: Config, payload: dict[str, Any]) -> None:
+    """Render and write the Markdown report (meta, summary table, per-page detail)."""
     agg = aggregate(payload)
     labels = list(payload["results"].keys())
     judge = bool(payload["config"].get("judge_model"))
@@ -873,24 +720,29 @@ def write_report(cfg: Config, payload: dict[str, Any]) -> None:
     )
     cfg.report_file.write_text("\n".join(lines), encoding="utf-8")
 
-
 def report_from_disk(cfg: Config) -> None:
+    """Re-render the report from the stored results file."""
     if not cfg.results_file.exists():
         raise SystemExit(f"no results at {cfg.results_file} — run `python llm_md_cleanup_bench.py run` first")
     payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
     write_report(cfg, payload)
 
-
-# --------------------------------------------------------------------- main
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main() -> None:
+    """CLI entry point: parse args and dispatch sample/run/report/all."""
     _load_dotenv()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("command", choices=["sample", "run", "report", "all"])
     p.add_argument("--models", help="comma list label=ollama_tag (default: the 5 benchmark models)")
     p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
     p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
-    p.add_argument("--concurrency", type=int, default=1, help="parallel pages per model (default 1 = fair CPU timing)")
+    p.add_argument(
+        "--concurrency", type=int, default=1,
+        help="parallel pages per model (default 1 = fair CPU timing)",
+    )
     p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")
     p.add_argument("--judge-url", help="judge OpenAI-compatible base URL")
     p.add_argument("--out-dir", help="output directory (default benchmarks/results)")
@@ -917,6 +769,247 @@ def main() -> None:
         log(f"[report] -> {cfg.report_file}")
         print_summary(cfg, payload)
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from the repo-root ``.env`` into ``os.environ``.
+
+    Values already present in the environment win, so explicit exports
+    (e.g. ``POSTGRES_HOST=127.0.0.1``) override the file. Dependency-free and
+    best-effort: a missing/malformed file is simply ignored. This is what lets
+    the judge key (kept in the gitignored ``.env``) be picked up automatically.
+    """
+    env_file = HERE.parent / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+def _pick_from_domain(
+    domain: str,
+    rows: list[dict[str, Any]],
+    round_idx: int,
+    cap: int,
+    seen: set[str],
+    picked: list[dict[str, Any]],
+) -> bool:
+    """Pick the next row for a domain if within the cap and not already seen."""
+    if round_idx < min(cap, len(rows)):
+        row = rows[round_idx]
+        if row["url"] not in seen:
+            seen.add(row["url"])
+            picked.append(row)
+            return True
+    return False
+
+# ---------------------------------------------------------------------------
+# LLM Calls
+# ---------------------------------------------------------------------------
+
+def _headers(api_key: str) -> dict[str, str]:
+    """Authorization + Content-Type headers for an API key."""
+    return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+def _native_base(base_url: str) -> str:
+    """Ollama native-API root (``/api/...``) from a base URL that may be the
+    OpenAI-compatible one (``.../v1``)."""
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+    return base
+
+def _process_stream_line(line: str, t0: float, state: dict[str, Any]) -> None:
+    """Fold one streamed line into the state dict (ttft, parts, tokens)."""
+    if not line:
+        return
+    try:
+        chunk = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    msg = chunk.get("message") or {}
+    content = msg.get("content")
+    if content:
+        if state["ttft_ms"] is None:
+            state["ttft_ms"] = (time.perf_counter() - t0) * 1000
+        state["parts"].append(content)
+    if chunk.get("done"):
+        state["prompt_tokens"] = chunk.get("prompt_eval_count")
+        state["completion_tokens"] = chunk.get("eval_count")
+
+def _parse_judge_scores(text: str) -> dict[str, Any]:
+    """Extract the judge's 1-5 scores (and note) from a free-text reply."""
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    scores: dict[str, Any] = {}
+    if not m:
+        return scores
+    try:
+        obj = json.loads(m.group(0))
+        for k in ("faithfulness", "noise_removal", "preservation"):
+            if isinstance(obj.get(k), (int, float)):
+                scores[k] = int(obj[k])
+        if isinstance(obj.get("note"), str):
+            scores["note"] = obj["note"]
+    except json.JSONDecodeError:
+        return scores
+    return scores
+
+# ---------------------------------------------------------------------------
+# Deterministic Metrics
+# ---------------------------------------------------------------------------
+
+def _words(text: str) -> list[str]:
+    """Lowercased alphanumeric tokens."""
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
+    """Set of n-grams (falls back to 1-grams if the list is too short)."""
+    if len(words) < n:
+        n = 1
+    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+def _containment(needle: set, haystack: set) -> float:
+    """Fraction of the needle set present in the haystack set."""
+    if not needle:
+        return 0.0
+    return len(needle & haystack) / len(needle)
+
+def _structure(text: str) -> dict[str, int]:
+    """Counts of headings, tables, code fences, and list items."""
+    lines = text.splitlines()
+    return {
+        "headings": sum(1 for l in lines if re.match(r"^\s{0,3}#{1,6}\s", l)),
+        "tables": sum(1 for l in lines if "|" in l and l.strip().startswith("|")),
+        "code_fences": sum(1 for l in lines if l.strip().startswith("```")),
+        "list_items": sum(
+            1 for l in lines if re.match(r"^\s*([-*+]|\d+\.)\s+", l)
+        ),
+    }
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+def _stat(values: list[float]) -> dict[str, float]:
+    """Summary statistics (n, median, mean, min, max, p95)."""
+    if not values:
+        return {"n": 0}
+    s = sorted(values)
+    n = len(s)
+    p95 = s[min(n - 1, int(0.95 * n))]
+    return {
+        "n": n,
+        "median": round(statistics.median(s), 3),
+        "mean": round(statistics.fmean(s), 3),
+        "min": round(s[0], 3),
+        "max": round(s[-1], 3),
+        "p95": round(p95, 3),
+    }
+
+def _fmt_stat(s: dict[str, Any]) -> str:
+    """Compact 'median (p95 ...)' string, or an em dash when empty."""
+    if s.get("n", 0) == 0:
+        return "—"
+    return f"{s['median']} (p95 {s['p95']})"
+
+def _median(values: list[float]) -> float | None:
+    """Median of the values, or None when empty."""
+    return statistics.median(values) if values else None
+
+def _report_meta_lines(payload: dict[str, Any]) -> list[str]:
+    """Title, run config, and the metric legend."""
+    c = payload["config"]
+    lines = [
+        "# LLM fit-markdown cleanup benchmark",
+        "",
+        f"- ran: {payload['ran_at']}",
+        f"- models: {', '.join(c['models'])}",
+        f"- sample: {c['sample_size']} pages (smoke={c['smoke']})",
+        f"- ollama: {c['ollama_base_url']}",
+        f"- judge: {c['judge_model'] or 'off'} @ {c['judge_base_url'] or '—'}",
+        f"- temperature={c['temperature']}, max_output_tokens={c['max_output_tokens']}",
+        "",
+        "Quality: `no_addition` = share of output 8-grams already in the input (≈1 = nothing fabricated). "
+        "`preservation` = share of input content-words kept (≈1 = not over-trimmed). "
+        "`boilerplate_removed` = fraction of boilerplate patterns removed. "
+        "Judge scores are 1-5 (5 = best).",
+        "",
+    ]
+    return lines
+
+def _report_table_lines(
+    agg: dict[str, dict[str, Any]],
+    labels: list[str],
+    judge: bool,
+) -> list[str]:
+    """The side-by-side per-model summary table."""
+    header = ["model", "pages", "no_addition", "preservation", "boilerplate_rm", "len_ratio"]
+    if judge:
+        header += ["judge_faith", "judge_noise", "judge_preserve"]
+    header += ["ttft_ms", "total_ms", "tok_s", "out_tokens"]
+    lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    for label in labels:
+        a = agg[label]
+        row = [
+            label,
+            f"{a['pages_ok']}/{a['pages_total']}",
+            _fmt_stat(a["no_addition"]),
+            _fmt_stat(a["preservation"]),
+            _fmt_stat(a["boilerplate_removed"]),
+            _fmt_stat(a["length_ratio"]),
+        ]
+        if judge:
+            row += [
+                _fmt_stat(a.get("judge_faithfulness", {})),
+                _fmt_stat(a.get("judge_noise_removal", {})),
+                _fmt_stat(a.get("judge_preservation", {})),
+            ]
+        row += [
+            _fmt_stat(a["ttft_ms"]),
+            _fmt_stat(a["total_ms"]),
+            _fmt_stat(a["tok_s"]),
+            _fmt_stat(a["completion_tokens"]),
+        ]
+        lines.append("| " + " | ".join(row) + " |")
+    lines.append("")
+    return lines
+
+def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str]:
+    """The per-page detail tables (one per model)."""
+    lines = ["## Per-page detail", ""]
+    for label in labels:
+        lines.append(f"### {label}")
+        lines.append("")
+        lines.append(
+            "| url | no_add | pres | boil_rm | len_ratio | ttft_ms | total_ms | tok_s | judge(f/n/p) |"
+        )
+        lines.append("|---|---|---|---|---|---|---|---|---|")
+        for r in payload["results"][label]:
+            if "error" in r:
+                lines.append(f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |")
+                continue
+            mt = r.get("metrics", {})
+            js = r.get("judge", {}).get("scores", {})
+            judge_cell = (
+                f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
+                f"{js.get('preservation','–')}"
+                if js else "—"
+            )
+            lines.append(
+                f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
+                f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
+                f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
+            )
+        lines.append("")
+    return lines
 
 if __name__ == "__main__":
     main()

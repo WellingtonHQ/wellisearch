@@ -14,6 +14,8 @@ import sys
 
 
 def loop_factory(use_subprocess: bool = False) -> asyncio.AbstractEventLoop:
+    """uvicorn loop factory: the selector loop (psycopg async requires it),
+    except subprocesses on Windows, which need the proactor loop."""
     # uvicorn passes a custom loop factory through untouched and asyncio.Runner
     # calls it with no args, expecting a loop INSTANCE back.
     # the proactor loop is the only one that supports subprocesses on Windows;

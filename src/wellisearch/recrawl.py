@@ -30,17 +30,53 @@ from .config import get_settings
 from .db import db
 from .worker import crawl_url
 
+log = logging.getLogger("wellisearch.recrawl")
+
 # Live-coroutine cap per gather batch. The global crawl semaphore (set from
 # CRAWL_MAX_PARALLEL) is what actually bounds concurrent crawls; this just keeps
 # the number of waiting coroutines bounded so a 20k-URL run doesn't hold 20k
 # live tasks at once.
 BATCH = 100
+PREVIEW_LIMIT = 20  # dry-run: max URLs printed before "... and N more"
 
 
-async def _run(limit: int, dry_run: bool, resume: bool = False) -> None:
+def main() -> None:
+    """CLI entry point: parse args and run the one-shot re-crawl."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s"
+    )
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--limit", type=int, default=0,
+        help="only re-crawl the first N (by fetch_count)"
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true",
+        help="report what would be re-crawled, don't crawl"
+    )
+    ap.add_argument(
+        "--resume", action="store_true",
+        help="skip pages already crawled in the last 24h (resume a partially-finished run)"
+    )
+    args = ap.parse_args()
+    asyncio.run(_run(limit=args.limit, dry_run=args.dry_run, resume=args.resume))
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _run(
+    limit: int,
+    dry_run: bool,
+    resume: bool = False,
+) -> None:
+    """Select the target pages (optionally limited/resumable) and re-crawl
+    them in BATCH-sized batches, reporting progress and stats."""
     s = get_settings()
     conc = s.CRAWL_MAX_PARALLEL
-    log = logging.getLogger("wellisearch.recrawl")
     await db.startup()
     try:
         q = ("SELECT url FROM pages "
@@ -60,16 +96,17 @@ async def _run(limit: int, dry_run: bool, resume: bool = False) -> None:
         total = len(urls)
         print(f"recrawl: {total} pages, concurrency={conc}", flush=True)
         if dry_run:
-            for u in urls[:20]:
+            for u in urls[:PREVIEW_LIMIT]:
                 print(f"  {u}")
-            if total > 20:
-                print(f"  ... and {total - 20} more")
+            if total > PREVIEW_LIMIT:
+                print(f"  ... and {total - PREVIEW_LIMIT} more")
             return
 
         stats = {"ok": 0, "unchanged": 0, "failed": 0}
         t0 = time.monotonic()
 
         async def process(url: str) -> None:
+            """Re-crawl one page via crawl_url and tally the outcome into stats."""
             try:
                 r = await crawl_url(url, "recrawl")
                 status = (r or {}).get("status", "ok")
@@ -99,21 +136,6 @@ async def _run(limit: int, dry_run: bool, resume: bool = False) -> None:
               f"unchanged={stats['unchanged']} failed={stats['failed']}", flush=True)
     finally:
         await db.close()
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--limit", type=int, default=0,
-                    help="only re-crawl the first N (by fetch_count)")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="report what would be re-crawled, don't crawl")
-    ap.add_argument("--resume", action="store_true",
-                    help="skip pages already crawled in the last 24h (resume a "
-                         "partially-finished run)")
-    args = ap.parse_args()
-    asyncio.run(_run(limit=args.limit, dry_run=args.dry_run, resume=args.resume))
 
 
 if __name__ == "__main__":
