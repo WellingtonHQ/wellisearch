@@ -47,7 +47,9 @@ def first_url(markdown: str) -> str | None:
     return m.group(1) if m else None
 
 
-# ---------------------------------------------------------------------- health
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
 
 async def test_health(c: httpx.AsyncClient) -> None:
     """GET /health: database + crawl4ai both ok."""
@@ -58,7 +60,9 @@ async def test_health(c: httpx.AsyncClient) -> None:
           json.dumps(j)[:160])
 
 
-# ------------------------------------------------------------------------ auth
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
 
 async def test_auth() -> None:
     """REST auth (separate keyless clients so client-level headers don't leak)."""
@@ -72,7 +76,9 @@ async def test_auth() -> None:
         check("REST auth: Bearer key -> 200", r.status_code == 200, str(r.status_code))
 
 
-# ---------------------------------------------------------------------- search
+# ---------------------------------------------------------------------------
+# Search
+# ---------------------------------------------------------------------------
 
 async def test_search_gateway(c: httpx.AsyncClient) -> str:
     """GET /api/search (gateway): Markdown contract, >=2 results, degraded=false.
@@ -160,7 +166,9 @@ async def test_search_mode_invalid(c: httpx.AsyncClient) -> None:
     check("invalid search_mode: 400", r.status_code == 400, f"status={r.status_code}")
 
 
-# ----------------------------------------------------------------------- fetch
+# ---------------------------------------------------------------------------
+# Fetch
+# ---------------------------------------------------------------------------
 
 async def test_fetch(c: httpx.AsyncClient, url: str) -> None:
     """POST /api/fetch: crawl + index, Markdown header + body."""
@@ -212,7 +220,9 @@ async def test_fetch_bulk(c: httpx.AsyncClient) -> None:
           (re.search(r"^Time: .*", md2, re.M) or [None, "MISSING"])[0])
 
 
-# ------------------------------------------------------------------- providers
+# ---------------------------------------------------------------------------
+# Providers
+# ---------------------------------------------------------------------------
 
 async def test_provider_failover(c: httpx.AsyncClient) -> None:
     """PATCH /api/providers/tavily + gateway failover: disable tavily + local index -> brave serves."""
@@ -316,7 +326,9 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
           json.dumps(r.json().get("order"))[:160])
 
 
-# --------------------------------------------------------------- stats + logs
+# ---------------------------------------------------------------------------
+# Stats + Logs
+# ---------------------------------------------------------------------------
 
 async def test_stats_logs(c: httpx.AsyncClient, url: str) -> None:
     """GET /api/stats, POST /api/refresh, GET /api/logs/crawls + /api/logs/searches."""
@@ -371,7 +383,9 @@ async def test_window_logs(c: httpx.AsyncClient) -> None:
           f"10m={j10.get('total')} 24h={j24.get('total')}")
 
 
-# ------------------------------------------------------------------- dashboard
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
 
 async def test_dashboard(c: httpx.AsyncClient) -> None:
     """GET /: dashboard HTML served."""
@@ -379,7 +393,9 @@ async def test_dashboard(c: httpx.AsyncClient) -> None:
     check("dashboard: 200 + html", r.status_code == 200 and "<html" in r.text.lower(), f"len={len(r.text)}")
 
 
-# ------------------------------------------------------------------- format=json
+# ---------------------------------------------------------------------------
+# Format=JSON
+# ---------------------------------------------------------------------------
 
 async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
     """format=json on /api/search + /api/fetch + /api/fetch-bulk: envelope + precedence."""
@@ -456,7 +472,9 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
           json.dumps(j.get("timing")))
 
 
-# ---------------------------------------------------------------------- mcp/http
+# ---------------------------------------------------------------------------
+# MCP/HTTP
+# ---------------------------------------------------------------------------
 
 async def mcp_http_pass() -> None:
     """Section 11: MCP over stateless Streamable HTTP (auth, 404s, session)."""
@@ -467,7 +485,9 @@ async def mcp_http_pass() -> None:
         check("mcp/http: stateless streamable session", False, f"{type(e).__name__}: {e}")
 
 
-# ------------------------------------------------------------------------ main
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 async def main() -> None:
     """Run the whole E2E pass, in order (later steps reuse earlier state)."""

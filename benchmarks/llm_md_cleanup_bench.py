@@ -47,8 +47,6 @@ Env (all optional, sensible defaults)
   BENCH_SAMPLE_SIZE        default 5
   BENCH_OUT_DIR            default <this dir>/results
 """
-
-
 from __future__ import annotations
 
 import argparse
@@ -66,9 +64,7 @@ from typing import Any
 import httpx
 import psycopg
 
-
 HERE = Path(__file__).resolve().parent
-
 
 def log(msg: str) -> None:
     """Emit a status line prefixed with a local timestamp, flushed immediately.
@@ -77,7 +73,6 @@ def log(msg: str) -> None:
     timestamp on every status line makes it obvious when each step happened.
     """
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
-
 
 DEFAULT_MODELS: list[tuple[str, str]] = [
     ("qwen3-8b", "qwen3:8b"),
@@ -89,7 +84,6 @@ DEFAULT_MODELS: list[tuple[str, str]] = [
     ("qwen3-1.7b", "qwen3:1.7b"),
     ("qwen3-0.6b", "qwen3:0.6b"),
 ]
-
 
 CLEANUP_SYSTEM_PROMPT = (
     "You are a precise markdown cleaner. Rewrite the markdown provided by the "
@@ -105,7 +99,6 @@ CLEANUP_SYSTEM_PROMPT = (
     "- Output ONLY the cleaned markdown. No explanations, no preamble, and no "
     "code fence around the whole document."
 )
-
 
 JUDGE_SYSTEM_PROMPT = (
     "You are evaluating a markdown-cleaning model. You are given the ORIGINAL "
@@ -124,7 +117,6 @@ JUDGE_SYSTEM_PROMPT = (
     '"note": "<2-3 sentences>"}'
 )
 
-
 _BOILERPLATE_PATTERNS = [
     r"sign\s+in", r"log\s+in", r"cookie", r"privacy\s+policy", r"terms\s+of",
     r"subscribe", r"newsletter", r"all\s+rights\s+reserved", r"copyright",
@@ -133,9 +125,7 @@ _BOILERPLATE_PATTERNS = [
     r"related\s+articles", r"share\s+this", r"follow\s+us",
 ]
 
-
 _BOILERPLATE_RE = re.compile("|".join(_BOILERPLATE_PATTERNS), re.IGNORECASE)
-
 
 _STOPWORDS = frozenset(
     """a an and are as at be but by for from has have he her his i if in is it
@@ -144,7 +134,6 @@ _STOPWORDS = frozenset(
     then there here how any all each more most other some such only own same
     s t can just don don't should now""".split()
 )
-
 
 @dataclass
 class Config:
@@ -174,7 +163,6 @@ class Config:
         self.sample_file = self.out_dir / "llm-cleanup.sample.json"
         self.results_file = self.out_dir / "llm-cleanup.results.json"
         self.report_file = self.out_dir / "llm-cleanup.report.md"
-
 
 def load_config(args: argparse.Namespace) -> Config:
     """Build a Config from CLI args + env, validating the judge is configured when needed."""
@@ -240,12 +228,12 @@ def load_config(args: argparse.Namespace) -> Config:
         smoke=args.smoke,
     )
 
-
-# --------------------------------------------------------------------- sampling
+# ---------------------------------------------------------------------------
+# Sampling
+# ---------------------------------------------------------------------------
 
 # No single domain may contribute more than this many pages to the sample.
 PER_DOMAIN_CAP = 3
-
 
 # Cap on candidate rows pulled from Postgres for the sample
 # (select_random_pages then picks within it). Keeps the snapshot step light
@@ -253,7 +241,6 @@ PER_DOMAIN_CAP = 3
 # random (ORDER BY random()), so the pool spans domains in proportion to the
 # index.
 SAMPLE_POOL_LIMIT = 200
-
 
 def select_random_pages(
     by_domain: dict[str, list[dict[str, Any]]], target: int
@@ -282,7 +269,6 @@ def select_random_pages(
             break
         round_idx += 1
     return picked
-
 
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     """Pull a random set of real pages (spread across domains) from the index."""
@@ -326,7 +312,6 @@ async def build_sample(cfg: Config) -> list[dict[str, Any]]:
         for r in picked
     ]
 
-
 def save_sample(cfg: Config, pages: list[dict[str, Any]]) -> None:
     """Write the sample snapshot (reproducible input) to disk as JSON."""
     payload = {
@@ -335,7 +320,6 @@ def save_sample(cfg: Config, pages: list[dict[str, Any]]) -> None:
         "pages": pages,
     }
     cfg.sample_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-
 
 def load_sample(cfg: Config) -> list[dict[str, Any]]:
     """Read the sample snapshot from disk, capped by sample_size (or 2 in smoke)."""
@@ -352,7 +336,6 @@ def load_sample(cfg: Config) -> list[dict[str, Any]]:
         # documents even if the stored sample is larger.
         pages = pages[: cfg.sample_size]
     return pages
-
 
 async def stream_chat(
     client: httpx.AsyncClient,
@@ -411,7 +394,6 @@ async def stream_chat(
         "tok_s": round(tok_s, 2),
     }
 
-
 async def warmup(
     client: httpx.AsyncClient,
     cfg: Config,
@@ -425,7 +407,6 @@ async def warmup(
         )
     except Exception:
         pass
-
 
 async def judge_call(
     client: httpx.AsyncClient,
@@ -452,7 +433,6 @@ async def judge_call(
     text = data["choices"][0]["message"]["content"]
     scores = _parse_judge_scores(text)
     return {"scores": scores, "raw": text, "ms": round((time.perf_counter() - t0) * 1000, 1)}
-
 
 def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
     """Compute no-addition, preservation, boilerplate-removal, structure, and length metrics."""
@@ -488,8 +468,9 @@ def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
         "output_chars": len(cleaned),
     }
 
-
-# --------------------------------------------------------------------- run
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
 
 async def run_model(
     client: httpx.AsyncClient,
@@ -549,7 +530,6 @@ async def run_model(
 
     return list(await asyncio.gather(*(one(p, i) for i, p in enumerate(pages))))
 
-
 async def ensure_models(
     client: httpx.AsyncClient,
     cfg: Config,
@@ -593,7 +573,6 @@ async def ensure_models(
             raise SystemExit(f"failed to pull {tag}: {e}")
         log(f"[models] {tag} ready in {time.perf_counter() - t0:.0f}s")
 
-
 async def run_all(cfg: Config) -> dict[str, Any]:
     """Run all models over the sample and write the full results JSON."""
     pages = load_sample(cfg)
@@ -623,7 +602,6 @@ async def run_all(cfg: Config) -> dict[str, Any]:
     }
     cfg.results_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return payload
-
 
 def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Aggregate per-model metrics + judge scores into summary statistics."""
@@ -666,7 +644,6 @@ def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             agg["judge_preservation"] = _stat([float(x) for x in jp])
         out[label] = agg
     return out
-
 
 def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     """Print a side-by-side model comparison to the console.
@@ -731,7 +708,6 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     for r in data:
         print(line(r), flush=True)
 
-
 def write_report(cfg: Config, payload: dict[str, Any]) -> None:
     """Render and write the Markdown report (meta, summary table, per-page detail)."""
     agg = aggregate(payload)
@@ -744,7 +720,6 @@ def write_report(cfg: Config, payload: dict[str, Any]) -> None:
     )
     cfg.report_file.write_text("\n".join(lines), encoding="utf-8")
 
-
 def report_from_disk(cfg: Config) -> None:
     """Re-render the report from the stored results file."""
     if not cfg.results_file.exists():
@@ -752,8 +727,9 @@ def report_from_disk(cfg: Config) -> None:
     payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
     write_report(cfg, payload)
 
-
-# --------------------------------------------------------------------- main
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main() -> None:
     """CLI entry point: parse args and dispatch sample/run/report/all."""
@@ -793,11 +769,9 @@ def main() -> None:
         log(f"[report] -> {cfg.report_file}")
         print_summary(cfg, payload)
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 
 def _load_dotenv() -> None:
     """Load KEY=VALUE pairs from the repo-root ``.env`` into ``os.environ``.
@@ -820,7 +794,6 @@ def _load_dotenv() -> None:
         if key and key not in os.environ:
             os.environ[key] = value
 
-
 def _pick_from_domain(
     domain: str,
     rows: list[dict[str, Any]],
@@ -838,13 +811,13 @@ def _pick_from_domain(
             return True
     return False
 
-
-# --------------------------------------------------------------------- LLM calls
+# ---------------------------------------------------------------------------
+# LLM Calls
+# ---------------------------------------------------------------------------
 
 def _headers(api_key: str) -> dict[str, str]:
     """Authorization + Content-Type headers for an API key."""
     return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
 
 def _native_base(base_url: str) -> str:
     """Ollama native-API root (``/api/...``) from a base URL that may be the
@@ -853,7 +826,6 @@ def _native_base(base_url: str) -> str:
     if base.endswith("/v1"):
         base = base[: -len("/v1")]
     return base
-
 
 def _process_stream_line(line: str, t0: float, state: dict[str, Any]) -> None:
     """Fold one streamed line into the state dict (ttft, parts, tokens)."""
@@ -873,7 +845,6 @@ def _process_stream_line(line: str, t0: float, state: dict[str, Any]) -> None:
         state["prompt_tokens"] = chunk.get("prompt_eval_count")
         state["completion_tokens"] = chunk.get("eval_count")
 
-
 def _parse_judge_scores(text: str) -> dict[str, Any]:
     """Extract the judge's 1-5 scores (and note) from a free-text reply."""
     m = re.search(r"\{.*\}", text, re.DOTALL)
@@ -891,13 +862,13 @@ def _parse_judge_scores(text: str) -> dict[str, Any]:
         return scores
     return scores
 
-
-# ------------------------------------------------------------- deterministic metrics
+# ---------------------------------------------------------------------------
+# Deterministic Metrics
+# ---------------------------------------------------------------------------
 
 def _words(text: str) -> list[str]:
     """Lowercased alphanumeric tokens."""
     return re.findall(r"[a-z0-9]+", text.lower())
-
 
 def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
     """Set of n-grams (falls back to 1-grams if the list is too short)."""
@@ -905,13 +876,11 @@ def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
         n = 1
     return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
 
-
 def _containment(needle: set, haystack: set) -> float:
     """Fraction of the needle set present in the haystack set."""
     if not needle:
         return 0.0
     return len(needle & haystack) / len(needle)
-
 
 def _structure(text: str) -> dict[str, int]:
     """Counts of headings, tables, code fences, and list items."""
@@ -925,8 +894,9 @@ def _structure(text: str) -> dict[str, int]:
         ),
     }
 
-
-# --------------------------------------------------------------------- report
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
 
 def _stat(values: list[float]) -> dict[str, float]:
     """Summary statistics (n, median, mean, min, max, p95)."""
@@ -944,18 +914,15 @@ def _stat(values: list[float]) -> dict[str, float]:
         "p95": round(p95, 3),
     }
 
-
 def _fmt_stat(s: dict[str, Any]) -> str:
     """Compact 'median (p95 ...)' string, or an em dash when empty."""
     if s.get("n", 0) == 0:
         return "—"
     return f"{s['median']} (p95 {s['p95']})"
 
-
 def _median(values: list[float]) -> float | None:
     """Median of the values, or None when empty."""
     return statistics.median(values) if values else None
-
 
 def _report_meta_lines(payload: dict[str, Any]) -> list[str]:
     """Title, run config, and the metric legend."""
@@ -977,7 +944,6 @@ def _report_meta_lines(payload: dict[str, Any]) -> list[str]:
         "",
     ]
     return lines
-
 
 def _report_table_lines(
     agg: dict[str, dict[str, Any]],
@@ -1016,7 +982,6 @@ def _report_table_lines(
     lines.append("")
     return lines
 
-
 def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str]:
     """The per-page detail tables (one per model)."""
     lines = ["## Per-page detail", ""]
@@ -1045,7 +1010,6 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
             )
         lines.append("")
     return lines
-
 
 if __name__ == "__main__":
     main()

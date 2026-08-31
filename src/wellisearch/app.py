@@ -60,8 +60,8 @@ app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
 
 _worker_task: asyncio.Task | None = None
 
-WIN_MIN_SECS = 600    # window floor: 10 minutes
-WIN_MAX_SECS = 86400  # window ceiling: 24 hours
+WINDOW_MIN_SECS = 600    # window floor: 10 minutes
+WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
 
 API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
 API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
@@ -424,7 +424,7 @@ async def api_logs_searches(limit: int = 50) -> Any:
 
 
 @app.get("/api/window")
-async def api_window(secs: int = WIN_MAX_SECS) -> Any:
+async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
     """Windowed activity stats (searches + crawls), clamped to 10m..24h."""
     secs = _clamp_window(secs)
     srows = await db.fetch_all(
@@ -455,7 +455,7 @@ async def api_window(secs: int = WIN_MAX_SECS) -> Any:
 
 @app.get("/api/logs")
 async def api_logs(
-    secs: int = WIN_MAX_SECS,
+    secs: int = WINDOW_MAX_SECS,
     limit: int = 200,
     q: str = "",
 ) -> Any:
@@ -532,7 +532,9 @@ async def api_logs(
     return {"logs": logs[:limit], "total": total, "secs": secs}
 
 
-# ---------------------------------------------------------------------- OWUI
+# ---------------------------------------------------------------------------
+# OWUI
+# ---------------------------------------------------------------------------
 # Curated OpenAPI spec for OWUI's OpenAPI tool server: exposes only the three
 # user-facing tools (search_web, fetch_page, fetch_pages) with clean
 # operationIds, so OWUI never sees the admin endpoints (seed/refresh/providers/
@@ -546,14 +548,18 @@ async def owui_openapi() -> Any:
     return _load_owui_spec()
 
 
-# ------------------------------------------------------------------------ MCP
+# ---------------------------------------------------------------------------
+# MCP
+# ---------------------------------------------------------------------------
 # mounted before the catch-all static mount; endpoint: /mcp/http
 # (stateless streamable HTTP)
 
 app.mount("/mcp", mcp_asgi(), name="mcp")
 
 
-# --------------------------------------------------------------------- static
+# ---------------------------------------------------------------------------
+# Static
+# ---------------------------------------------------------------------------
 # catch-all last: serves static/index.html at / and any static assets
 
 if STATIC_DIR.is_dir():
@@ -677,7 +683,7 @@ def _respond(
 
 def _clamp_window(secs: int) -> int:
     """Clamp a window (seconds) to the 10-minute..24-hour bounds."""
-    return max(WIN_MIN_SECS, min(int(secs), WIN_MAX_SECS))
+    return max(WINDOW_MIN_SECS, min(int(secs), WINDOW_MAX_SECS))
 
 
 def _short_url(url: str) -> str:

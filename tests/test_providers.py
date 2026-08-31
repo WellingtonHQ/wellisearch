@@ -104,7 +104,9 @@ async def expect_network_error(cls: type[Provider], settings: Settings) -> None:
     raise AssertionError(f"{p.name}: expected network ProviderError")
 
 
-# --- base helpers (shared normalization point) -------------------------------
+# ---------------------------------------------------------------------------
+# Base Helpers (shared normalization point)
+# ---------------------------------------------------------------------------
 
 def test_base() -> None:
     """Provider.clean_html + Provider.snippet (the shared normalization point)."""
@@ -126,7 +128,9 @@ async def test_error_mapping(cls: type[Provider], settings: Settings) -> None:
     await expect_network_error(cls, settings)
 
 
-# --- per-provider tests --------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Per-Provider Tests
+# ---------------------------------------------------------------------------
 # One function per adapter: configured flag, request contract, response
 # normalization, and the ProviderError mapping the gateway relies on.
 

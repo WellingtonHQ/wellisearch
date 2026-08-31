@@ -12,7 +12,9 @@ from wellisearch.truncation import (
     truncate_page,
 )
 
-# --- chunker ---------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Chunker
+# ---------------------------------------------------------------------------
 md = "Intro paragraph. " * 100
 md += "\n\n# Section One\n" + "text " * 300
 md += "\n\n" + "```python\n" + "x = 1\n" * 200 + "```\n"
@@ -26,7 +28,9 @@ for c in chunks:
 print("chunks:", len(chunks))
 print("OK chunker")
 
-# --- boundary cuts ----------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Boundary Cuts
+# ---------------------------------------------------------------------------
 t = "word " * 5000
 h = boundary_cut_head(t, 1000)
 assert len(h) <= 1000
@@ -40,7 +44,9 @@ h3 = boundary_cut_head(t2, 7)  # tiny budget must not crash
 assert len(h3) <= 7
 print("OK boundary cuts")
 
-# --- allocation -------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Allocation
+# ---------------------------------------------------------------------------
 b = allocate_budgets("even", [1000, 2000, 3000], [0, 0, 0], 6000, None)
 # even split = 2000 each, clamped to page length (page 1 only has 1000)
 assert b == [1000, 2000, 2000], b
@@ -60,7 +66,9 @@ b = allocate_budgets("smart", [100, 100], [5, 1], 1000, None)
 assert b == [100, 100], b  # budget bigger than content: no truncation
 print("OK allocation")
 
-# --- per-page trim ----------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Per-Page Trim
+# ---------------------------------------------------------------------------
 text, trunc = truncate_page("x" * 100, 50, "head")
 assert trunc and len(text) <= 50
 text, trunc = truncate_page("x" * 100, 50, "tail")
@@ -69,7 +77,9 @@ text, trunc = truncate_page("x" * 100, 500, "head")
 assert not trunc and text == "x" * 100
 print("OK per-page trim")
 
-# --- timing header (feature: response timing) ------------------------------
+# ---------------------------------------------------------------------------
+# Timing Header (feature: response timing)
+# ---------------------------------------------------------------------------
 # format_timing: None/empty -> no line
 assert format_timing(None) is None
 assert format_timing({}) is None
@@ -176,7 +186,9 @@ md = render_fetch_pages_markdown(out)
 assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")
 
-# --- version single-source-of-truth ----------------------------------------
+# ---------------------------------------------------------------------------
+# Version Single-Source-Of-Truth
+# ---------------------------------------------------------------------------
 # installed package metadata (pyproject, via hatch) must equal the source
 # of truth (wellisearch.__version__). Skipped for source-tree dev runs where
 # the package is not installed.

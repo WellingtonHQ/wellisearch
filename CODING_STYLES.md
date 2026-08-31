@@ -268,3 +268,48 @@ log = logging.getLogger("wellisearch.worker")
 ...
 log.warning("queue crawl failed for %s: %s", url, e)
 ```
+
+---
+
+## 14. Section Separators
+
+Separate top-level sections with a three-line divider: a line of dashes, a short
+Title Cased label, and a closing line of dashes (see Rule 2). This is the one
+way to do separators/headings in code — never a single-line `# ----...---- label`.
+
+**Do:**
+```python
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _helper() -> None: ...
+```
+
+**Don't:**
+```python
+# --------------------------------------------------------------------- main
+def main() -> None: ...
+```
+
+---
+
+## 15. Multi-line Call Parameters
+
+When a call spans multiple lines, indent the parameters with a 4-space hanging
+indent (not aligned to the opening paren) and put the closing paren on its own
+line.
+
+**Do:**
+```python
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s"
+)
+```
+
+**Don't:**
+```python
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(name)s %(levelname)s %(message)s")
+```

@@ -72,7 +72,9 @@ class Provider:
         """Search the provider and return canonical Results; adapters must implement."""
         raise NotImplementedError
 
-    # ------------------------------------------------------------ utilities
+    # ---------------------------------------------------------------------------
+    # Utilities
+    # ---------------------------------------------------------------------------
 
     @staticmethod
     def clean_html(text: str) -> str:

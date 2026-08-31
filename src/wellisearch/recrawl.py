@@ -42,16 +42,23 @@ PREVIEW_LIMIT = 20  # dry-run: max URLs printed before "... and N more"
 
 def main() -> None:
     """CLI entry point: parse args and run the one-shot re-crawl."""
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s"
+    )
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--limit", type=int, default=0,
-                    help="only re-crawl the first N (by fetch_count)")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="report what would be re-crawled, don't crawl")
-    ap.add_argument("--resume", action="store_true",
-                    help="skip pages already crawled in the last 24h (resume a "
-                         "partially-finished run)")
+    ap.add_argument(
+        "--limit", type=int, default=0,
+        help="only re-crawl the first N (by fetch_count)"
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true",
+        help="report what would be re-crawled, don't crawl"
+    )
+    ap.add_argument(
+        "--resume", action="store_true",
+        help="skip pages already crawled in the last 24h (resume a partially-finished run)"
+    )
     args = ap.parse_args()
     asyncio.run(_run(limit=args.limit, dry_run=args.dry_run, resume=args.resume))
 

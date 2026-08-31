@@ -97,7 +97,9 @@ class Settings(BaseSettings):
     BIND_PORT: int = 8780
     WELLISEARCH_API_KEY: str = ""  # empty = open; set = require on REST + MCP
 
-    # ------------------------------------------------------------------ helpers
+    # ---------------------------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------------------------
 
     @property
     def provider_order(self) -> list[str]:

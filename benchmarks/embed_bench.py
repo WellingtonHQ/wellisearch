@@ -55,8 +55,6 @@ Docker (reproducible environment, see benchmarks/Dockerfile.embed-bench):
 Dependencies (not part of the app):  pip install -r benchmarks/requirements.txt
 Models are downloaded from Hugging Face on first run and cached locally.
 """
-
-
 from __future__ import annotations
 
 import argparse
@@ -71,15 +69,11 @@ from pathlib import Path
 
 import numpy as np
 
-
 HERE = Path(__file__).resolve().parent
-
 
 DATA_DIR = HERE / "data"
 
-
 RESULTS_DIR = HERE / "results"
-
 
 # Production baseline first, then the candidates.
 DEFAULT_MODELS = [
@@ -88,13 +82,11 @@ DEFAULT_MODELS = [
     "Qwen/Qwen3-Embedding-0.6B",
 ]
 
-
 # Models to run through the FastEmbed (ONNX) backend instead of PyTorch.
 FASTEMBED_BACKEND = {
     "sentence-transformers/all-MiniLM-L6-v2",
     "all-MiniLM-L6-v2",
 }
-
 
 def detect_cpu() -> str:
     """The CPU model name (macOS sysctl, /proc/cpuinfo, or platform.processor)."""
@@ -110,7 +102,6 @@ def detect_cpu() -> str:
         pass
     return platform.processor() or "unknown"
 
-
 def model_prefixes(model_id: str) -> tuple[str, str]:
     """(doc_prefix, query_prefix). Models with task-specific prefixes use them;
     otherwise plain text (MiniLM/BGE/e5-style)."""
@@ -125,7 +116,6 @@ def model_prefixes(model_id: str) -> tuple[str, str]:
         )
     return "", ""
 
-
 def percentile(sorted_vals: list[float], p: float) -> float:
     """Linear-interpolated percentile of a sorted list."""
     if not sorted_vals:
@@ -136,7 +126,6 @@ def percentile(sorted_vals: list[float], p: float) -> float:
     lo = int(k)
     hi = min(lo + 1, len(sorted_vals) - 1)
     return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (k - lo)
-
 
 def load_data(data_dir: Path) -> tuple[list[dict], list[dict], dict[str, set[str]]]:
     """Load the test set: chunks, queries, and per-query ground-truth chunk ids."""
@@ -157,7 +146,6 @@ def load_data(data_dir: Path) -> tuple[list[dict], list[dict], dict[str, set[str
             )
     truth = {q["q"]: set(by_url[q["url"]]) for q in queries}
     return chunks, queries, truth
-
 
 class TorchRunner:
     """sentence-transformers / PyTorch backend (nomic, qwen, ...)."""
@@ -215,7 +203,6 @@ class TorchRunner:
         X = self.model.encode([text], normalize_embeddings=True, show_progress_bar=False)
         return _l2_normalize(np.asarray(X, dtype=np.float32))[0]
 
-
 class FastEmbedRunner:
     """FastEmbed / ONNX Runtime backend (the app's production path)."""
 
@@ -268,13 +255,11 @@ class FastEmbedRunner:
         v = np.asarray(next(iter(self.model.embed([text]))), dtype=np.float32)
         return _l2_normalize(v[None, :])[0]
 
-
 def make_runner(model_id: str, args: argparse.Namespace) -> TorchRunner | FastEmbedRunner:
     """Pick the backend runner for a model (FastEmbed for MiniLM, else PyTorch)."""
     if model_id in FASTEMBED_BACKEND or "minilm" in model_id.lower():
         return FastEmbedRunner(model_id, args)
     return TorchRunner(model_id, args)
-
 
 def score_quality(
     S: np.ndarray,
@@ -312,7 +297,6 @@ def score_quality(
         "per_query": per_query,
     }
 
-
 def measure_latency(
     encode_one: Callable[[str], np.ndarray],
     tok_count: Callable[[str], int],
@@ -338,7 +322,6 @@ def measure_latency(
         "median_ms": round(1000 * percentile(samples, 0.5), 1),
         "p95_ms": round(1000 * percentile(samples, 0.95), 1),
     }
-
 
 def run_model(
     model_id: str,
@@ -398,11 +381,9 @@ def run_model(
         },
     }
 
-
 def slug(model_id: str) -> str:
     """A filesystem-safe slug for a model id."""
     return model_id.replace("/", "__").replace(":", "_").lower()
-
 
 def print_report(results: list[dict], total_wall: float) -> None:
     """Print the comparison table and per-model detail."""
@@ -435,7 +416,6 @@ def print_report(results: list[dict], total_wall: float) -> None:
     print(f"Total wall time for {len(results)} model(s): {total_wall:.1f}s")
     print("=" * 100)
 
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI args (models, batch, max-len, threads, topk, latency, dirs)."""
     p = argparse.ArgumentParser(
@@ -457,7 +437,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     a = p.parse_args(argv)
     a.model = a.model or DEFAULT_MODELS
     return a
-
 
 def main(argv: list[str] | None = None) -> int:
     """Run the benchmark across all models, print the report, write result files."""
@@ -536,11 +515,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"wrote {sout}")
     return 0
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 
 def _effective_max_len(tok: object, args_max: int) -> int:
     """Cap the requested max length at the model's true limit (if known)."""
@@ -553,13 +530,11 @@ def _effective_max_len(tok: object, args_max: int) -> int:
         return args_max
     return min(args_max, native)
 
-
 def _l2_normalize(X: np.ndarray) -> np.ndarray:
     """L2-normalize along the last axis (zero-safe)."""
     n = np.linalg.norm(X, axis=-1, keepdims=True)
     n[n == 0] = 1.0
     return (X / n).astype(np.float32)
-
 
 def _tok_len(
     tok: object,
@@ -568,7 +543,6 @@ def _tok_len(
 ) -> int:
     """Token count of text after truncation to max_len."""
     return len(tok(text, truncation=True, max_length=max_len, add_special_tokens=False)["input_ids"])
-
 
 def _read_proc_cpuinfo() -> str | None:
     """Return the CPU model name from /proc/cpuinfo, or None if unavailable."""
@@ -584,7 +558,6 @@ def _read_proc_cpuinfo() -> str | None:
             )
     except Exception:
         return None
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

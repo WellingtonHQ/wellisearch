@@ -45,7 +45,9 @@ class Database:
         """Starts with no pool; call startup() before use."""
         self._pool: AsyncConnectionPool | None = None
 
-    # ------------------------------------------------------------- lifecycle
+    # ---------------------------------------------------------------------------
+    # Lifecycle
+    # ---------------------------------------------------------------------------
 
     @property
     def pool(self) -> AsyncConnectionPool:
@@ -119,7 +121,9 @@ class Database:
             await self._pool.close()
             self._pool = None
 
-    # ------------------------------------------------------------- raw API
+    # ---------------------------------------------------------------------------
+    # Raw API
+    # ---------------------------------------------------------------------------
 
     async def execute(
         self,
@@ -171,7 +175,9 @@ class Database:
             async with conn.transaction():
                 yield conn
 
-    # ---------------------------------------------------------- pages / fetch
+    # ---------------------------------------------------------------------------
+    # Pages / Fetch
+    # ---------------------------------------------------------------------------
 
     async def page_get(self, url: str) -> dict[str, Any] | None:
         """The page row for a URL, or None."""
@@ -199,7 +205,9 @@ class Database:
             (urls,),
         )
 
-    # -------------------------------------------------------------- quota
+    # ---------------------------------------------------------------------------
+    # Quota
+    # ---------------------------------------------------------------------------
 
     async def quota_used_limit(self, provider: str) -> tuple[int, int | None]:
         """Current-month (used, limit); limit = runtime override or env default."""
@@ -245,7 +253,9 @@ class Database:
             (provider, _month()),
         )
 
-    # -------------------------------------------------------- provider state
+    # ---------------------------------------------------------------------------
+    # Provider State
+    # ---------------------------------------------------------------------------
 
     async def get_provider_state(self, provider: str) -> dict[str, Any] | None:
         """The provider_state row for a provider, or None."""
@@ -291,7 +301,9 @@ class Database:
         )
         await self.execute(sql, tuple(vals))
 
-    # ------------------------------------------------------- provider order
+    # ---------------------------------------------------------------------------
+    # Provider Order
+    # ---------------------------------------------------------------------------
 
     async def get_provider_order(self) -> list[str] | None:
         """The runtime failover order (dashboard override) or None = env default."""
@@ -320,7 +332,9 @@ class Database:
                 (name, i),
             )
 
-    # ------------------------------------------------------------ logs
+    # ---------------------------------------------------------------------------
+    # Logs
+    # ---------------------------------------------------------------------------
 
     async def log_search(
         self,
@@ -376,7 +390,9 @@ class Database:
             )
         return out
 
-    # ------------------------------------------------------------- queue
+    # ---------------------------------------------------------------------------
+    # Queue
+    # ---------------------------------------------------------------------------
 
     async def queue_enqueue(
         self,
