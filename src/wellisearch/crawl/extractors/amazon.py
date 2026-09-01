@@ -20,6 +20,57 @@ from ..results import Fitted, Rendered
 from . import register
 from .base import trim_md
 
+
+class AmazonExtractor:
+    """Amazon product page: element-anchored extraction + site gate."""
+
+    name = "amazon"
+
+    def fit(self, r: Rendered) -> Fitted:
+        soup = _soup(r.html)
+        title = _title(soup)
+        price = _price(soup)
+        stock = _stock(soup)
+        bullets = _feature_bullets(soup)
+        details = _product_details(soup)
+
+        parts: list[str] = []
+        if title:
+            parts.append(f"# {title}")
+        if price:
+            line = f"**Price:** {price}"
+            if stock:
+                line += f" — {stock}"
+            parts.append(line)
+        if bullets:
+            parts.append("## About this item")
+            parts.extend(f"- {b}" for b in bullets)
+        if details:
+            parts.append("## Product details")
+            parts.append(details)
+
+        md = trim_md("\n\n".join(parts))
+        return Fitted(
+            md=md,
+            title=title or r.title,
+            signals={"price": price, "stock": stock, "bullets": len(bullets)},
+            flags={"extractor": "amazon"},
+        )
+
+    def accept(self, f: Fitted) -> bool:
+        """Gate: title + price + at least one feature bullet (real product content)."""
+        return (
+            bool(f.title)
+            and bool(f.signals.get("price"))
+            and int(f.signals.get("bullets", 0)) >= 1
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 _PRICE_SELECTORS = (
     "[data-asin] .a-price .a-offscreen",
     ".a-price .a-offscreen",
@@ -91,51 +142,6 @@ def _product_details(soup: BeautifulSoup) -> str | None:
             if t:
                 return t
     return None
-
-
-class AmazonExtractor:
-    """Amazon product page: element-anchored extraction + site gate."""
-
-    name = "amazon"
-
-    def fit(self, r: Rendered) -> Fitted:
-        soup = _soup(r.html)
-        title = _title(soup)
-        price = _price(soup)
-        stock = _stock(soup)
-        bullets = _feature_bullets(soup)
-        details = _product_details(soup)
-
-        parts: list[str] = []
-        if title:
-            parts.append(f"# {title}")
-        if price:
-            line = f"**Price:** {price}"
-            if stock:
-                line += f" — {stock}"
-            parts.append(line)
-        if bullets:
-            parts.append("## About this item")
-            parts.extend(f"- {b}" for b in bullets)
-        if details:
-            parts.append("## Product details")
-            parts.append(details)
-
-        md = trim_md("\n\n".join(parts))
-        return Fitted(
-            md=md,
-            title=title or r.title,
-            signals={"price": price, "stock": stock, "bullets": len(bullets)},
-            flags={"extractor": "amazon"},
-        )
-
-    def accept(self, f: Fitted) -> bool:
-        """Gate: title + price + at least one feature bullet (real product content)."""
-        return (
-            bool(f.title)
-            and bool(f.signals.get("price"))
-            and int(f.signals.get("bullets", 0)) >= 1
-        )
 
 
 register(AmazonExtractor(), "amazon.com")
