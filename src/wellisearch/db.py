@@ -96,7 +96,13 @@ class Database:
         log.info("schema applied (extensions, tables, fn_search_local)")
 
     async def _ensure_app_db(self, s: Settings) -> None:
-        """Idempotently create the app DB via the admin DB (guaranteed to exist)."""
+        """Idempotently create the app DB (via the admin DB) and ensure the
+        extensions the pool requires (vector, pg_trgm) exist in it.
+
+        The pool's configure step registers the ``vector`` type, so a freshly
+        created DB must already have the extension — otherwise the pool fails
+        to open before ``schema.sql`` gets a chance to create it.
+        """
         admin = await psycopg.AsyncConnection.connect(
             s.conninfo(s.POSTGRES_ADMIN_DB), autocommit=True
         )
@@ -114,6 +120,19 @@ class Database:
                     log.info("created database %s", s.POSTGRES_DB)
         finally:
             await admin.close()
+
+        # Ensure the extensions the pool needs are present in the app DB, so a
+        # fresh database boots without the "vector type not found" pool error.
+        app = await psycopg.AsyncConnection.connect(
+            s.conninfo(s.POSTGRES_DB), autocommit=True
+        )
+        try:
+            async with app.cursor() as cur:
+                await cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                await cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        finally:
+            await app.close()
+        log.info("ensured extensions (vector, pg_trgm) in %s", s.POSTGRES_DB)
 
     async def close(self) -> None:
         """Close the pool (if open) and clear the reference."""
