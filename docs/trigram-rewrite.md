@@ -252,7 +252,7 @@ gateway hit rather than a multi-minute stall.
   bounded, cost is occasional.
 - **Global crawl cap**: a `fetch_page` for an unknown URL may now wait
   behind worker crawls for up to ~45 s (crawl timeout) to acquire a slot.
-   Alternative was unbounded fan-out that saturates the crawler and the pool —
+  Alternative was unbounded fan-out that saturates the crawler and the pool —
   the current behavior is the safer failure mode.
 - **EMBED_THREADS=2**: per-batch embedding is marginally slower on a
   many-core server than with all cores; on this host it is the difference
