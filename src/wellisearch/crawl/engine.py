@@ -1,7 +1,8 @@
 """crawl() core loop: policy → tier ladder → extractor → gate (design §5.1).
 
 Escalates on bot-wall, fetch errors, and extractor Escalate; returns the
-best partial result (ok=False) when every tier fails. Never raises.
+best partial result (ok=False) when every tier fails. ChallengeDetected
+propagates to the caller (it must be routed to the CF lane, not swallowed).
 """
 from __future__ import annotations
 
@@ -12,14 +13,14 @@ import time
 from ..config import get_settings
 from . import botwall, extractors, tiers
 from .lane import CF, get_lane
-from .policy import match
+from .policy import Policy, match
 from .results import ChallengeDetected, CrawlResult, Escalate, Fitted
 
 log = logging.getLogger("wellisearch.crawl.engine")
 
 
-def _tier_wait_timeout(name: str) -> int:
-    """Per-tier asyncio.wait_for backstop.
+def _flat_backstop(name: str) -> float:
+    """Fallback per-tier backstop for tiers that don't report a worst case.
 
     Generous on purpose: each tier manages its own goto/challenge timeouts
     internally; this only guards against a hang. The CF-lane browser tier needs
@@ -28,10 +29,23 @@ def _tier_wait_timeout(name: str) -> int:
     """
     s = get_settings()
     if name == "stealth":
-        return s.CRAWL_STEALTH_TIMEOUT_S
+        return float(s.CRAWL_STEALTH_TIMEOUT_S)
     if name == "browser" and get_lane() == CF:
-        return s.CRAWL_CF_TIMEOUT_S * 2
-    return s.CRAWL_TIMEOUT_S
+        return float(s.CRAWL_CF_TIMEOUT_S) * 2
+    return float(s.CRAWL_TIMEOUT_S)
+
+
+def _tier_backstop(tier: "tiers.Tier", name: str, p: "Policy") -> float:
+    """Per-tier asyncio.wait_for backstop, derived from the tier's worst case.
+
+    Prefers the tier's own worst_case_s() (goto + settle + network_idle +
+    challenge loop + recovery), which is accurate per tier. Falls back to the
+    flat per-name budget for tiers that don't report one (e.g. test fakes).
+    """
+    fn = getattr(tier, "worst_case_s", None)
+    if callable(fn):
+        return float(fn(p))
+    return _flat_backstop(name)
 
 
 async def crawl(url: str) -> CrawlResult:
@@ -56,7 +70,7 @@ async def crawl(url: str) -> CrawlResult:
             i += 1
             continue
         try:
-            r = await asyncio.wait_for(tier.fetch(url, p), timeout=_tier_wait_timeout(name))
+            r = await asyncio.wait_for(tier.fetch(url, p), timeout=_tier_backstop(tier, name, p))
         except ChallengeDetected:
             # Fast-lane probe hit a bot-wall: route to the CF lane rather than
             # trying the next tier (the challenge needs the CF lane's loop).

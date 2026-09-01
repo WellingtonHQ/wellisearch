@@ -88,23 +88,23 @@ class Settings(BaseSettings):
     LOG_RETENTION_DAYS: int = 30  # event_log / crawl_log / search_log prune age
 
     # --- native crawl engine (replaces the Crawl4AI path; design §6) ---
-    CRAWL_POOL_SIZE: int = 3
-    CRAWL_CHALLENGE_BUDGET_S: int = 40
-    CRAWL_MD_MAX_CHARS: int = 150000
-    CRAWL_PROFILE_DIR: str = "/profiles"
-    CRAWL_PROFILE_MAX: int = 8
-    CRAWL_HTTP_TIER: bool = True
-    CRAWL_STEALTH_TIER: bool = True
-    CRAWL_HEADLESS: bool = False
-    CRAWL_SETTLE_S: float = 2.0
-    CRAWL_STEALTH_TIMEOUT_S: int = 120
     # CF (challenge) lane: a dedicated low-concurrency, high-timeout lane so a
     # Cloudflare/turnstile crawl never blocks the fast lane. The fast lane only
     # probes for a bot-wall and routes it here; the CF lane runs the full
     # challenge loop with its own pool + semaphore + timeout.
-    CRAWL_CHALLENGE_PARALLEL: int = 2
-    CRAWL_CF_TIMEOUT_S: int = 300
     CRAWL_CF_POOL_SIZE: int = 1
+    CRAWL_CF_TIMEOUT_S: int = 300
+    CRAWL_CHALLENGE_BUDGET_S: int = 40
+    CRAWL_CHALLENGE_PARALLEL: int = 2
+    CRAWL_HEADLESS: bool = False
+    CRAWL_HTTP_TIER: bool = True
+    CRAWL_MD_MAX_CHARS: int = 150000
+    CRAWL_POOL_SIZE: int = 3
+    CRAWL_PROFILE_DIR: str = "/profiles"
+    CRAWL_PROFILE_MAX: int = 8
+    CRAWL_SETTLE_S: float = 2.0
+    CRAWL_STEALTH_TIER: bool = True
+    CRAWL_STEALTH_TIMEOUT_S: int = 120
 
     # --- server ---
     BIND_PORT: int = 8780

@@ -39,6 +39,10 @@ class HttpTier:
             engine="http",
         )
 
+    def worst_case_s(self, p: Policy) -> float:
+        """Worst-case budget: a single impersonated GET (CRAWL_TIMEOUT_S)."""
+        return float(get_settings().CRAWL_TIMEOUT_S)
+
 
 def _extract_title(html: str) -> str | None:
     """Best-effort <title> via a regex; None when absent."""

@@ -1,7 +1,4 @@
-"""Quality-gate signal helpers: price / stock detection (design §3.2).
-
-gate() is the shared check: every required signal present and truthy.
-"""
+"""Quality-gate signal helpers: price / stock detection (design §3.2)."""
 from __future__ import annotations
 
 import re
@@ -28,8 +25,3 @@ def find_stock(html: str) -> str | None:
     if m is not None:
         return f"only {m.group(1)} left"
     return None
-
-
-def gate(signals: dict, required: tuple[str, ...]) -> bool:
-    """True iff every required key is present in signals with a truthy value."""
-    return all(key in signals and signals[key] for key in required)

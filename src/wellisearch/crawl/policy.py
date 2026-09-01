@@ -24,33 +24,17 @@ POLICY: dict[str, Policy] = {
     "amazon.com": Policy(
         "amazon", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
     ),
-    "walmart.com": Policy(
-        "walmart", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
-    ),
+    "apnews.com": Policy("ap", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    "bestbuy.com": Policy("bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated"),
+    "boardgamegeek.com": Policy("bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated"),
+    "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "target.com": Policy(
         "target", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
     ),
-    "bestbuy.com": Policy(
-        "bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
-    ),
-    "boardgamegeek.com": Policy(
-        "bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated",
-    ),
-    "nytimes.com": Policy(
-        "nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared",
-    ),
-    "wsj.com": Policy(
-        "wsj", ("http", "browser", "stealth"), ("settle",), (), "shared",
-    ),
-    "reuters.com": Policy(
-        "reuters", ("http", "browser", "stealth"), ("settle",), (), "shared",
-    ),
-    "theguardian.com": Policy(
-        "guardian", ("http", "browser", "stealth"), ("settle",), (), "shared",
-    ),
-    "apnews.com": Policy(
-        "ap", ("http", "browser", "stealth"), ("settle",), (), "shared",
-    ),
+    "theguardian.com": Policy("guardian", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    "walmart.com": Policy("walmart", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated"),
+    "wsj.com": Policy("wsj", ("http", "browser", "stealth"), ("settle",), (), "shared"),
 }
 
 DEFAULT_POLICY = Policy("default", ("http", "browser"), ("settle",), (), "shared")

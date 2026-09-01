@@ -398,15 +398,20 @@ class Database:
         self,
         url: str,
         source: str,
+        lane: str = "fast",
     ) -> bool:
-        """Enqueue unless already pending/in-flight. Returns True if inserted."""
+        """Enqueue unless already pending/in-flight. Returns True if inserted.
+
+        ``lane`` defaults to 'fast'; pass 'cf' to enqueue straight onto the
+        challenge lane (e.g. when an on-demand fetch probe hits a bot-wall).
+        """
         async with self.pool.connection() as conn:
             cur = await conn.execute(
                 """
-                INSERT INTO crawl_queue (url, source) VALUES (%s, %s)
+                INSERT INTO crawl_queue (url, source, lane) VALUES (%s, %s, %s)
                 ON CONFLICT (url) WHERE status IN ('pending', 'in_flight') DO NOTHING
                 """,
-                (url, source),
+                (url, source, lane),
             )
             return (cur.rowcount or 0) > 0
 
@@ -460,7 +465,7 @@ class Database:
                 )
 
     async def queue_route_to_cf(self, url: str) -> bool:
-        """Move an in-flight fast-lane row onto the CF challenge lane.
+        """Move a fast-lane row (pending or in-flight) onto the CF challenge lane.
 
         Sets lane='cf', status='pending' (so the CF drain can claim it), and
         resets attempts so the CF lane gets a fresh retry budget. Returns True
@@ -470,7 +475,7 @@ class Database:
             await self.execute(
                 "UPDATE crawl_queue SET lane = 'cf', status = 'pending', attempts = 0, "
                 "last_error = 'routed to cf lane' "
-                "WHERE url = %s AND status = 'in_flight'",
+                "WHERE url = %s AND status IN ('pending', 'in_flight')",
                 (url,),
             )
             > 0

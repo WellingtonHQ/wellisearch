@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from ..config import get_settings
 
 if TYPE_CHECKING:
-    from patchright.async_api import BrowserContext
+    from patchright.async_api import BrowserContext, Playwright
 
 log = logging.getLogger("wellisearch.crawl.pool")
 
@@ -175,7 +175,7 @@ class BrowserPool:
             self._launch_locks[key] = lk
         return lk
 
-    async def _ensure_playwright(self):
+    async def _ensure_playwright(self) -> Playwright:
         if self._pw is None:
             from patchright.async_api import async_playwright
 
@@ -216,7 +216,7 @@ class BrowserPool:
             except Exception as e:
                 log.warning("evict close %s failed: %s", lru_key, e)
 
-    async def _launch(self, key: str, pw) -> BrowserContext:
+    async def _launch(self, key: str, pw: Playwright) -> BrowserContext:
         s = get_settings()
         profile_dir = _profile_dir(key, self._prefix)
         os.makedirs(profile_dir, exist_ok=True)

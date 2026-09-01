@@ -82,7 +82,7 @@ async def health() -> tuple[bool, str]:
     """Wired-up check for /health: the native stack imports and the primary
     (browser) tier is registered. Fast and deterministic — no browser launch."""
     try:
-        from .crawl import engine, tiers
+        from .crawl import tiers
     except Exception as e:
         return False, str(e)
     if tiers.by_name("browser") is None:

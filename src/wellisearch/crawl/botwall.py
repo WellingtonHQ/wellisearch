@@ -1,7 +1,6 @@
 """Bot-wall / challenge detection shared by the tier ladder (design §3.2).
 
-is_botwall() keeps bot-wall (escalate to a higher tier) distinct from
-thin-but-real content (is_thin() — accept + flag).
+is_botwall() flags a challenge page so the engine can escalate to a higher tier.
 """
 from __future__ import annotations
 
@@ -32,8 +31,3 @@ def is_botwall(html: str, status: int) -> str | None:
         if re.search(r"\b" + re.escape(marker) + r"\b", low):
             return marker
     return None
-
-
-def is_thin(html: str, min_chars: int) -> bool:
-    """True when the stripped html is shorter than min_chars."""
-    return len(html.strip()) < min_chars

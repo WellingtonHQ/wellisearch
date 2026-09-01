@@ -19,7 +19,7 @@ from ..lane import CF, get_lane
 from ..policy import Policy
 from ..pool import get_cf_pool, get_pool
 from ..results import ChallengeDetected, Rendered
-from ..wait import network_idle, settle
+from ..wait import NETWORK_IDLE_TIMEOUT_S, network_idle, settle
 from . import register
 
 if TYPE_CHECKING:
@@ -126,6 +126,26 @@ class BrowserTier:
         if is_botwall(html, status) is not None:
             log.warning("challenge still present after %ds budget for %s", budget, url)
         return html
+
+    def worst_case_s(self, p: Policy) -> float:
+        """Worst-case budget for the engine's wait_for backstop.
+
+        Covers the full work the tier may do: goto + settle (+ network_idle),
+        the CF challenge loop (CF lane only), and the walmart soft-404 search
+        recovery (search goto + settle + item goto + settle).
+        """
+        s = get_settings()
+        is_cf = get_lane() == CF
+        timeout_s = s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S
+        budget = timeout_s + s.CRAWL_SETTLE_S
+        if "network_idle" in p.waits:
+            budget += NETWORK_IDLE_TIMEOUT_S
+        if is_cf:
+            budget += timeout_s  # full challenge loop budget
+        # Walmart soft-404 search recovery (worst case): search goto + settle +
+        # item goto + settle.
+        budget += timeout_s + WALMART_SEARCH_SETTLE_MS / 1000 + timeout_s + s.CRAWL_SETTLE_S
+        return budget
 
 
 # ---------------------------------------------------------------------------

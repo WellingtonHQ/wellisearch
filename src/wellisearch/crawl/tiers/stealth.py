@@ -43,8 +43,12 @@ class StealthTier:
             engine="stealth",
         )
 
+    def worst_case_s(self, p: Policy) -> float:
+        """Worst-case budget: a single StealthySession fetch (CRAWL_STEALTH_TIMEOUT_S)."""
+        return float(get_settings().CRAWL_STEALTH_TIMEOUT_S)
 
-def _extract_title(page) -> str | None:
+
+def _extract_title(page: object) -> str | None:
     """Best-effort <title> from the Scrapling Response; None on any failure."""
     try:
         el = page.css("title")

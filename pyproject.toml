@@ -24,6 +24,8 @@ dependencies = [
   "trafilatura>=2.0",
   "readability-lxml>=0.8",
   "markdownify>=1.1",
+  "beautifulsoup4>=4.12",
+  "lxml>=5.0",
 ]
 
 [project.scripts]

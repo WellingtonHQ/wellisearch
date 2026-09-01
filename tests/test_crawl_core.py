@@ -6,7 +6,7 @@ from wellisearch.crawl.botwall import is_botwall
 from wellisearch.crawl.extractors.base import GenericExtractor
 from wellisearch.crawl.policy import match
 from wellisearch.crawl.results import Rendered
-from wellisearch.crawl.signals import find_price, find_stock, gate
+from wellisearch.crawl.signals import find_price, find_stock
 
 # ---------------------------------------------------------------------------
 # Policy
@@ -40,8 +40,6 @@ assert find_stock("Currently In Stock") == "in stock"
 assert find_stock("Out of Stock") == "out of stock"
 assert find_stock("Only 3 left") == "only 3 left"
 assert find_stock("call for pricing") is None
-assert gate({"price": "$1.00", "stock": "in stock"}, ("price", "stock")) is True
-assert gate({"price": None}, ("price",)) is False
 print("OK signals")
 
 # ---------------------------------------------------------------------------

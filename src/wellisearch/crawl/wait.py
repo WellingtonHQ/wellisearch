@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("wellisearch.crawl.wait")
 
 # Default network-idle window; a page that never goes idle just logs a warning.
-NETWORK_IDLE_TIMEOUT_MS = 15000
+NETWORK_IDLE_TIMEOUT_S = 15.0
 
 
 async def settle(page: Page) -> None:
@@ -20,9 +20,9 @@ async def settle(page: Page) -> None:
     await page.wait_for_timeout(int(get_settings().CRAWL_SETTLE_S * 1000))
 
 
-async def network_idle(page: Page, timeout_ms: int = NETWORK_IDLE_TIMEOUT_MS) -> None:
+async def network_idle(page: Page, timeout_s: float = NETWORK_IDLE_TIMEOUT_S) -> None:
     """Best-effort network-idle wait; logs a warning on timeout, never raises."""
     try:
-        await page.wait_for_load_state("networkidle", timeout=timeout_ms)
+        await page.wait_for_load_state("networkidle", timeout=int(timeout_s * 1000))
     except Exception as e:
         log.warning("network_idle wait timed out: %s", e)

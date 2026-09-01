@@ -19,6 +19,10 @@ class Tier(Protocol):
 
     async def fetch(self, url: str, p: Policy) -> Rendered: ...
 
+    def worst_case_s(self, p: Policy) -> float:
+        """Worst-case budget (seconds) the engine uses as its wait_for backstop."""
+        ...
+
 
 _REGISTRY: dict[str, Tier] = {}
 
@@ -36,11 +40,6 @@ def by_name(name: str) -> Tier | None:
     if name == "stealth" and not s.CRAWL_STEALTH_TIER:
         return None
     return _REGISTRY.get(name)
-
-
-def all_names() -> list[str]:
-    """All registered tier names, sorted."""
-    return sorted(_REGISTRY)
 
 
 # Side-effect imports: each tier module registers itself on import.
