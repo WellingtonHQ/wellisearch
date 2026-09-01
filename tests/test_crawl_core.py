@@ -75,7 +75,11 @@ BOTWALL_HTML = '<html><body>Just a moment...<div class="cf-turnstile"></div></bo
 class FakeTier:
     name = "http"
 
-    async def fetch(self, url, p):
+    async def fetch(
+        self,
+        url,
+        p,
+    ):
         return Rendered(html=GOOD_HTML, title="Test Article", status=200, ms=1, engine="fake")
 
 
@@ -90,14 +94,22 @@ assert res.md
 class BotwallHttpTier:
     name = "http"
 
-    async def fetch(self, url, p):
+    async def fetch(
+        self,
+        url,
+        p,
+    ):
         return Rendered(html=BOTWALL_HTML, title=None, status=200, ms=1, engine="fake")
 
 
 class FakeBotwallTier:
     name = "browser"
 
-    async def fetch(self, url, p):
+    async def fetch(
+        self,
+        url,
+        p,
+    ):
         return Rendered(html=BOTWALL_HTML, title=None, status=200, ms=1, engine="fake")
 
 

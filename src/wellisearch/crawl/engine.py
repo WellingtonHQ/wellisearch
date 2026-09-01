@@ -35,7 +35,11 @@ def _flat_backstop(name: str) -> float:
     return float(s.CRAWL_TIMEOUT_S)
 
 
-def _tier_backstop(tier: "tiers.Tier", name: str, p: "Policy") -> float:
+def _tier_backstop(
+    tier: "tiers.Tier",
+    name: str,
+    p: "Policy",
+) -> float:
     """Per-tier asyncio.wait_for backstop, derived from the tier's worst case.
 
     Prefers the tier's own worst_case_s() (goto + settle + network_idle +

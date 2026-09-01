@@ -50,7 +50,11 @@ class BrowserTier:
 
     name = "browser"
 
-    async def fetch(self, url: str, p: Policy) -> Rendered:
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         """Fetch one URL in a pooled browser; always closes the page + releases.
 
         The CF lane uses its own pool (get_cf_pool) so a challenge crawl holding
@@ -68,7 +72,12 @@ class BrowserTier:
         finally:
             await pool.release(ctx)
 
-    async def _crawl(self, page: Page, url: str, p: Policy) -> Rendered:
+    async def _crawl(
+        self,
+        page: Page,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         s = get_settings()
         is_cf = get_lane() == CF
         timeout_s = s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S
@@ -111,7 +120,12 @@ class BrowserTier:
         return Rendered(html=html, title=title, status=status, ms=ms, engine="browser", notes=notes)
 
     async def _resolve_challenge(
-        self, page: Page, url: str, html: str, status: int, budget: int | None = None
+        self,
+        page: Page,
+        url: str,
+        html: str,
+        status: int,
+        budget: int | None = None,
     ) -> str:
         """Click the turnstile checkbox until clean or the budget is exhausted."""
         budget = budget if budget is not None else get_settings().CRAWL_CHALLENGE_BUDGET_S

@@ -22,7 +22,11 @@ class HttpTier:
 
     name = "http"
 
-    async def fetch(self, url: str, p: Policy) -> Rendered:
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         """One impersonated GET; returns html + status + title."""
         from curl_cffi.requests import AsyncSession
 

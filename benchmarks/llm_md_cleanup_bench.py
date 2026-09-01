@@ -827,7 +827,11 @@ def _native_base(base_url: str) -> str:
         base = base[: -len("/v1")]
     return base
 
-def _process_stream_line(line: str, t0: float, state: dict[str, Any]) -> None:
+def _process_stream_line(
+    line: str,
+    t0: float,
+    state: dict[str, Any],
+) -> None:
     """Fold one streamed line into the state dict (ttft, parts, tokens)."""
     if not line:
         return

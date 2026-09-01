@@ -102,7 +102,11 @@ def _reap_orphans(profile_dir: str) -> None:
 class BrowserPool:
     """Bounded pool of warm persistent browser contexts, keyed by profile."""
 
-    def __init__(self, size: int | None = None, prefix: str = "") -> None:
+    def __init__(
+        self,
+        size: int | None = None,
+        prefix: str = "",
+    ) -> None:
         # size defaults to the fast-lane pool size; the CF lane passes its own
         # (smaller) CRAWL_CF_POOL_SIZE so challenge crawls get their own contexts.
         # prefix namespaces the profile dir so the CF pool never reaps the fast
@@ -216,7 +220,11 @@ class BrowserPool:
             except Exception as e:
                 log.warning("evict close %s failed: %s", lru_key, e)
 
-    async def _launch(self, key: str, pw: Playwright) -> BrowserContext:
+    async def _launch(
+        self,
+        key: str,
+        pw: Playwright,
+    ) -> BrowserContext:
         s = get_settings()
         profile_dir = _profile_dir(key, self._prefix)
         os.makedirs(profile_dir, exist_ok=True)

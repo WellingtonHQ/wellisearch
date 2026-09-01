@@ -23,7 +23,11 @@ class StealthTier:
 
     name = "stealth"
 
-    async def fetch(self, url: str, p: Policy) -> Rendered:
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         """Run the sync StealthySession in a worker thread."""
         return await asyncio.to_thread(self._fetch_sync, url)
 

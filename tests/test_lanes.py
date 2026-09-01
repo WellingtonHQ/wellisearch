@@ -40,23 +40,40 @@ class FakeMouse:
     def __init__(self):
         self.clicks = 0
 
-    async def move(self, x, y):
+    async def move(
+        self,
+        x,
+        y,
+    ):
         pass
 
-    async def click(self, x, y):
+    async def click(
+        self,
+        x,
+        y,
+    ):
         self.clicks += 1
 
 
 class FakePage:
     """Returns a sequence of html from content(); records turnstile clicks."""
 
-    def __init__(self, contents, status=200):
+    def __init__(
+        self,
+        contents,
+        status=200,
+    ):
         self._contents = list(contents)
         self._status = status
         self.mouse = FakeMouse()
         self._last = CLEAN_HTML
 
-    async def goto(self, url, wait_until=None, timeout=None):
+    async def goto(
+        self,
+        url,
+        wait_until=None,
+        timeout=None,
+    ):
         return FakeResp(self._status)
 
     async def content(self):
@@ -70,7 +87,11 @@ class FakePage:
     async def wait_for_timeout(self, ms):
         pass
 
-    async def wait_for_load_state(self, state, timeout=None):
+    async def wait_for_load_state(
+        self,
+        state,
+        timeout=None,
+    ):
         pass
 
     async def evaluate(self, code):
@@ -244,7 +265,11 @@ print("OK crawl_deduped picks semaphore by lane")
 class ChallengeTier:
     name = "http"
 
-    async def fetch(self, url, p):
+    async def fetch(
+        self,
+        url,
+        p,
+    ):
         raise ChallengeDetected(url)
 
 
@@ -275,7 +300,12 @@ class FakeDB:
         self.done = []
         self.claimed = []
 
-    async def fetch_all(self, sql, params=None, timeout_ms=None):
+    async def fetch_all(
+        self,
+        sql,
+        params=None,
+        timeout_ms=None,
+    ):
         if "lane = 'cf'" in sql:
             return []
         return [{"url": "https://example.com/challenge"}]
@@ -284,7 +314,12 @@ class FakeDB:
         self.claimed.append(url)
         return True
 
-    async def queue_done(self, url, ok, error=None):
+    async def queue_done(
+        self,
+        url,
+        ok,
+        error=None,
+    ):
         self.done.append((url, ok))
 
     async def queue_route_to_cf(self, url):
