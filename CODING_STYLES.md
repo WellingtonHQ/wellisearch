@@ -318,32 +318,3 @@ logging.basicConfig(
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
 ```
-
----
-
-## 16. Data-Table Vertical Space
-
-Keep table-like literals — dicts of equal-shape records, lists of tuples — on a
-single line per entry when the entry fits within the line-length cap (Rule 6).
-Break an entry across lines only when it exceeds the cap. Don't break short
-entries onto multiple lines for uniformity: that bloats the file vertically and
-hurts scanning.
-
-**Do:**
-```python
-POLICY = {
-    "apnews.com": Policy("ap", ("http", "browser", "stealth"), ("settle",), (), "shared"),
-    "amazon.com": Policy(
-        "amazon", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
-    ),
-}
-```
-
-**Don't:**
-```python
-POLICY = {
-    "apnews.com": Policy(
-        "ap", ("http", "browser", "stealth"), ("settle",), (), "shared",
-    ),
-}
-```
