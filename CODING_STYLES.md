@@ -318,3 +318,36 @@ logging.basicConfig(
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
 ```
+
+---
+
+## 16. Spacing Between Elements
+
+When defining elements in a file, don't use more than two consecutive empty lines, 
+unless you are splitting sections.
+
+**Do:**
+```python
+def main()
+
+def run()
+```
+
+**Do:**
+```python
+CONSTANT_1=6
+CONSTANT_2="Cheese"
+
+
+def run()
+```
+In the above example two lines are okay between major sections of a file, 
+but not between elements of the same section.
+
+**Don't:**
+```python
+def main()
+
+
+def run()
+```
