@@ -161,28 +161,27 @@ print("OK bestbuy")
 # NYTimes
 # ---------------------------------------------------------------------------
 NYT_STUB_HTML = (
-    "<html><head><title>AI Models Are Getting Smarter. Your Privacy Is Not. | The New York Times</title></head><body>"
-    "<h1>AI Models Are Getting Smarter. Your Privacy Is Not.</h1>"
-    "<p>By DANIEL M. BRIGGS</p>"
-    "<p>Large language models now retain and reuse far more of what users share with them "
-    "than earlier systems did, raising fresh questions about who can see that data.</p>"
+    "<html><head><title>Sample Paywall Stub | The New York Times</title></head><body>"
+    "<h1>Sample Paywall Stub</h1>"
+    "<p>By STAFF WRITER</p>"
+    "<p>This is a short placeholder body used to exercise the paywall-stub path. "
+    "It is intentionally brief so the extractor treats it as a metered-paywall stub "
+    "and escalates to the stealth tier. No real reporting is included.</p>"
     "<p>Subscribe to read all of The New York Times.</p>"
     "</body></html>"
 )
 NYT_LONG_HTML = (
-    "<html><head><title>Chipmakers Race to Build the Next Generation of AI Data Centers | The New York Times</title></head><body>"
-    "<h1>Chipmakers Race to Build the Next Generation of AI Data Centers</h1>"
-    "<p>" + "The race to build the next generation of artificial-intelligence data centers has "
-    "turned into a global contest of engineering, capital, and supply chains, with chipmakers, "
-    "cloud providers, and governments all betting that the demand for compute will keep "
-    "compounding for years. " * 3 + "</p>"
-    "<p>" + "Industry executives describe a buildout that spans continents: new fabs in Arizona "
-    "and Germany, submarine cables in the Atlantic, and cooling plants in the desert that "
-    "draw more power than small cities. The economics are driven by a simple assumption "
-    "that every model generation will need more compute than the last. " * 3 + "</p>"
-    "<p>" + "Analysts caution that the pace of deployment depends on power availability, "
-    "interconnection capacity, and the willingness of utilities to sign long-term contracts "
-    "for loads that were unimaginable a decade ago. " * 3 + "</p>"
+    "<html><head><title>Sample Long Article | The New York Times</title></head><body>"
+    "<h1>Sample Long Article</h1>"
+    "<p>" + "This is a long placeholder article body used to exercise the full-article path. "
+    "It is intentionally verbose filler text with no real reporting, included only so the "
+    "extractor clears its minimum-length gate and accepts the page as a complete article. " * 4 + "</p>"
+    "<p>" + "The paragraphs repeat a neutral, generic statement about testing and fixtures. "
+    "Nothing here is drawn from any publication; it exists solely to give the extractor "
+    "enough characters to treat the page as a full article rather than a paywall stub. " * 4 + "</p>"
+    "<p>" + "Additional filler continues here to push the total length well past the "
+    "threshold, ensuring the accept gate and the stealth-escalation branch are both "
+    "exercised by the test suite without relying on any real-world content at all. " * 4 + "</p>"
     "</body></html>"
 )
 ex = NYTimesExtractor()
@@ -200,15 +199,17 @@ print("OK nytimes")
 # WSJ
 # ---------------------------------------------------------------------------
 WSJ_STUB_HTML = (
-    "<html><head><title>The Quiet Collapse of the Regional Bank | The Wall Street Journal</title></head><body>"
-    "<h1>The Quiet Collapse of the Regional Bank</h1>"
-    "<p>By OUR STAFF</p>"
-    "<p>Regional banks have been quietly shedding deposits all year, and the latest filings "
-    "suggest the outflow is accelerating as customers move money into money-market funds "
-    "offering higher yields. The trend has forced several mid-sized lenders to raise interest "
-    "on savings products, to sell securities portfolios at a loss, and in at least two cases "
-    "to seek emergency funding from the Federal Reserve's discount window. Analysts say the "
-    "pressure is unlikely to ease until short-term rates come down.</p>"
+    "<html><head><title>Sample Paywall Stub | The Wall Street Journal</title></head><body>"
+    "<h1>Sample Paywall Stub</h1>"
+    "<p>By STAFF WRITER</p>"
+    "<p>This is a placeholder lead paragraph used to exercise the paywall-stub path. "
+    "It is generic filler text with no real reporting, included only so the extractor "
+    "has enough characters to accept the page while the paywall marker is present. "
+    "The content is intentionally neutral and drawn from no actual publication. "
+    "It exists to give the test a realistic-looking stub without relying on any "
+    "copyrighted material from a real outlet, and it repeats a simple statement "
+    "about fixtures and testing to reach a comfortable length for the gate. "
+    "Nothing here reflects any actual market data, filing, or event.</p>"
     "<p>Subscribe to read all of The Wall Street Journal.</p>"
     "</body></html>"
 )
@@ -222,28 +223,23 @@ print("OK wsj")
 # Reuters
 # ---------------------------------------------------------------------------
 REUTERS_HTML = (
-    "<html><head><title>Global markets rally as inflation cools - Reuters</title></head><body>"
-    "<h1>Global markets rally as inflation cools</h1>"
-    "<p>" + "Stocks around the world climbed on Friday after new data showed inflation slowing "
-    "faster than expected in the United States and the euro zone, lifting hopes that central "
-    "banks will begin cutting interest rates earlier than markets had priced in. The S&P 500 "
-    "rose 1.4 percent to close near record levels, while European and Asian indexes posted "
-    "their best session in three months. " * 2 + "</p>"
-    "<p>" + "Bond yields fell across the curve, with the two-year Treasury note down 12 basis points "
-    "and the ten-year yield slipping below 4 percent for the first time since early last "
-    "year. The dollar weakened against a basket of currencies, and oil prices eased on "
-    "renewed concerns about demand. " * 2 + "</p>"
-    "<p>Related: central banks signal patience on rate cuts as data improves, analysts "
-    "say, as the euro zone holds its benchmark rate steady for a fourth consecutive month.</p>"
-    "<p>Oil slides as traders weigh demand outlook and supply risks across the major "
-    "producing regions of the world.</p>"
+    "<html><head><title>Sample Market Wrap | Reuters</title></head><body>"
+    "<h1>Sample Market Wrap</h1>"
+    "<p>" + "This is a placeholder market-wrap body used to exercise the links-section trim. "
+    "It is generic filler text with no real reporting, included only so the extractor "
+    "clears its minimum-length gate before the marker section is cut away. The text "
+    "repeats a neutral statement about testing and fixtures, drawn from no publication. " * 3 + "</p>"
+    "<p>" + "Additional filler continues here to push the body length comfortably past the "
+    "one-thousand-character threshold, ensuring the accept gate passes while the "
+    "marker line below is still exercised by the hard-cut logic. " * 3 + "</p>"
+    "<p>Related: a sample headline that should be trimmed from the output.</p>"
     "</body></html>"
 )
 ex = ReutersExtractor()
 md = generic_md(REUTERS_HTML)
 assert "Related" in md, md[:200]  # related section present pre-cut, so the cut is exercised
 fitted = ex.fit(rendered(REUTERS_HTML))
-assert "Central banks signal patience" not in fitted.md, fitted.md[-200:]
+assert "should be trimmed from the output" not in fitted.md, fitted.md[-200:]
 assert ex.accept(fitted)
 print("OK reuters")
 
@@ -251,25 +247,23 @@ print("OK reuters")
 # Guardian
 # ---------------------------------------------------------------------------
 GUARDIAN_HTML = (
-    "<html><head><title>Climate change: the year the world's heat records fell - theguardian.com</title></head><body>"
-    "<h1>Climate change: the year the world's heat records fell</h1>"
-    "<p>" + "The past year was the warmest on record for the planet, with average surface "
-    "temperatures running more than 1.5 degrees Celsius above pre-industrial levels for "
-    "the first full calendar year. Scientists say the milestone, long predicted by climate "
-    "models, is a warning rather than a one-off anomaly, and that the coming years will "
-    "likely be warmer still. " * 2 + "</p>"
-    "<p>" + "Extreme heat drove wildfires across the Mediterranean, drought across southern Europe, "
-    "and record flooding in parts of South Asia. Insurance losses reached an all-time high, "
-    "and several governments announced emergency funding for the hardest-hit regions. " * 2 + "</p>"
-    "<p>Explore more: an analysis of what the new temperature record means for the "
-    "Paris Agreement and the next round of climate negotiations in Geneva.</p>"
+    "<html><head><title>Sample Climate Piece | theguardian.com</title></head><body>"
+    "<h1>Sample Climate Piece</h1>"
+    "<p>" + "This is a placeholder climate body used to exercise the stories-section trim. "
+    "It is generic filler text with no real reporting, included only so the extractor "
+    "clears its minimum-length gate before the marker section is cut away. The text "
+    "repeats a neutral statement about testing and fixtures, drawn from no publication. " * 3 + "</p>"
+    "<p>" + "Additional filler continues here to push the body length comfortably past the "
+    "one-thousand-character threshold, ensuring the accept gate passes while the "
+    "marker line below is still exercised by the hard-cut logic. " * 3 + "</p>"
+    "<p>Explore more: a sample headline that should be trimmed from the output.</p>"
     "</body></html>"
 )
 ex = GuardianExtractor()
 md = generic_md(GUARDIAN_HTML)
 assert "Explore more" in md, md[:200]  # related section present pre-cut, so the cut is exercised
 fitted = ex.fit(rendered(GUARDIAN_HTML))
-assert "Paris Agreement" not in fitted.md, fitted.md[-200:]
+assert "should be trimmed from the output" not in fitted.md, fitted.md[-200:]
 assert ex.accept(fitted)
 print("OK guardian")
 
@@ -277,18 +271,16 @@ print("OK guardian")
 # AP
 # ---------------------------------------------------------------------------
 AP_HTML = (
-    "<html><head><title>Senate advances AI safety bill in rare bipartisan vote - AP News</title></head><body>"
+    "<html><head><title>Sample Senate Story | AP News</title></head><body>"
     "<p>AP News | Most Popular | Newsletters | Sign up</p>"
-    "<h1>Senate advances AI safety bill in rare bipartisan vote</h1>"
-    "<p>" + "WASHINGTON — The Senate on Wednesday advanced a sweeping artificial-intelligence "
-    "safety bill in a rare bipartisan vote, setting up a final House fight over the first "
-    "major federal rules for how large AI models are developed, tested, and deployed. The "
-    "measure would require companies to report serious safety incidents to the government "
-    "and would create a new federal registry for the most capable models. " * 2 + "</p>"
-    "<p>" + "The bill drew support from members of both parties who say the current patchwork of "
-    "state laws is unworkable for a technology that crosses state lines by design. Industry "
-    "groups warned the reporting requirements would force companies to disclose competitive "
-    "secrets, while safety advocates said the rules go far too far. " * 2 + "</p>"
+    "<h1>Sample Senate Story</h1>"
+    "<p>" + "This is the real article body for the test, written as generic filler with "
+    "no real reporting. It is included so the extractor clears its minimum-length gate "
+    "after the head-decoy block above is dropped. The text repeats a neutral statement "
+    "about testing and fixtures, drawn from no publication whatsoever. " * 3 + "</p>"
+    "<p>" + "Additional filler continues here to push the body length comfortably past the "
+    "one-thousand-character threshold, ensuring the accept gate passes while the "
+    "head-decoy marker is still exercised by the trim logic on this fixture. " * 3 + "</p>"
     "</body></html>"
 )
 ex = APExtractor()
@@ -296,7 +288,7 @@ md = generic_md(AP_HTML)
 assert "Most Popular" in md, md[:200]  # head decoy present pre-cut, so the trim is exercised
 fitted = ex.fit(rendered(AP_HTML))
 assert "Most Popular" not in fitted.md, fitted.md[:200]
-assert "bipartisan vote" in fitted.md, fitted.md[:200]
+assert "real article body for the test" in fitted.md, fitted.md[:200]
 assert ex.accept(fitted)
 print("OK ap")
 
