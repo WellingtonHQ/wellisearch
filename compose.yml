@@ -1,4 +1,4 @@
-# wellisearch — app container (one project, one network pair).
+# wellisearch — app container (one project, one network).
 #
 # Networks:
 #   - wellisearch_default : managed by THIS project — `docker compose up -d`
@@ -6,13 +6,12 @@
 #                          OpenWebUI (if present) joins it by name so it keeps
 #                          reaching `wellisearch:8780` for its external web
 #                          loader.
-#   - postgres-net       : infra project network (external — the only way to
-#                          reach the shared Postgres container by the
-#                          `postgres` alias). Requires the infra stack to be
-#                          up: `cd ../infra && docker compose up -d`.
 #
-# No depends_on on postgres: cross-project ordering is handled by the app's
-# startup DB retry (~10 x 3 s) + self-creating the `wellisearch` DB.
+# Postgres: reached over the network via POSTGRES_HOST (Tailscale hostname),
+# not a shared docker network. This lets a second wellisearch instance on
+# another machine join the same queue — both connect to the same Postgres.
+# No depends_on on postgres: ordering is handled by the app's startup DB
+# retry (~10 x 3 s) + self-creating the `wellisearch` DB.
 name: wellisearch
 
 services:
@@ -34,7 +33,6 @@ services:
       start_period: 60s
     networks:
       - wellisearch_default
-      - postgres-net
 
 volumes:
   profiles:   # warm browser profiles (CRAWL_PROFILE_DIR=/profiles)
@@ -42,6 +40,3 @@ volumes:
 networks:
   wellisearch_default:   # managed: created/removed by this project
     name: wellisearch_default  # pin the real name (OWUI stack joins by name)
-  postgres-net:          # created by the infra project; must stay external
-    name: postgres-net
-    external: true
