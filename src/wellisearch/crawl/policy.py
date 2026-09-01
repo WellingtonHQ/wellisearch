@@ -33,12 +33,24 @@ POLICY: dict[str, Policy] = {
     "bestbuy.com": Policy(
         "bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
     ),
-    "boardgamegeek.com": Policy("bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated"),
-    "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
-    "wsj.com": Policy("wsj", ("http", "browser", "stealth"), ("settle",), (), "shared"),
-    "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
-    "theguardian.com": Policy("guardian", ("http", "browser", "stealth"), ("settle",), (), "shared"),
-    "apnews.com": Policy("ap", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    "boardgamegeek.com": Policy(
+        "bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated",
+    ),
+    "nytimes.com": Policy(
+        "nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared",
+    ),
+    "wsj.com": Policy(
+        "wsj", ("http", "browser", "stealth"), ("settle",), (), "shared",
+    ),
+    "reuters.com": Policy(
+        "reuters", ("http", "browser", "stealth"), ("settle",), (), "shared",
+    ),
+    "theguardian.com": Policy(
+        "guardian", ("http", "browser", "stealth"), ("settle",), (), "shared",
+    ),
+    "apnews.com": Policy(
+        "ap", ("http", "browser", "stealth"), ("settle",), (), "shared",
+    ),
 }
 
 DEFAULT_POLICY = Policy("default", ("http", "browser"), ("settle",), (), "shared")
