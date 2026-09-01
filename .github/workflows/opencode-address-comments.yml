@@ -1,10 +1,17 @@
 name: opencode-address-comments
 
 on:
-  issue_comment:
-    types: [created, edited]
+  # One review submission = one run that handles every /oc comment in it.
+  pull_request_review:
+    types: [submitted]
+  # Standalone inline comments (not part of a review) get their own run.
+  # Comments that belong to a review are skipped here and handled by the
+  # pull_request_review run above (see the "Determine" step).
   pull_request_review_comment:
-    types: [created, edited]
+    types: [created]
+  # Issue-conversation comments.
+  issue_comment:
+    types: [created]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
@@ -12,25 +19,74 @@ concurrency:
 
 jobs:
   address-comments:
-    if: |
-      github.actor != 'github-actions[bot]' &&
-      (
-        startsWith(github.event.comment.body, '/oc') ||
-        startsWith(github.event.comment.body, '/opencode')
-      )
+    if: github.actor != 'github-actions[bot]'
     runs-on: self-hosted
     permissions:
       contents: write
       pull-requests: write
       issues: write
     steps:
+      - name: Determine whether this event should be acted on
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          REVIEW_ID: ${{ github.event.comment.pull_request_review_id }}
+          REVIEW_NUMBER: ${{ github.event.review.id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request_review)
+              # Act only if at least one inline comment in this review is an /oc command.
+              BODIES=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments?per_page=100" \
+                --jq "[.[] | select(.pull_request_review_id == $REVIEW_NUMBER) | select(.body | startswith(\"/oc\") or startswith(\"/opencode\")) | .body] | .[]" \
+                2>/dev/null) || BODIES=""
+              if [ -z "$BODIES" ]; then
+                echo "::notice::No /oc comment found in this review. Exiting."
+                exit 0
+              fi
+              ;;
+            pull_request_review_comment)
+              # Comments that belong to a review are owned by the pull_request_review run.
+              if [ -n "$REVIEW_ID" ]; then
+                echo "::notice::Comment belongs to review $REVIEW_ID; the review run will handle it. Exiting."
+                exit 0
+              fi
+              case "$COMMENT_BODY" in
+                /oc*|/opencode*) : ;;
+                *) echo "::notice::Comment does not start with /oc. Exiting."; exit 0 ;;
+              esac
+              ;;
+            issue_comment)
+              case "$COMMENT_BODY" in
+                /oc*|/opencode*) : ;;
+                *) echo "::notice::Comment does not start with /oc. Exiting."; exit 0 ;;
+              esac
+              ;;
+            *)
+              echo "::notice::Unhandled event type '$EVENT_NAME'. Exiting."
+              exit 0
+              ;;
+          esac
+
       - name: Verify comment author is authorized
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          COMMENTER: ${{ github.event.comment.user.login }}
-          COMMENTER_TYPE: ${{ github.event.comment.user.type }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+          COMMENT_TYPE: ${{ github.event.comment.user.type }}
+          REVIEW_USER: ${{ github.event.review.user.login }}
+          REVIEW_TYPE: ${{ github.event.review.user.type }}
         run: |
+          if [ "$EVENT_NAME" = "pull_request_review" ]; then
+            COMMENTER="$REVIEW_USER"
+            COMMENTER_TYPE="$REVIEW_TYPE"
+          else
+            COMMENTER="$COMMENT_USER"
+            COMMENTER_TYPE="$COMMENT_TYPE"
+          fi
           if [ "$COMMENTER_TYPE" = "Bot" ]; then
             echo "::notice::Commenter '$COMMENTER' is a bot account. Exiting."
             exit 0
@@ -46,19 +102,6 @@ jobs:
               exit 0
               ;;
           esac
-
-      - name: Early exit if another run is active
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          ACTIVE=$(gh api repos/${{ github.repository }}/actions/workflows/${{ github.workflow }}.yml/runs \
-            --jq '[.workflow_runs[] | select(.id != '"${RUN_ID}"') | select(.status == "in_progress" or .status == "queued")] | length')
-          if [ "$ACTIVE" -gt 0 ]; then
-            echo "::notice::Another run is already processing PR #$PR_NUMBER. Exiting early."
-            exit 0
-          fi
 
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -82,12 +125,27 @@ jobs:
         with:
           preferred-model: qwen/qwen3.8-27b
 
-      - name: Write triggering comment
+      - name: Write triggering comment(s)
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
           COMMENT_BODY: ${{ github.event.comment.body }}
+          REVIEW_NUMBER: ${{ github.event.review.id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          printf '%s' "$COMMENT_BODY" > triggering_comment.txt
+          if [ "$EVENT_NAME" = "pull_request_review" ]; then
+            BODIES_JSON=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments?per_page=100" \
+              --jq "[.[] | select(.pull_request_review_id == $REVIEW_NUMBER) | select(.body | startswith(\"/oc\") or startswith(\"/opencode\")) | .body]")
+            {
+              echo "The following review comments must ALL be addressed (each is a separate request):"
+              echo ""
+              echo "$BODIES_JSON" | jq -r 'to_entries[] | "### Comment \(.key + 1)\n\(.value)\n"'
+            } > triggering_comment.txt
+          else
+            printf '%s' "$COMMENT_BODY" > triggering_comment.txt
+          fi
 
       - name: Run opencode (local) and post reply
         shell: bash
@@ -97,16 +155,17 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           OPENCODE_AUTO_SHARE: "false"
           PROMPT: |
-            You are responding to a comment on a GitHub pull request. The PR/issue number is in the PR_NUMBER environment variable.
+            You are responding to review comment(s) on a GitHub pull request. The PR/issue number is in the PR_NUMBER environment variable.
             You have the `gh` CLI and GITHUB_TOKEN available.
 
-            Read the triggering comment from the file `triggering_comment.txt` in the current directory.
+            Read the triggering comment(s) from the file `triggering_comment.txt` in the current directory.
+            If the file contains multiple comments (labeled "### Comment N"), you MUST address EVERY one of them before finishing — do not stop after the first.
 
             Before pushing any changes, fetch and rebase from origin just before pushing to avoid diverged history conflicts.
-            Read the comment and implement the suggestion in the codebase.
+            Read each comment and implement the suggestion in the codebase.
             Test and verify changes to make sure they compile and work as expected.
             If you make code changes, commit and push them to the current branch.
-            If the comment is not a suggestion or is a question, write your response or explanation to a file named `reply.md` in the current directory (it will be posted to the PR). Do not make code changes unless told to do so.
+            If a comment is not a suggestion or is a question, write your response or explanation to a file named `reply.md` in the current directory (it will be posted to the PR). Do not make code changes unless told to do so.
             If no changes are currently pending and there is nothing to reply, do not create reply.md.
         run: |
           set -euo pipefail
