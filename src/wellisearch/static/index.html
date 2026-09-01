@@ -133,7 +133,7 @@
     <div class="card"><div class="sub">pages / chunks</div><div class="big" id="idx-size">—</div></div>
     <div class="card"><div class="sub">crawl queue</div><div class="big" id="queue-depth">—</div><div class="sub" id="queue-oldest"></div></div>
     <div class="card"><div class="sub">freshness</div><div class="row" id="fresh" style="gap:12px;margin-top:6px"></div></div>
-    <div class="card"><div class="sub">crawls (window)</div><div class="row" id="crawls30" style="gap:12px;margin-top:6px"></div></div>
+    <div class="card"><div class="sub" id="crawls30-label">successful crawls (window)</div><div class="row" id="crawls30" style="gap:12px;margin-top:6px"></div></div>
   </div>
 </section>
 
@@ -442,7 +442,10 @@ function renderIndex(st, pagesData, win) {
     (f["never"] ? `<span class="muted">never: ${f["never"]}</span>` : "") || `<span class="muted">empty index</span>`;
   const bs = (win?.crawls && win.crawls.by_status) || {};
   const errs = Object.entries(bs).filter(([k]) => k !== "ok" && k !== "unchanged").reduce((a, [, v]) => a + v, 0);
+  const pm = win?.crawls?.successful_per_minute ?? ((bs.ok ?? 0) + (bs.unchanged ?? 0)) / (winSecs / 60);
+  $("#crawls30-label").textContent = "successful crawls (" + winLabel() + ")";
   $("#crawls30").innerHTML =
+    `<span class="big">${pm}/min</span>` +
     `<span class="ok">ok: ${bs.ok ?? 0}</span>` +
     `<span class="muted">unchanged: ${bs.unchanged ?? 0}</span>` +
     `<span class="err">errors: ${errs}</span>`;
@@ -510,7 +513,7 @@ async function refresh() {
       const ok = health.status === "ok";
       el.className = "pill " + (ok ? "ok" : "bad");
       el.textContent = health.status;
-      el.title = `db: ${health.database}\ncrawl4ai: ${health.crawl4ai}`;
+      el.title = `db: ${health.database}\ncrawler: ${health.crawler}`;
     }
     renderNow(st);
     renderProviders(prov);

@@ -52,10 +52,14 @@ CREATE TABLE IF NOT EXISTS crawl_queue (
   enqueued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   attempts INT NOT NULL DEFAULT 0,
   last_error TEXT,
-  status TEXT NOT NULL DEFAULT 'pending' -- pending | in_flight | done | failed
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | in_flight | done | failed
+  lane TEXT NOT NULL DEFAULT 'fast' -- 'fast' | 'cf' (challenge lane)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS crawl_queue_url_pending_uq
   ON crawl_queue(url) WHERE status IN ('pending','in_flight');
+-- existing databases: created before the column existed — add it on first
+-- startup after this change (idempotent, like the provider_state.sort_order add)
+ALTER TABLE crawl_queue ADD COLUMN IF NOT EXISTS lane TEXT NOT NULL DEFAULT 'fast';
 
 -- ---------------------------------------------------------------------------
 -- search_log: every search (query, source/provider, urls, titles, snippets)

@@ -17,7 +17,8 @@ from collections.abc import Awaitable, Callable
 
 from . import worker
 from .config import get_settings
-from .crawler import crawl_semaphore
+from .crawl.lane import CF, get_lane
+from .crawler import crawl_semaphore, cf_crawl_semaphore
 from .db import db
 
 log = logging.getLogger("wellisearch.queue")
@@ -78,8 +79,10 @@ async def crawl_deduped(
     INFLIGHT.register(url, fut)
     try:
         # global crawl cap: dedup waiters above never hold a slot — only the
-        # coroutine actually running the crawl does
-        async with crawl_semaphore():
+        # coroutine actually running the crawl does. The CF lane uses its own
+        # (smaller) cap so a challenge crawl never holds a fast-lane slot.
+        sem = cf_crawl_semaphore() if get_lane() == CF else crawl_semaphore()
+        async with sem:
             result = await fn()
         if not fut.done():
             fut.set_result(result)
@@ -87,6 +90,11 @@ async def crawl_deduped(
     except Exception as e:
         if not fut.done():
             fut.set_exception(e)
+            # The owner coroutine re-raises this to its caller (which handles
+            # it); a dedup waiter, if any, retrieves it via the future. Mark it
+            # retrieved so asyncio doesn't log "Future exception was never
+            # retrieved" when there is no waiter (the common queue-drain case).
+            fut.exception()
         raise
     finally:
         INFLIGHT.forget(url)

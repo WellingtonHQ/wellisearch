@@ -1,8 +1,8 @@
 """fetch_page (single) + fetch_pages (bulk, budgeted) — the authoritative
 on-demand read path (plan §7).
 
-- Returns stored fit_markdown if indexed, else crawls on demand via Crawl4AI
-  and stores it (the read path is the real indexing loop).
+- Returns stored fit_markdown if indexed, else crawls on demand via the
+  native crawler and stores it (the read path is the real indexing loop).
 - Bumps fetch_count for every page fetched (priority + prominence).
 - Never crawls a URL twice concurrently (shared in-flight set).
 - fetch_pages allocates a shared char budget with swappable, boundary-safe
@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 from . import crawler
 from .config import get_settings
+from .crawl.results import ChallengeDetected
 from .db import db
 from .serialize import format_timing
 from .truncation import (
@@ -289,7 +290,7 @@ async def _resolve_page(url: str) -> dict:
     """Content for one URL: from index when present, else crawl on demand.
 
     Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
-    (the crawl4ai round-trip + store) so callers can report the timing split.
+    (the native-crawler round-trip + store) so callers can report the timing split.
     """
     t_index = time.monotonic()
     page = await db.page_get(url)
@@ -307,7 +308,16 @@ async def _resolve_page(url: str) -> dict:
 
     # crawl on demand (in-flight-deduped inside crawl_url)
     t_crawl = time.monotonic()
-    r = await crawl_url(url, trigger="fetch")
+    try:
+        r = await crawl_url(url, trigger="fetch")
+    except ChallengeDetected:
+        # Fast-lane probe hit a bot-wall: route the URL onto the CF challenge
+        # lane so the worker's CF drain runs the full turnstile loop, then fail
+        # gracefully (the on-demand read can't wait for the challenge to solve).
+        if not await db.queue_enqueue(url, "fetch", lane="cf"):
+            await db.queue_route_to_cf(url)
+        log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
+        raise crawler.CrawlError(url, "bot-wall detected; routed to the CF challenge lane")
     page = await db.page_get(url)
     crawl_ms = int((time.monotonic() - t_crawl) * 1000)
     md = (page or {}).get("fit_markdown") or ""

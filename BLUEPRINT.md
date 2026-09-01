@@ -19,7 +19,7 @@ A single self-hosted, self-maintaining **search gateway + web-index service**:
 - Background worker re-crawls the watchlist continuously (every 30 min tick, budgeted per run), ordered by `fetch_count DESC, last_crawled ASC`. Pages the LLM actually reads get refreshed first and rank higher.
 - REST API + **dashboard UI** (same container) showing live activity: current crawl/queue, index size, search hit-rate by provider over time, crawl success/failure, provider quota usage, top-fetched pages, freshness distribution.
 
-**This is the evolution of the OWUI `search_the_web` skill** (SearXNG → Crawl4AI `md`). After this, the LLM's workflow is just: `search_web` (wellisearch) + `fetch_page`/`fetch_pages` (wellisearch). The old SearXNG MCP in OWUI can be retired (wellisearch's provider gateway covers the fallback); keep it registered only during migration.
+**This is the evolution of the OWUI `search_the_web` skill** (SearXNG → wellisearch). After this, the LLM's workflow is just: `search_web` (wellisearch) + `fetch_page`/`fetch_pages` (wellisearch), all served by wellisearch's native in-process crawler. The old SearXNG MCP in OWUI can be retired (wellisearch's provider gateway covers the fallback); keep it registered only during migration.
 
 ## 2. REST API (dashboard + scripting)
 

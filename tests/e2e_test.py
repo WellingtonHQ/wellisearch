@@ -52,12 +52,12 @@ def first_url(markdown: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 async def test_health(c: httpx.AsyncClient) -> None:
-    """GET /health: database + crawl4ai both ok."""
+    """GET /health: database + crawler both ok."""
     r = await c.get("/health")
     j = r.json()
     check(
-        "health: db + crawl4ai ok",
-        r.status_code == 200 and j["database"] == "ok" and j["crawl4ai"] == "ok",
+        "health: db + crawler ok",
+        r.status_code == 200 and j["database"] == "ok" and j["crawler"] == "ok",
         json.dumps(j)[:160]
     )
 

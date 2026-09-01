@@ -208,7 +208,7 @@ gateway hit rather than a multi-minute stall.
 |---|---|---|
 | `chunk_markdown` moved to `asyncio.to_thread` | `index.py` | pure-Python CPU work was running on the event loop, stalling **all** request handlers while a page stored |
 | worker tick mutex | `worker.py` | interval timer + debounced kick could run two ticks concurrently, doubling crawl/embed load |
-| **global** crawl semaphore (`CRAWL_MAX_PARALLEL`, shared by worker *and* fetch paths; dedup waiters don't hold a slot) | `crawler.py`, `queue.py` | `fetch_pages` fanned out unbounded crawls per request; now total concurrent Crawl4AI calls ≤ 3 (matches crawl4ai's 3 gunicorn workers) |
+| **global** crawl semaphore (`CRAWL_MAX_PARALLEL`, shared by worker *and* fetch paths; dedup waiters don't hold a slot) | `crawler.py`, `queue.py` | `fetch_pages` fanned out unbounded crawls per request; now total concurrent crawls ≤ 3 (matches the crawler's pool size) |
 | fastembed `threads=EMBED_THREADS` (default **2**) | `embed.py`, `config.py` | each embed session spawned an unbounded ORT thread pool; 3–4 concurrent sessions oversubscribed the host and starved Postgres |
 | `shared_buffers` 256 MB → **2 GB**, `effective_cache_size` 1 GB → **4 GB** | `infra/docker-compose.yml` | the 8.5 GB index was being served through a 256 MB buffer cache — index-backed scans read most pages from disk (container limit 8 G) |
 
@@ -252,7 +252,7 @@ gateway hit rather than a multi-minute stall.
   bounded, cost is occasional.
 - **Global crawl cap**: a `fetch_page` for an unknown URL may now wait
   behind worker crawls for up to ~45 s (crawl timeout) to acquire a slot.
-  Alternative was unbounded fan-out that saturates Crawl4AI and the pool —
+  Alternative was unbounded fan-out that saturates the crawler and the pool —
   the current behavior is the safer failure mode.
 - **EMBED_THREADS=2**: per-batch embedding is marginally slower on a
   many-core server than with all cores; on this host it is the difference
