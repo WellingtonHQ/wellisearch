@@ -20,24 +20,32 @@ URL = "https://python.langchain.com/docs/introduction/"
 async def main() -> None:
     p = match(URL)
 
-    # --- http tier -----------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Http Tier
+    # ---------------------------------------------------------------------------
     r = await HttpTier().fetch(URL, p)
     assert r.status == 200, r.status
     assert r.html, "empty html"
     print("OK http tier")
 
-    # --- browser tier --------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Browser Tier
+    # ---------------------------------------------------------------------------
     r = await BrowserTier().fetch(URL, p)
     assert r.html, "empty html"
     assert r.title, "empty title"
     print("OK browser tier")
 
-    # --- stealth tier --------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Stealth Tier
+    # ---------------------------------------------------------------------------
     r = await StealthTier().fetch(URL, p)
     assert r.html, "empty html"
     print("OK stealth tier")
 
-    # --- pool ----------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Pool
+    # ---------------------------------------------------------------------------
     ctx = await get_pool().acquire("shared")
     await get_pool().release(ctx)
     await get_pool().close_all()

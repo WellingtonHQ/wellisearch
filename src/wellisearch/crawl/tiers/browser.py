@@ -128,7 +128,9 @@ class BrowserTier:
         return html
 
 
-# --------------------------------------------------------------------- helpers
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 async def _safe_close(page: Page) -> None:
     """Close the page; never raises (runs in a finally, even on cancellation)."""

@@ -117,7 +117,9 @@ class BrowserPool:
         self._pw = None
         self._lock = asyncio.Lock()
 
-    # ------------------------------------------------------------------ acquire
+    # ---------------------------------------------------------------------------
+    # Acquire
+    # ---------------------------------------------------------------------------
 
     async def acquire(self, key: str) -> BrowserContext:
         """Acquire a context for key, launching (and LRU-evicting) as needed."""
@@ -156,7 +158,9 @@ class BrowserPool:
                 log.warning("playwright stop failed: %s", e)
             self._pw = None
 
-    # -------------------------------------------------------------------- internals
+    # ---------------------------------------------------------------------------
+    # Internals
+    # ---------------------------------------------------------------------------
 
     def _key_of(self, ctx: BrowserContext) -> str | None:
         for key, c in self._contexts.items():

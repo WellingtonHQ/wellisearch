@@ -8,7 +8,9 @@ from wellisearch.crawl.policy import match
 from wellisearch.crawl.results import Rendered
 from wellisearch.crawl.signals import find_price, find_stock, gate
 
-# --- policy ---------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Policy
+# ---------------------------------------------------------------------------
 p = match("https://www.amazon.com/dp/B08WM3LJQB")
 assert p.name == "amazon"
 assert "stealth" in p.tiers
@@ -19,7 +21,9 @@ assert match("https://example.com/x").name == "default"
 assert match("https://notamazon.com/x").name == "default"  # suffix match must not false-positive
 print("OK policy")
 
-# --- botwall --------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Botwall
+# ---------------------------------------------------------------------------
 wall = '<html><body>Just a moment...<div class="cf-turnstile"></div></body></html>'
 assert is_botwall(wall, 200) is not None
 assert is_botwall("hello world article text", 200) is None
@@ -27,7 +31,9 @@ assert is_botwall("anything", 403) == "http_403"
 assert is_botwall("superturnstile", 200) is None  # word-boundary: no marker inside a longer word
 print("OK botwall")
 
-# --- signals --------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Signals
+# ---------------------------------------------------------------------------
 assert find_price('<span>$1,234.56</span>') == "$1,234.56"
 assert find_price("no prices here") is None
 assert find_stock("Currently In Stock") == "in stock"
@@ -38,7 +44,9 @@ assert gate({"price": "$1.00", "stock": "in stock"}, ("price", "stock")) is True
 assert gate({"price": None}, ("price",)) is False
 print("OK signals")
 
-# --- generic extractor ----------------------------------------------------
+# ---------------------------------------------------------------------------
+# Generic Extractor
+# ---------------------------------------------------------------------------
 GOOD_HTML = (
     "<html><head><title>Test Article</title></head><body><article>"
     "<p>" + "The native crawl engine replaces the external REST path with an in-process "
@@ -60,7 +68,9 @@ garbage = ex.fit(Rendered(html="<<<not html>>>", title=None, status=200, ms=1, e
 assert isinstance(garbage.md, str)  # fit() never raises on garbage html
 print("OK generic extractor")
 
-# --- engine loop (fake tiers) ---------------------------------------------
+# ---------------------------------------------------------------------------
+# Engine Loop (Fake Tiers)
+# ---------------------------------------------------------------------------
 BOTWALL_HTML = '<html><body>Just a moment...<div class="cf-turnstile"></div></body></html>'
 
 
