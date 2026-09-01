@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Shell scripts run inside the Linux container: CRLF here corrupts the
+# shebang (#!/bin/sh<CR>) and the container exits with
+# "exec /entrypoint.sh: no such file or directory".
+*.sh text eol=lf
