@@ -134,7 +134,10 @@ class Gateway:
                 log.warning("provider %s failed: %s", p.name, e)
                 await db.set_provider_state(p.name, last_error=str(e))
                 errors.append({"provider": p.name, "error": str(e), "status": e.status})
-                await self._ev(f"provider {p.name} failed", {"error": str(e)[:ERROR_MAX_LEN], "status": e.status})
+                await self._ev(
+                    f"provider {p.name} failed",
+                    {"error": str(e)[:ERROR_MAX_LEN], "status": e.status},
+                )
                 continue
             except Exception as e:  # defensive: never leak a provider bug to the LLM
                 log.exception("provider %s crashed", p.name)
