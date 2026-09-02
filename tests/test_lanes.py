@@ -10,15 +10,15 @@ import asyncio
 import json
 import time
 
+from wellisearch.crawl import engine, tiers
+from wellisearch.crawl.lane import CF, FAST, get_lane, reset_lane, set_lane
+from wellisearch.crawl.policy import match
 import wellisearch.crawl.pool as pool_mod
+from wellisearch.crawl.results import ChallengeDetected
 import wellisearch.crawl.tiers.browser as browser_tier
 import wellisearch.crawler as crawler_mod
 import wellisearch.queue as queue_mod
 import wellisearch.worker as worker_mod
-from wellisearch.crawl import engine, tiers
-from wellisearch.crawl.lane import CF, FAST, get_lane, reset_lane, set_lane
-from wellisearch.crawl.policy import match
-from wellisearch.crawl.results import ChallengeDetected
 
 BOTWALL_HTML = '<html><body>Just a moment...<div class="cf-turnstile"></div></body></html>'
 CLEAN_HTML = (

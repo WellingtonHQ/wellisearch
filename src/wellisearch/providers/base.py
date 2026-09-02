@@ -7,9 +7,9 @@ downstream.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import html
 import re
-from dataclasses import dataclass, field
 
 import httpx
 

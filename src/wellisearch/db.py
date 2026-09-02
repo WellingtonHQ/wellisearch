@@ -9,12 +9,12 @@ Startup sequence (§11, cross-project — no depends_on):
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 import contextlib
 import datetime as dt
 import logging
 import pathlib
 import sys
-from collections.abc import AsyncIterator
 from typing import Any
 
 import psycopg

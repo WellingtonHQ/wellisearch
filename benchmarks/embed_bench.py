@@ -58,14 +58,14 @@ Models are downloaded from Hugging Face on first run and cached locally.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 import json
 import os
+from pathlib import Path
 import platform
 import subprocess
 import sys
 import time
-from collections.abc import Callable
-from pathlib import Path
 
 import numpy as np
 

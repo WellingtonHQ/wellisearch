@@ -9,9 +9,9 @@ refresh_page — force an immediate re-crawl of one page
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 import datetime as dt
 import json
-from collections.abc import Callable
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer

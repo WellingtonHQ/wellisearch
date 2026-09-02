@@ -1,4 +1,6 @@
 """Unit tests: native crawl core (policy, botwall, signals, extractor, engine loop)."""
+from __future__ import annotations
+
 import asyncio
 
 from wellisearch.crawl import engine, tiers

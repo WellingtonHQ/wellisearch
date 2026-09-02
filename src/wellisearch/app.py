@@ -8,13 +8,13 @@ routes below).
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 import datetime as dt
 import hmac
 import json
 import logging
 import pathlib
-from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request, Response
