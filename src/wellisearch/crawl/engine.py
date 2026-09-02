@@ -59,10 +59,7 @@ async def crawl(url: str) -> CrawlResult:
             f = ex.fit(r)
         except Escalate as esc:
             attempts.append({"tier": name, "error": f"escalate: {esc.tier}"})
-            if esc.tier in p.tiers and p.tiers.index(esc.tier) > i:
-                i = p.tiers.index(esc.tier)
-            else:
-                i += 1
+            i = _next_index_after_escalation(p, i, esc)
             continue
         if ex.accept(f):
             ms = int((time.monotonic() - start) * 1000)
@@ -97,6 +94,13 @@ async def crawl(url: str) -> CrawlResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _next_index_after_escalation(p: Policy, i: int, esc: Escalate) -> int:
+    """Next tier index after an Escalate: the named tier if it's ahead, else i+1."""
+    if esc.tier in p.tiers and p.tiers.index(esc.tier) > i:
+        return p.tiers.index(esc.tier)
+    return i + 1
 
 
 def _flat_backstop(name: str) -> float:

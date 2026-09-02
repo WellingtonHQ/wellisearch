@@ -249,6 +249,25 @@ def _remove_singleton_lock(profile_dir: str) -> None:
             pass
 
 
+def _is_orphan_chromium(pid: str, marker: str) -> bool:
+    """True if /proc/<pid>/cmdline is a chromium holding our profile dir."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmd = f.read().decode("utf-8", "replace")
+    except OSError:
+        return False
+    return marker in cmd and "chrom" in cmd
+
+
+def _kill_pid(pid: str) -> None:
+    """SIGKILL a pid, logging when the orphan is reaped."""
+    try:
+        os.kill(int(pid), signal.SIGKILL)
+        log.warning("reaped orphaned chromium pid=%s", pid)
+    except OSError:
+        pass
+
+
 def _reap_orphans(profile_dir: str) -> None:
     """Kill leftover chromium holding the profile + drop its SingletonLock.
 
@@ -259,17 +278,6 @@ def _reap_orphans(profile_dir: str) -> None:
     if os.path.isdir("/proc"):
         marker = f"--user-data-dir={profile_dir}"
         for entry in os.listdir("/proc"):
-            if not entry.isdigit():
-                continue
-            try:
-                with open(f"/proc/{entry}/cmdline", "rb") as f:
-                    cmd = f.read().decode("utf-8", "replace")
-            except OSError:
-                continue
-            if marker in cmd and "chrom" in cmd:
-                try:
-                    os.kill(int(entry), signal.SIGKILL)
-                    log.warning("reaped orphaned chromium pid=%s", entry)
-                except OSError:
-                    pass
+            if entry.isdigit() and _is_orphan_chromium(entry, marker):
+                _kill_pid(entry)
     _remove_singleton_lock(profile_dir)
