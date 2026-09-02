@@ -6,7 +6,7 @@ import asyncio
 from wellisearch.crawl import engine, tiers
 from wellisearch.crawl.botwall import is_botwall
 from wellisearch.crawl.extractors.base import GenericExtractor
-from wellisearch.crawl.policy import match
+from wellisearch.crawl.policy import Policy, match
 from wellisearch.crawl.results import Rendered
 from wellisearch.crawl.signals import find_price, find_stock
 
@@ -79,9 +79,9 @@ class FakeTier:
 
     async def fetch(
         self,
-        url,
-        p,
-    ):
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         return Rendered(html=GOOD_HTML, title="Test Article", status=200, ms=1, engine="fake")
 
 
@@ -98,9 +98,9 @@ class BotwallHttpTier:
 
     async def fetch(
         self,
-        url,
-        p,
-    ):
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         return Rendered(html=BOTWALL_HTML, title=None, status=200, ms=1, engine="fake")
 
 
@@ -109,9 +109,9 @@ class FakeBotwallTier:
 
     async def fetch(
         self,
-        url,
-        p,
-    ):
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         return Rendered(html=BOTWALL_HTML, title=None, status=200, ms=1, engine="fake")
 
 

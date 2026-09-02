@@ -12,9 +12,9 @@ import time
 
 from wellisearch.crawl import engine, tiers
 from wellisearch.crawl.lane import CF, FAST, get_lane, reset_lane, set_lane
-from wellisearch.crawl.policy import match
+from wellisearch.crawl.policy import Policy, match
 import wellisearch.crawl.pool as pool_mod
-from wellisearch.crawl.results import ChallengeDetected
+from wellisearch.crawl.results import ChallengeDetected, Rendered
 import wellisearch.crawl.tiers.browser as browser_tier
 import wellisearch.crawler as crawler_mod
 import wellisearch.queue as queue_mod
@@ -32,26 +32,26 @@ CLEAN_HTML = (
 # Fake browser page / pool
 # ---------------------------------------------------------------------------
 class FakeResp:
-    def __init__(self, status: int):
+    def __init__(self, status: int) -> None:
         self.status = status
 
 
 class FakeMouse:
-    def __init__(self):
+    def __init__(self) -> None:
         self.clicks = 0
 
     async def move(
         self,
-        x,
-        y,
-    ):
+        x: int,
+        y: int,
+    ) -> None:
         pass
 
     async def click(
         self,
-        x,
-        y,
-    ):
+        x: int,
+        y: int,
+    ) -> None:
         self.clicks += 1
 
 
@@ -60,9 +60,9 @@ class FakePage:
 
     def __init__(
         self,
-        contents,
-        status=200,
-    ):
+        contents: list[str],
+        status: int = 200,
+    ) -> None:
         self._contents = list(contents)
         self._status = status
         self.mouse = FakeMouse()
@@ -70,60 +70,60 @@ class FakePage:
 
     async def goto(
         self,
-        url,
-        wait_until=None,
-        timeout=None,
-    ):
+        url: str,
+        wait_until: str | None = None,
+        timeout: float | None = None,
+    ) -> FakeResp:
         return FakeResp(self._status)
 
-    async def content(self):
+    async def content(self) -> str:
         if self._contents:
             return self._contents.pop(0)
         return self._last
 
-    async def title(self):
+    async def title(self) -> str:
         return "Article"
 
-    async def wait_for_timeout(self, ms):
+    async def wait_for_timeout(self, ms: float) -> None:
         pass
 
     async def wait_for_load_state(
         self,
-        state,
-        timeout=None,
-    ):
+        state: str,
+        timeout: float | None = None,
+    ) -> None:
         pass
 
-    async def evaluate(self, code):
+    async def evaluate(self, code: str) -> str:
         # A valid turnstile widget box so _click_turnstile_checkbox actually clicks.
         return json.dumps([100, 200, 800, 70])
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
 
 class FakeContext:
-    def __init__(self, page):
+    def __init__(self, page: FakePage) -> None:
         self._page = page
 
-    async def new_page(self):
+    async def new_page(self) -> FakePage:
         return self._page
 
 
 class FakePool:
-    def __init__(self, page):
+    def __init__(self, page: FakePage) -> None:
         self._ctx = FakeContext(page)
         self.acquired = 0
 
-    async def acquire(self, key):
+    async def acquire(self, key: str) -> FakeContext:
         self.acquired += 1
         return self._ctx
 
-    async def release(self, ctx):
+    async def release(self, ctx: FakeContext) -> None:
         pass
 
 
-def _install_fake_pool(page):
+def _install_fake_pool(page: FakePage) -> FakePool:
     """Point the browser tier at a fake pool (both lanes)."""
     pool = FakePool(page)
     browser_tier.get_pool = lambda: pool
@@ -215,18 +215,18 @@ called = []
 
 
 class FakeSem:
-    def __init__(self, name):
+    def __init__(self, name: str) -> None:
         self.name = name
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> FakeSem:
         called.append(self.name)
         return self
 
-    async def __aexit__(self, *a):
+    async def __aexit__(self, *a) -> bool:
         return False
 
 
-async def ok_fn():
+async def ok_fn() -> str:
     return "ok"
 
 
@@ -235,14 +235,14 @@ orig_cf = queue_mod.cf_crawl_semaphore
 queue_mod.crawl_semaphore = lambda: FakeSem("fast")
 queue_mod.cf_crawl_semaphore = lambda: FakeSem("cf")
 try:
-    async def run_fast():
+    async def run_fast() -> str:
         tok = set_lane(FAST)
         try:
             return await queue_mod.crawl_deduped("https://example.com/a", "t", ok_fn)
         finally:
             reset_lane(tok)
 
-    async def run_cf():
+    async def run_cf() -> str:
         tok = set_lane(CF)
         try:
             return await queue_mod.crawl_deduped("https://example.com/b", "t", ok_fn)
@@ -267,9 +267,9 @@ class ChallengeTier:
 
     async def fetch(
         self,
-        url,
-        p,
-    ):
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         raise ChallengeDetected(url)
 
 
@@ -295,39 +295,39 @@ print("OK engine propagates ChallengeDetected")
 # 9. worker routes ChallengeDetected to the CF lane (fake db)
 # ---------------------------------------------------------------------------
 class FakeDB:
-    def __init__(self):
+    def __init__(self) -> None:
         self.routed = []
         self.done = []
         self.claimed = []
 
     async def fetch_all(
         self,
-        sql,
-        params=None,
-        timeout_ms=None,
-    ):
+        sql: str,
+        params: tuple | None = None,
+        timeout_ms: int | None = None,
+    ) -> list[dict]:
         if "lane = 'cf'" in sql:
             return []
         return [{"url": "https://example.com/challenge"}]
 
-    async def queue_claim(self, url):
+    async def queue_claim(self, url: str) -> bool:
         self.claimed.append(url)
         return True
 
     async def queue_done(
         self,
-        url,
-        ok,
-        error=None,
-    ):
+        url: str,
+        ok: bool,
+        error: str | None = None,
+    ) -> None:
         self.done.append((url, ok))
 
-    async def queue_route_to_cf(self, url):
+    async def queue_route_to_cf(self, url: str) -> bool:
         self.routed.append(url)
         return True
 
 
-async def fake_crawl_url(url, trigger):
+async def fake_crawl_url(url: str, trigger: str) -> dict:
     raise ChallengeDetected(url)
 
 
