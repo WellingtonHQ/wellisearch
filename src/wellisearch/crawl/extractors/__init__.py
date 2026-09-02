@@ -17,9 +17,13 @@ class Extractor(Protocol):
 
     name: str
 
-    def fit(self, r: Rendered) -> Fitted: ...
+    def fit(self, r: Rendered) -> Fitted:
+        """Fit rendered HTML into markdown with quality signals."""
+        ...
 
-    def accept(self, f: Fitted) -> bool: ...
+    def accept(self, f: Fitted) -> bool:
+        """Gate the fitted result: True when it passes the quality bar."""
+        ...
 
 
 _REGISTRY: dict[str, Extractor] = {}

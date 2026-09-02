@@ -27,6 +27,7 @@ class AmazonExtractor:
     name = "amazon"
 
     def fit(self, r: Rendered) -> Fitted:
+        """Fit an Amazon product page into structured markdown."""
         soup = _soup(r.html)
         title = _title(soup)
         price = _price(soup)
@@ -87,10 +88,12 @@ _DETAILS_IDS = (
 
 
 def _soup(html: str) -> BeautifulSoup:
+    """Parse HTML into a BeautifulSoup tree."""
     return BeautifulSoup(html, "lxml")
 
 
 def _title(soup: BeautifulSoup) -> str | None:
+    """Product title from #productTitle, falling back to <h1>."""
     el = soup.find(id="productTitle")
     if el:
         t = el.get_text(" ", strip=True)
@@ -105,6 +108,7 @@ def _title(soup: BeautifulSoup) -> str | None:
 
 
 def _price(soup: BeautifulSoup) -> str | None:
+    """First real price found by the buy-box selectors."""
     for sel in _PRICE_SELECTORS:
         for e in soup.select(sel):
             t = e.get_text(strip=True)
@@ -114,6 +118,7 @@ def _price(soup: BeautifulSoup) -> str | None:
 
 
 def _stock(soup: BeautifulSoup) -> str | None:
+    """Availability text from #availability."""
     el = soup.find(id="availability")
     if el:
         t = el.get_text(" ", strip=True)
@@ -123,6 +128,7 @@ def _stock(soup: BeautifulSoup) -> str | None:
 
 
 def _feature_bullets(soup: BeautifulSoup) -> list[str]:
+    """Feature bullets from #feature-bullets."""
     fb = soup.find(id="feature-bullets")
     if not fb:
         return []
@@ -135,6 +141,7 @@ def _feature_bullets(soup: BeautifulSoup) -> list[str]:
 
 
 def _product_details(soup: BeautifulSoup) -> str | None:
+    """First product-details section text from the known section IDs."""
     for tid in _DETAILS_IDS:
         el = soup.find(id=tid)
         if el:

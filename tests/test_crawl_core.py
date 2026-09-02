@@ -82,6 +82,7 @@ class FakeTier:
         url: str,
         p: Policy,
     ) -> Rendered:
+        """Fake fetch for testing."""
         return Rendered(html=GOOD_HTML, title="Test Article", status=200, ms=1, engine="fake")
 
 
@@ -101,6 +102,7 @@ class BotwallHttpTier:
         url: str,
         p: Policy,
     ) -> Rendered:
+        """Fake fetch returning a botwall page."""
         return Rendered(html=BOTWALL_HTML, title=None, status=200, ms=1, engine="fake")
 
 
@@ -112,6 +114,7 @@ class FakeBotwallTier:
         url: str,
         p: Policy,
     ) -> Rendered:
+        """Fake fetch returning a botwall page."""
         return Rendered(html=BOTWALL_HTML, title=None, status=200, ms=1, engine="fake")
 
 

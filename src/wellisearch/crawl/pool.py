@@ -52,6 +52,7 @@ class BrowserPool:
         size: int | None = None,
         prefix: str = "",
     ) -> None:
+        """Initialize a bounded pool of warm browser contexts."""
         # size defaults to the fast-lane pool size; the CF lane passes its own
         # (smaller) CRAWL_CF_POOL_SIZE so challenge crawls get their own contexts.
         # prefix namespaces the profile dir so the CF pool never reaps the fast
@@ -112,12 +113,14 @@ class BrowserPool:
     # ---------------------------------------------------------------------------
 
     def _key_of(self, ctx: BrowserContext) -> str | None:
+        """Profile key for a context, or None when unknown."""
         for key, c in self._contexts.items():
             if c is ctx:
                 return key
         return None
 
     def _launch_lock(self, key: str) -> asyncio.Lock:
+        """Per-key lock so one profile launches at a time."""
         lk = self._launch_locks.get(key)
         if lk is None:
             lk = asyncio.Lock()
@@ -125,6 +128,7 @@ class BrowserPool:
         return lk
 
     async def _ensure_playwright(self) -> Playwright:
+        """Start the shared playwright instance once and return it."""
         if self._pw is None:
             from patchright.async_api import async_playwright
 
@@ -132,6 +136,7 @@ class BrowserPool:
         return self._pw
 
     async def _get_or_launch(self, key: str) -> BrowserContext:
+        """Return the cached context for key or launch a new one."""
         async with self._lock:
             if key in self._contexts:
                 self._last_used[key] = time.monotonic()
@@ -170,6 +175,7 @@ class BrowserPool:
         key: str,
         pw: Playwright,
     ) -> BrowserContext:
+        """Launch a persistent context for key under its profile dir."""
         s = get_settings()
         profile_dir = _profile_dir(key, self._prefix)
         os.makedirs(profile_dir, exist_ok=True)

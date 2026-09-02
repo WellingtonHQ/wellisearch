@@ -48,6 +48,7 @@ class Escalate(Exception):
     """Raised by an extractor to ask the engine for a higher tier."""
 
     def __init__(self, tier: str) -> None:
+        """Initialize an escalation request carrying the target tier."""
         super().__init__(f"escalate to {tier}")
         self.tier = tier
 
@@ -62,5 +63,6 @@ class ChallengeDetected(Exception):
     """
 
     def __init__(self, url: str) -> None:
+        """Initialize a challenge signal carrying the URL for logging."""
         super().__init__(f"challenge detected: {url}")
         self.url = url

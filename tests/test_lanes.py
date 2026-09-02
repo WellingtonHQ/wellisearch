@@ -33,11 +33,13 @@ CLEAN_HTML = (
 # ---------------------------------------------------------------------------
 class FakeResp:
     def __init__(self, status: int) -> None:
+        """Initialize a fake response with a status."""
         self.status = status
 
 
 class FakeMouse:
     def __init__(self) -> None:
+        """Initialize a fake mouse click counter."""
         self.clicks = 0
 
     async def move(
@@ -45,6 +47,7 @@ class FakeMouse:
         x: int,
         y: int,
     ) -> None:
+        """Fake mouse move (no-op)."""
         pass
 
     async def click(
@@ -52,6 +55,7 @@ class FakeMouse:
         x: int,
         y: int,
     ) -> None:
+        """Count a fake mouse click."""
         self.clicks += 1
 
 
@@ -63,6 +67,7 @@ class FakePage:
         contents: list[str],
         status: int = 200,
     ) -> None:
+        """Initialize a fake page with a content sequence."""
         self._contents = list(contents)
         self._status = status
         self.mouse = FakeMouse()
@@ -74,17 +79,21 @@ class FakePage:
         wait_until: str | None = None,
         timeout: float | None = None,
     ) -> FakeResp:
+        """Return a fake response for the goto."""
         return FakeResp(self._status)
 
     async def content(self) -> str:
+        """Pop the next content from the sequence."""
         if self._contents:
             return self._contents.pop(0)
         return self._last
 
     async def title(self) -> str:
+        """Return a fixed title."""
         return "Article"
 
     async def wait_for_timeout(self, ms: float) -> None:
+        """No-op wait."""
         pass
 
     async def wait_for_load_state(
@@ -92,34 +101,42 @@ class FakePage:
         state: str,
         timeout: float | None = None,
     ) -> None:
+        """No-op wait."""
         pass
 
     async def evaluate(self, code: str) -> str:
+        """Return a fake turnstile widget box."""
         # A valid turnstile widget box so _click_turnstile_checkbox actually clicks.
         return json.dumps([100, 200, 800, 70])
 
     async def close(self) -> None:
+        """No-op close."""
         pass
 
 
 class FakeContext:
     def __init__(self, page: FakePage) -> None:
+        """Initialize a fake context wrapping a page."""
         self._page = page
 
     async def new_page(self) -> FakePage:
+        """Return the fake page."""
         return self._page
 
 
 class FakePool:
     def __init__(self, page: FakePage) -> None:
+        """Initialize a fake pool wrapping a fake context."""
         self._ctx = FakeContext(page)
         self.acquired = 0
 
     async def acquire(self, key: str) -> FakeContext:
+        """Count the acquire and return the fake context."""
         self.acquired += 1
         return self._ctx
 
     async def release(self, ctx: FakeContext) -> None:
+        """No-op release."""
         pass
 
 
@@ -216,17 +233,21 @@ called = []
 
 class FakeSem:
     def __init__(self, name: str) -> None:
+        """Initialize a fake semaphore with a name."""
         self.name = name
 
     async def __aenter__(self) -> FakeSem:
+        """Record the semaphore name on enter."""
         called.append(self.name)
         return self
 
     async def __aexit__(self, *a) -> bool:
+        """No-op exit."""
         return False
 
 
 async def ok_fn() -> str:
+    """Return ok."""
     return "ok"
 
 
@@ -236,6 +257,7 @@ queue_mod.crawl_semaphore = lambda: FakeSem("fast")
 queue_mod.cf_crawl_semaphore = lambda: FakeSem("cf")
 try:
     async def run_fast() -> str:
+        """Crawl deduped in the fast lane."""
         tok = set_lane(FAST)
         try:
             return await queue_mod.crawl_deduped("https://example.com/a", "t", ok_fn)
@@ -243,6 +265,7 @@ try:
             reset_lane(tok)
 
     async def run_cf() -> str:
+        """Crawl deduped in the CF lane."""
         tok = set_lane(CF)
         try:
             return await queue_mod.crawl_deduped("https://example.com/b", "t", ok_fn)
@@ -270,6 +293,7 @@ class ChallengeTier:
         url: str,
         p: Policy,
     ) -> Rendered:
+        """Fake fetch that raises ChallengeDetected."""
         raise ChallengeDetected(url)
 
 
@@ -296,6 +320,7 @@ print("OK engine propagates ChallengeDetected")
 # ---------------------------------------------------------------------------
 class FakeDB:
     def __init__(self) -> None:
+        """Initialize a fake db with recorded calls."""
         self.routed = []
         self.done = []
         self.claimed = []
@@ -306,11 +331,13 @@ class FakeDB:
         params: tuple | None = None,
         timeout_ms: int | None = None,
     ) -> list[dict]:
+        """Return a fake challenge row, or an empty CF lane."""
         if "lane = 'cf'" in sql:
             return []
         return [{"url": "https://example.com/challenge"}]
 
     async def queue_claim(self, url: str) -> bool:
+        """Record the claim."""
         self.claimed.append(url)
         return True
 
@@ -320,14 +347,17 @@ class FakeDB:
         ok: bool,
         error: str | None = None,
     ) -> None:
+        """Record the done call."""
         self.done.append((url, ok))
 
     async def queue_route_to_cf(self, url: str) -> bool:
+        """Record the CF routing."""
         self.routed.append(url)
         return True
 
 
 async def fake_crawl_url(url: str, trigger: str) -> dict:
+    """Fake crawl that raises ChallengeDetected."""
     raise ChallengeDetected(url)
 
 

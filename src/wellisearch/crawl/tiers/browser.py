@@ -78,6 +78,7 @@ class BrowserTier:
         url: str,
         p: Policy,
     ) -> Rendered:
+        """Drive the page: goto, settle, challenge handling, walmart recovery."""
         s = get_settings()
         is_cf = get_lane() == CF
         timeout_s = s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S
@@ -241,6 +242,7 @@ async def _click_turnstile_checkbox(page: Page) -> bool:
 
 
 def _is_walmart_item_url(url: str) -> bool:
+    """True when the URL is a walmart.com item page (/ip/...)."""
     try:
         parsed = urlparse(url)
     except ValueError:
@@ -259,6 +261,7 @@ def _is_walmart_item_404(url: str, html: str) -> bool:
 
 
 def _slug_tokens(slug: str) -> set[str]:
+    """Slug split into lowercase tokens longer than one character."""
     return {t for t in re.split(r"[-_]+", slug.lower()) if len(t) > 1}
 
 
