@@ -5,7 +5,7 @@ from ..results import Fitted, Rendered
 from . import register
 from .base import cut_at_first, generic_md, trim_md
 
-RELATED = ("Related stories", "Explore more", "Most viewed", "Most commented")
+RELATED = ("Explore more", "Most commented", "Most viewed", "Related stories")
 
 
 class GuardianExtractor:

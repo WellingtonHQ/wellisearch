@@ -84,8 +84,8 @@ DEFAULT_MODELS = [
 
 # Models to run through the FastEmbed (ONNX) backend instead of PyTorch.
 FASTEMBED_BACKEND = {
-    "sentence-transformers/all-MiniLM-L6-v2",
     "all-MiniLM-L6-v2",
+    "sentence-transformers/all-MiniLM-L6-v2",
 }
 
 def detect_cpu() -> str:

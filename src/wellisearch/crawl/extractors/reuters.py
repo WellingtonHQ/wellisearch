@@ -5,7 +5,7 @@ from ..results import Fitted, Rendered
 from . import register
 from .base import cut_at_first, generic_md, trim_md
 
-RELATED = ("Related", "More from Reuters", "Top Stories", "Also Viewed")
+RELATED = ("Also Viewed", "More from Reuters", "Related", "Top Stories")
 
 
 class ReutersExtractor:

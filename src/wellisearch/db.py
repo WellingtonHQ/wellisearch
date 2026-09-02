@@ -402,7 +402,7 @@ class Database:
     async def prune_logs(self, days: int) -> dict[str, int]:
         """Retention sweep for the log tables. Returns per-table deleted counts."""
         out: dict[str, int] = {}
-        for table in ("event_log", "crawl_log", "search_log"):
+        for table in ("crawl_log", "event_log", "search_log"):
             out[table] = await self.execute(
                 f"DELETE FROM {table} WHERE ts < now() - make_interval(days => %s)",
                 (days,),

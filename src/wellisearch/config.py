@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     SEARCH_STATEMENT_TIMEOUT_MS: int = 15000
 
     # --- fetch_pages truncation (swappable strategies) ---
-    FETCH_DEFAULT_STRATEGY: str = "smart"  # smart | head | tail | even | priority
+    FETCH_DEFAULT_STRATEGY: str = "smart"  # even | head | priority | smart | tail
     FETCH_MAX_CHARS: int = 40000  # default total budget when max_chars omitted
     FETCH_PER_PAGE_CHARS: int = 12000  # default per-page cap
 

@@ -195,7 +195,7 @@ def load_config(args: argparse.Namespace) -> Config:
     judge_api_key = os.environ.get("JUDGE_API_KEY") or ""
     use_judge = not args.no_judge
     # only `run`/`all` call the judge — `sample`/`report` must work without it
-    should_use_judge = use_judge and args.command in ("run", "all")
+    should_use_judge = use_judge and args.command in ("all", "run")
     if should_use_judge and (not judge_base_url or not judge_api_key):
         missing = " and ".join(
             name for name, val in (
@@ -505,7 +505,7 @@ async def run_model(
                 rec.update(
                     {
                         k: out[k]
-                        for k in ("ttft_ms", "total_ms", "prompt_tokens", "completion_tokens", "tok_s")
+                        for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
                     }
                 )
                 rec["output"] = out["text"]
@@ -751,17 +751,17 @@ def main() -> None:
 
     cfg = load_config(args)
 
-    if args.command in ("sample", "all"):
+    if args.command in ("all", "sample"):
         pages = asyncio.run(build_sample(cfg))
         save_sample(cfg, pages)
         domains = sorted({p_["domain"] for p_ in pages})
         log(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
 
-    if args.command in ("run", "all"):
+    if args.command in ("all", "run"):
         asyncio.run(run_all(cfg))
         log(f"[run] results -> {cfg.results_file}")
 
-    if args.command in ("report", "all"):
+    if args.command in ("all", "report"):
         if not cfg.results_file.exists():
             raise SystemExit(f"no results at {cfg.results_file} — run the `run` step first")
         payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
