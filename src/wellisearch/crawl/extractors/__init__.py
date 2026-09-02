@@ -50,4 +50,4 @@ def for_url(url: str) -> Extractor:
 
 
 # Side-effect imports: each site module registers itself on import.
-from . import amazon, ap, bestbuy, guardian, nytimes, reuters, target, walmart, wsj  # noqa: E402,F401
+from . import amazon, ap, bestbuy, guardian, gpupoet, nytimes, reuters, target, walmart, wsj  # noqa: E402,F401

@@ -5,7 +5,9 @@ Anchors on known Amazon structure rather than generic content extraction:
   - price   → buy-box .a-price .a-offscreen (first real value)
   - stock   → #availability
   - bullets → #feature-bullets ("About this item")
-  - details → product-details table (tech-spec / detail-bullets)
+  - details → product-details table (tech-spec / detail-bullets / #prodDetails)
+  - seller  → "Sold by" text in the buy-box area
+  - reviews → #averageCustomerReviews (rating + count)
 
 The gate requires title + price + at least one feature bullet, which is a
 stronger, site-specific signal than a raw char count: it accepts a real
@@ -34,6 +36,8 @@ class AmazonExtractor:
         stock = _stock(soup)
         bullets = _feature_bullets(soup)
         details = _product_details(soup)
+        seller = _seller(soup)
+        reviews = _reviews(soup)
 
         parts: list[str] = []
         if title:
@@ -43,6 +47,10 @@ class AmazonExtractor:
             if stock:
                 line += f" — {stock}"
             parts.append(line)
+        if seller:
+            parts.append(f"**Sold by:** {seller}")
+        if reviews:
+            parts.append(f"**Ratings:** {reviews}")
         if bullets:
             parts.append("## About this item")
             parts.extend(f"- {b}" for b in bullets)
@@ -84,6 +92,7 @@ _DETAILS_IDS = (
     "productDetails_detailBullets_sections1",
     "detailBullets_feature_div",
     "productDetails_db_sections",
+    "prodDetails",
 )
 
 
@@ -149,6 +158,39 @@ def _product_details(soup: BeautifulSoup) -> str | None:
             if t:
                 return t
     return None
+
+
+def _seller(soup: BeautifulSoup) -> str | None:
+    """Seller name from the "Sold by" text in the buy-box area."""
+    for el in soup.find_all(string=lambda s: s and "Sold by" in s):
+        text = el.parent.get_text(" ", strip=True)
+        seller = _extract_after(text, "Sold by")
+        if seller:
+            return seller
+    return None
+
+
+def _reviews(soup: BeautifulSoup) -> str | None:
+    """Rating summary from #averageCustomerReviews (e.g. "4.6 out of 5 stars (1,917)")."""
+    el = soup.find(id="averageCustomerReviews")
+    if el:
+        t = el.get_text(" ", strip=True)
+        if t:
+            return t
+    return None
+
+
+def _extract_after(text: str, marker: str) -> str | None:
+    """Text after a marker, trimmed at the next known boundary."""
+    i = text.find(marker)
+    if i == -1:
+        return None
+    rest = text[i + len(marker):].strip()
+    for boundary in ("Fulfilled by", "Ships from", "Condition:"):
+        j = rest.find(boundary)
+        if j != -1:
+            rest = rest[:j].strip()
+    return rest or None
 
 
 register(AmazonExtractor(), "amazon.com")

@@ -7,6 +7,7 @@ from wellisearch.crawl.extractors.ap import APExtractor
 from wellisearch.crawl.extractors.base import generic_md
 from wellisearch.crawl.extractors.bestbuy import BestBuyExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
+from wellisearch.crawl.extractors.gpupoet import GpupoetExtractor
 from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
 from wellisearch.crawl.extractors.reuters import ReutersExtractor
 from wellisearch.crawl.extractors.target import TargetExtractor
@@ -29,6 +30,8 @@ AMAZON_HTML = (
     "<div data-asin=\"B08WM3LJQB\"><span class=\"a-price\">"
     "<span class=\"a-offscreen\">$129.99</span></span></div>"
     "<div id=\"availability\">In Stock</div>"
+    "<span id=\"sellerProposition\">Sold by Amazon.com Fulfilled by Amazon</span>"
+    "<span id=\"averageCustomerReviews\">4.7 out of 5 stars (2,341)</span>"
     "<ul id=\"feature-bullets\">"
     "<li>Kindle (10th generation) is the perfect device for reading, with a crisp 300 ppi "
     "display, 16 GB of storage, and weeks of battery life on a single charge.</li>"
@@ -51,6 +54,8 @@ assert "129.99" in fitted.md, fitted.md[:200]
 assert "About this item" in fitted.md, fitted.md[:200]
 assert "Frequently bought together" not in fitted.md, fitted.md[:200]  # decoy excluded
 assert "screen protector" not in fitted.md, fitted.md[:200]
+assert "Amazon.com" in fitted.md, fitted.md[:300]  # seller
+assert "4.7 out of 5 stars" in fitted.md, fitted.md[:300]  # reviews
 assert fitted.signals["price"] == "$129.99", fitted.signals
 assert fitted.signals["stock"] == "In Stock", fitted.signals
 assert fitted.title == "Kindle (10th generation)", fitted.title
@@ -73,6 +78,66 @@ no_bullets = ex.fit(rendered(
 ))
 assert not ex.accept(no_bullets)
 print("OK amazon")
+
+# ---------------------------------------------------------------------------
+# GPU Poet
+# ---------------------------------------------------------------------------
+GPUPOET_HTML = (
+    "<html><head><title>RTX 3090 Ti for Sale — 2 Active Listings | GPU Poet</title></head>"
+    "<body><main><h1>NVIDIA GeForce RTX 3090 Ti Listings</h1>"
+    "<p class=\"lead\">Below are active listings for the RTX 3090 Ti GPU.</p>"
+    "<template id=\"B:1\"></template>"
+    "<div class=\"filter-sidebar\"><div class=\"card\"><div class=\"card-header\">"
+    "<h5>Filter Listings</h5></div></div></div>"
+    "<div class=\"d-flex flex-wrap\">"
+    "<div class=\"card m-1\"><div class=\"card-body\">"
+    "<h5 class=\"card-title\">RTX 3090 Ti Founders Edition 24GB Used</h5>"
+    "<div class=\"card-text\">"
+    "<span class=\"badge rounded-pill text-bg-inverse mx-1\"><span>$1,550</span></span>"
+    "<span class=\"badge rounded-pill text-bg-inverse mx-1\"><span>Used</span></span>"
+    "<span class=\"badge rounded-pill text-bg-inverse mx-1\">"
+    "<span><abbr title=\"United States\">US</abbr></span></span>"
+    "<span class=\"badge rounded-pill text-bg-primary mx-1\">"
+    "<span>$38.75 / FP32 TFLOPs</span></span>"
+    "</div></div>"
+    "<div class=\"card-footer\"><a class=\"btn btn-primary\" "
+    "href=\"/bye?to=https%3A%2F%2Fwww.ebay.com%2Fitm%2F123\">"
+    "<svg aria-label=\"eBay\"></svg> $1,550</a></div></div>"
+    "<div class=\"card m-1\"><div class=\"card-body\">"
+    "<h5 class=\"card-title\">RTX 3090 Ti 24GB New OEM</h5>"
+    "<div class=\"card-text\">"
+    "<span class=\"badge rounded-pill text-bg-inverse mx-1\"><span>$1,980</span></span>"
+    "<span class=\"badge rounded-pill text-bg-inverse mx-1\"><span>New</span></span>"
+    "<span class=\"badge rounded-pill text-bg-inverse mx-1\">"
+    "<span><abbr title=\"China\">CN</abbr></span></span>"
+    "<span class=\"badge rounded-pill text-bg-primary mx-1\">"
+    "<span>$49.50 / FP32 TFLOPs</span></span>"
+    "</div></div>"
+    "<div class=\"card-footer\"><a class=\"btn btn-primary\" "
+    "href=\"/bye?to=https%3A%2F%2Fwww.amazon.com%2Fdp%2FB094442NL5\">"
+    "<svg aria-label=\"Amazon\"></svg> $1,980</a></div></div>"
+    "</div></main></body></html>"
+)
+ex = GpupoetExtractor()
+fitted = ex.fit(rendered(GPUPOET_HTML))
+assert "RTX 3090 Ti Founders Edition 24GB Used" in fitted.md, fitted.md[:300]
+assert "$1,550" in fitted.md, fitted.md[:300]
+assert "Used" in fitted.md, fitted.md[:300]
+assert "United States" in fitted.md, fitted.md[:300]
+assert "$38.75" in fitted.md, fitted.md[:300]
+assert "eBay" in fitted.md, fitted.md[:300]
+assert "RTX 3090 Ti 24GB New OEM" in fitted.md, fitted.md[:300]
+assert "China" in fitted.md, fitted.md[:300]
+assert "Amazon" in fitted.md, fitted.md[:300]
+assert "Filter Listings" not in fitted.md, fitted.md[:300]  # filter sidebar excluded
+assert fitted.signals["listings"] == 2, fitted.signals
+assert ex.accept(fitted)
+# no listing cards -> gate fails
+no_cards = ex.fit(rendered(
+    "<html><body><div class=\"card\"><h5>Filter Listings</h5></div></body></html>"
+))
+assert not ex.accept(no_cards)
+print("OK gpupoet")
 
 # ---------------------------------------------------------------------------
 # Walmart
@@ -297,6 +362,7 @@ print("OK ap")
 # ---------------------------------------------------------------------------
 assert for_url("https://www.amazon.com/dp/B08WM3LJQB").name == "amazon"
 assert for_url("https://www.nytimes.com/2026/x.html").name == "nytimes"
+assert for_url("https://gpupoet.com/gpu/shop/rtx-3090-ti").name == "gpupoet"
 assert for_url("https://example.com/x").name == "generic"
 print("OK registry")
 
