@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import re
 
+from .config import get_settings
+
 CHARS_PER_TOKEN = 4
 _MIN_CHUNK_TOKENS = 50
 STUB_MERGE_DIVISOR = 5  # trailing stub below budget//5 merges into the previous chunk
@@ -21,12 +23,12 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 
-def chunk_markdown(markdown: str, max_tokens: int = 800) -> list[str]:
+def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOKENS) -> list[str]:
     """Split markdown into ~``max_tokens``-token chunks, heading-aware.
 
     Chunks start at heading boundaries and never split inside a fenced code
     block or a table row; a small trailing stub is merged into the previous
-    chunk.
+    chunk. ``max_tokens`` defaults to the configured ``MAX_CHUNK_TOKENS``.
     """
     if not markdown or not markdown.strip():
         return []

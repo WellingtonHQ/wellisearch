@@ -64,7 +64,9 @@ WINDOW_MIN_SECS = 600    # window floor: 10 minutes
 WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
 
 API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
+API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
 API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
+API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
 
 
 class FetchBody(BaseModel):
@@ -143,7 +145,7 @@ async def health() -> dict[str, Any]:
 async def api_search(
     request: Request,
     query: str,
-    k: int = 5,
+    k: int = get_settings().SEARCH_K,
     num_results: int | None = None,  # alias for k (MCP tool + OWUI tool surface name)
     max_crawl: int | None = None,
     max_age_days: float | None = None,
@@ -356,7 +358,7 @@ async def api_page_delete(url: str) -> Any:
 
 
 @app.get("/api/pages")
-async def api_pages(sort: str = "fetch_count", limit: int = 20) -> Any:
+async def api_pages(sort: str = "fetch_count", limit: int = API_PAGES_DEFAULT_LIMIT) -> Any:
     """List indexed pages with a freshness histogram.
 
     ``sort`` picks the ordering (default fetch_count) and ``limit`` is capped
@@ -402,7 +404,7 @@ async def api_pages(sort: str = "fetch_count", limit: int = 20) -> Any:
 
 
 @app.get("/api/logs/crawls")
-async def api_logs_crawls(limit: int = 50) -> Any:
+async def api_logs_crawls(limit: int = API_LOGS_DEFAULT_LIMIT) -> Any:
     """Recent crawl log entries, newest first (limit capped at 500)."""
     rows = await db.fetch_all(
         "SELECT ts, url, trigger, status, ms, chunks_written, detail "
@@ -413,7 +415,7 @@ async def api_logs_crawls(limit: int = 50) -> Any:
 
 
 @app.get("/api/logs/searches")
-async def api_logs_searches(limit: int = 50) -> Any:
+async def api_logs_searches(limit: int = API_LOGS_DEFAULT_LIMIT) -> Any:
     """Recent search log entries, newest first (limit capped at 500)."""
     rows = await db.fetch_all(
         "SELECT ts, query, source, local_hits, results FROM search_log "

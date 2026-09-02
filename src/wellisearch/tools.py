@@ -176,8 +176,8 @@ def _tool_search_web(server: MCPServer) -> None:
     )
     async def search_web(
         query: str,
-        num_results: int = 5,
-        max_crawl: int = 5,
+        num_results: int = get_settings().SEARCH_K,
+        max_crawl: int = get_settings().SEARCH_MAX_CRAWL,
         max_age_days: float | None = None,
         search_mode: str = "auto",  # "auto" | "local" | "provider"
         format: str = "markdown",  # "json" | "markdown"

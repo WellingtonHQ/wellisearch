@@ -39,6 +39,8 @@ MOUSE_MOVE_PAUSE_MS = 400
 MIN_SLUG_TOKENS = 3
 # Minimum slug-token overlap for a walmart search match to count.
 MIN_SLUG_TOKEN_OVERLAP = 3
+# Max slug tokens used to build the walmart search query.
+MAX_SLUG_QUERY_TOKENS = 8
 
 # Walmart serves missing items as a 200 soft-404 shell. Anchor to the visible
 # <h1>: the strings also appear in walmart's site-wide JS bundle on good pages.
@@ -278,7 +280,7 @@ async def _walmart_recover_item_url(page: Page, url: str) -> str | None:
     orig_tokens = _slug_tokens(parts[1])
     if len(orig_tokens) < MIN_SLUG_TOKENS:
         return None
-    query = " ".join(parts[1].split("-")[:8])
+    query = " ".join(parts[1].split("-")[:MAX_SLUG_QUERY_TOKENS])
     search_url = "https://www.walmart.com/search?q=" + quote_plus(query)
     await page.goto(search_url, wait_until="domcontentloaded")
     await page.wait_for_timeout(WALMART_SEARCH_SETTLE_MS)

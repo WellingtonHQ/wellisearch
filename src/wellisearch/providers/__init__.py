@@ -29,6 +29,7 @@ log = logging.getLogger("wellisearch.providers")
 ERROR_MAX_LEN = 300        # max chars kept in a provider error message
 CRASH_REPR_MAX_LEN = 1000   # max chars kept in a crash repr (provider_state)
 CRASH_ERROR_MAX_LEN = 200  # max chars kept in a crash error (error chain)
+QUERY_LOG_MAX_LEN = 200    # max chars of the query kept in event logs
 
 REGISTRY: dict[str, type[Provider]] = {
     "tavily": Tavily,
@@ -150,7 +151,10 @@ class Gateway:
             if not results:
                 await db.set_provider_state(p.name, last_error="empty result set")
                 errors.append({"provider": p.name, "error": "empty result set", "ms": ms})
-                await self._ev(f"provider {p.name} returned no results", {"query": query[:200], "ms": ms})
+                await self._ev(
+                    f"provider {p.name} returned no results",
+                    {"query": query[:QUERY_LOG_MAX_LEN], "ms": ms},
+                )
                 continue
 
             # success: quota ledger + state
