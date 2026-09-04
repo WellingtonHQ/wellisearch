@@ -68,6 +68,34 @@ max_chars
 12000
 ```
 
+then after 2-5 minutes:
+```
+INPUT
+url
+https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+max_chars
+12000
+OUTPUT
+URL: https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+Status: failed
+Error: couldn't get a connection after 30.00 sec
+Time: 53920 ms
+View Result from fetch_page
+INPUT
+url
+https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+max_chars
+12000
+OUTPUT
+URL: https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+Status: failed
+Error: https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/: bot-wall detected; routed to the CF challenge lane
+Time: 94552 ms
+```
+
+The responses are good but they shouldn't take so long to come back. If a bot-wall is detected, let the client know right away
+and tell them to try again in x seconds, rather than keep them waiting.
+
 ---
 
 # Search
