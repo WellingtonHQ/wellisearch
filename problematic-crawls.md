@@ -47,3 +47,10 @@ Time: 8 ms (index: 4 ms)
 
 - A massive interior accommodates up to 12x 120mm or 7x 140mm cooling fans, and makes it possible to install multiple radiators including 3x simultaneous 360mm or 2x simultaneous 420mm for extreme cooling.
 ```
+
+---
+
+# LinkedIn
+
+- We need the ability to full job descriptions from jobs posted on linked.
+- Access publicly available info that does not require customer to be authenticated. 
