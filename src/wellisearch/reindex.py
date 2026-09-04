@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from typing import Any
 
 from .config import get_settings
 from .db import db
@@ -40,6 +41,17 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 
 
+async def _reembed_page(p: dict[str, Any]) -> str:
+    """Re-embed one page; return 'ok', 'unchanged', or 'failed'."""
+    url = p["url"]
+    try:
+        status, _ = await store_page(url, p["fit_markdown"], title=p["title"])
+    except Exception as e:
+        log.warning("reindex %s failed: %s", url, e)
+        return "failed"
+    return "unchanged" if status == "unchanged" else "ok"
+
+
 async def _run(force: bool, dry_run: bool) -> None:
     """Find pages needing (re)embedding (all when --force) and re-chunk +
     re-embed each, reporting progress."""
@@ -63,23 +75,15 @@ async def _run(force: bool, dry_run: bool) -> None:
         if dry_run:
             return
 
-        ok = unchanged = failed = 0
+        stats = {"failed": 0, "ok": 0, "unchanged": 0}
         for i, p in enumerate(stale, 1):
-            url = p["url"]
-            try:
-                status, chunks = await store_page(url, p["fit_markdown"], title=p["title"])
-            except Exception as e:
-                failed += 1
-                log.warning("reindex %s failed: %s", url, e)
-                continue
-            if status == "unchanged":
-                unchanged += 1
-            else:
-                ok += 1
+            outcome = await _reembed_page(p)
+            stats[outcome] += 1
             if i % PROGRESS_INTERVAL == 0 or i == len(stale):
-                print(f"  {i}/{len(stale)} (ok={ok} unchanged={unchanged} failed={failed})")
+                print(f"  {i}/{len(stale)} (ok={stats['ok']} unchanged={stats['unchanged']} "
+                      f"failed={stats['failed']})")
 
-        print(f"done: ok={ok} unchanged={unchanged} failed={failed}")
+        print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
     finally:
         await db.close()
 

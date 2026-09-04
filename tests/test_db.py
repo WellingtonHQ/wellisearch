@@ -35,7 +35,7 @@ async def main() -> None:
 
 async def _clean_slate() -> None:
     """Delete this test's URLs (DB persists between runs)."""
-    for table in ("pages", "crawl_queue"):
+    for table in ("crawl_queue", "pages"):
         await db.execute(f"DELETE FROM {table} WHERE url LIKE 'https://example.com/%%'")
     await db.execute("DELETE FROM provider_quota")
     await db.execute("DELETE FROM provider_state")
@@ -49,8 +49,8 @@ async def _check_tables() -> None:
     )
     names = [t["tablename"] for t in tables]
     for expected in (
-        "pages", "chunks", "crawl_queue", "search_log",
-        "provider_quota", "crawl_log", "provider_state", "event_log",
+        "chunks", "crawl_log", "crawl_queue", "event_log",
+        "pages", "provider_quota", "provider_state", "search_log",
     ):
         assert expected in names, f"missing table {expected}"
     print("OK tables:", names)

@@ -53,17 +53,17 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
     enable_dns_rebinding_protection=True,
     allowed_hosts=[
         "127.0.0.1:*",
-        "localhost:*",
         "[::1]:*",
-        "wellisearch:*",
+        "localhost:*",
         # bare + :port forms — the SDK's ":*" wildcard requires a port suffix
         "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
         "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
+        "wellisearch:*",
     ],
     allowed_origins=[
         "http://127.0.0.1:*",
-        "http://localhost:*",
         "http://[::1]:*",
+        "http://localhost:*",
         "http://wellisearch:*",
         "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
         "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",

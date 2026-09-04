@@ -9,12 +9,12 @@ Startup sequence (§11, cross-project — no depends_on):
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 import contextlib
 import datetime as dt
 import logging
 import pathlib
 import sys
-from collections.abc import AsyncIterator
 from typing import Any
 
 import psycopg
@@ -402,7 +402,7 @@ class Database:
     async def prune_logs(self, days: int) -> dict[str, int]:
         """Retention sweep for the log tables. Returns per-table deleted counts."""
         out: dict[str, int] = {}
-        for table in ("event_log", "crawl_log", "search_log"):
+        for table in ("crawl_log", "event_log", "search_log"):
             out[table] = await self.execute(
                 f"DELETE FROM {table} WHERE ts < now() - make_interval(days => %s)",
                 (days,),

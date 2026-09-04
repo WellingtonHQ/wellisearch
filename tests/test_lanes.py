@@ -10,15 +10,15 @@ import asyncio
 import json
 import time
 
+from wellisearch.crawl import engine, tiers
+from wellisearch.crawl.lane import CF, FAST, get_lane, reset_lane, set_lane
+from wellisearch.crawl.policy import Policy, match
 import wellisearch.crawl.pool as pool_mod
+from wellisearch.crawl.results import ChallengeDetected, Rendered
 import wellisearch.crawl.tiers.browser as browser_tier
 import wellisearch.crawler as crawler_mod
 import wellisearch.queue as queue_mod
 import wellisearch.worker as worker_mod
-from wellisearch.crawl import engine, tiers
-from wellisearch.crawl.lane import CF, FAST, get_lane, reset_lane, set_lane
-from wellisearch.crawl.policy import match
-from wellisearch.crawl.results import ChallengeDetected
 
 BOTWALL_HTML = '<html><body>Just a moment...<div class="cf-turnstile"></div></body></html>'
 CLEAN_HTML = (
@@ -32,77 +32,115 @@ CLEAN_HTML = (
 # Fake browser page / pool
 # ---------------------------------------------------------------------------
 class FakeResp:
-    def __init__(self, status: int):
+    def __init__(self, status: int) -> None:
+        """Initialize a fake response with a status."""
         self.status = status
 
 
 class FakeMouse:
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize a fake mouse click counter."""
         self.clicks = 0
 
-    async def move(self, x, y):
+    async def move(
+        self,
+        x: int,
+        y: int,
+    ) -> None:
+        """Fake mouse move (no-op)."""
         pass
 
-    async def click(self, x, y):
+    async def click(
+        self,
+        x: int,
+        y: int,
+    ) -> None:
+        """Count a fake mouse click."""
         self.clicks += 1
 
 
 class FakePage:
     """Returns a sequence of html from content(); records turnstile clicks."""
 
-    def __init__(self, contents, status=200):
+    def __init__(
+        self,
+        contents: list[str],
+        status: int = 200,
+    ) -> None:
+        """Initialize a fake page with a content sequence."""
         self._contents = list(contents)
         self._status = status
         self.mouse = FakeMouse()
         self._last = CLEAN_HTML
 
-    async def goto(self, url, wait_until=None, timeout=None):
+    async def goto(
+        self,
+        url: str,
+        wait_until: str | None = None,
+        timeout: float | None = None,
+    ) -> FakeResp:
+        """Return a fake response for the goto."""
         return FakeResp(self._status)
 
-    async def content(self):
+    async def content(self) -> str:
+        """Pop the next content from the sequence."""
         if self._contents:
             return self._contents.pop(0)
         return self._last
 
-    async def title(self):
+    async def title(self) -> str:
+        """Return a fixed title."""
         return "Article"
 
-    async def wait_for_timeout(self, ms):
+    async def wait_for_timeout(self, ms: float) -> None:
+        """No-op wait."""
         pass
 
-    async def wait_for_load_state(self, state, timeout=None):
+    async def wait_for_load_state(
+        self,
+        state: str,
+        timeout: float | None = None,
+    ) -> None:
+        """No-op wait."""
         pass
 
-    async def evaluate(self, code):
+    async def evaluate(self, code: str) -> str:
+        """Return a fake turnstile widget box."""
         # A valid turnstile widget box so _click_turnstile_checkbox actually clicks.
         return json.dumps([100, 200, 800, 70])
 
-    async def close(self):
+    async def close(self) -> None:
+        """No-op close."""
         pass
 
 
 class FakeContext:
-    def __init__(self, page):
+    def __init__(self, page: FakePage) -> None:
+        """Initialize a fake context wrapping a page."""
         self._page = page
 
-    async def new_page(self):
+    async def new_page(self) -> FakePage:
+        """Return the fake page."""
         return self._page
 
 
 class FakePool:
-    def __init__(self, page):
+    def __init__(self, page: FakePage) -> None:
+        """Initialize a fake pool wrapping a fake context."""
         self._ctx = FakeContext(page)
         self.acquired = 0
 
-    async def acquire(self, key):
+    async def acquire(self, key: str) -> FakeContext:
+        """Count the acquire and return the fake context."""
         self.acquired += 1
         return self._ctx
 
-    async def release(self, ctx):
+    async def release(self, ctx: FakeContext) -> None:
+        """No-op release."""
         pass
 
 
-def _install_fake_pool(page):
+def _install_fake_pool(page: FakePage) -> FakePool:
     """Point the browser tier at a fake pool (both lanes)."""
     pool = FakePool(page)
     browser_tier.get_pool = lambda: pool
@@ -194,18 +232,22 @@ called = []
 
 
 class FakeSem:
-    def __init__(self, name):
+    def __init__(self, name: str) -> None:
+        """Initialize a fake semaphore with a name."""
         self.name = name
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> FakeSem:
+        """Record the semaphore name on enter."""
         called.append(self.name)
         return self
 
-    async def __aexit__(self, *a):
+    async def __aexit__(self, *a) -> bool:
+        """No-op exit."""
         return False
 
 
-async def ok_fn():
+async def ok_fn() -> str:
+    """Return ok."""
     return "ok"
 
 
@@ -214,14 +256,16 @@ orig_cf = queue_mod.cf_crawl_semaphore
 queue_mod.crawl_semaphore = lambda: FakeSem("fast")
 queue_mod.cf_crawl_semaphore = lambda: FakeSem("cf")
 try:
-    async def run_fast():
+    async def run_fast() -> str:
+        """Crawl deduped in the fast lane."""
         tok = set_lane(FAST)
         try:
             return await queue_mod.crawl_deduped("https://example.com/a", "t", ok_fn)
         finally:
             reset_lane(tok)
 
-    async def run_cf():
+    async def run_cf() -> str:
+        """Crawl deduped in the CF lane."""
         tok = set_lane(CF)
         try:
             return await queue_mod.crawl_deduped("https://example.com/b", "t", ok_fn)
@@ -244,7 +288,12 @@ print("OK crawl_deduped picks semaphore by lane")
 class ChallengeTier:
     name = "http"
 
-    async def fetch(self, url, p):
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Fake fetch that raises ChallengeDetected."""
         raise ChallengeDetected(url)
 
 
@@ -270,29 +319,45 @@ print("OK engine propagates ChallengeDetected")
 # 9. worker routes ChallengeDetected to the CF lane (fake db)
 # ---------------------------------------------------------------------------
 class FakeDB:
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize a fake db with recorded calls."""
         self.routed = []
         self.done = []
         self.claimed = []
 
-    async def fetch_all(self, sql, params=None, timeout_ms=None):
+    async def fetch_all(
+        self,
+        sql: str,
+        params: tuple | None = None,
+        timeout_ms: int | None = None,
+    ) -> list[dict]:
+        """Return a fake challenge row, or an empty CF lane."""
         if "lane = 'cf'" in sql:
             return []
         return [{"url": "https://example.com/challenge"}]
 
-    async def queue_claim(self, url):
+    async def queue_claim(self, url: str) -> bool:
+        """Record the claim."""
         self.claimed.append(url)
         return True
 
-    async def queue_done(self, url, ok, error=None):
+    async def queue_done(
+        self,
+        url: str,
+        ok: bool,
+        error: str | None = None,
+    ) -> None:
+        """Record the done call."""
         self.done.append((url, ok))
 
-    async def queue_route_to_cf(self, url):
+    async def queue_route_to_cf(self, url: str) -> bool:
+        """Record the CF routing."""
         self.routed.append(url)
         return True
 
 
-async def fake_crawl_url(url, trigger):
+async def fake_crawl_url(url: str, trigger: str) -> dict:
+    """Fake crawl that raises ChallengeDetected."""
     raise ChallengeDetected(url)
 
 

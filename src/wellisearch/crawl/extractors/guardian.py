@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from ..results import Fitted, Rendered
 from . import register
-from .base import cut_at_first, generic_md, trim_md
+from .base import MIN_ARTICLE_BODY_CHARS, cut_at_first, generic_md, trim_md
 
-RELATED = ("Related stories", "Explore more", "Most viewed", "Most commented")
+RELATED = ("Explore more", "Most commented", "Most viewed", "Related stories")
 
 
 class GuardianExtractor:
@@ -25,7 +25,7 @@ class GuardianExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: a real article body."""
-        return len(f.md.strip()) >= 1000
+        return len(f.md.strip()) >= MIN_ARTICLE_BODY_CHARS
 
 
 register(GuardianExtractor(), "theguardian.com")
