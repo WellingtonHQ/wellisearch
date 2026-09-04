@@ -11,6 +11,7 @@ from wellisearch.truncation import (
     boundary_cut_tail,
     truncate_page,
 )
+from wellisearch.url_filter import garbage_reason, is_garbage_url
 
 # ---------------------------------------------------------------------------
 # Chunker
@@ -185,6 +186,33 @@ out = {"ok": True, "pages_fetched": 1, "truncated": False, "total_chars": 10,
 md = render_fetch_pages_markdown(out)
 assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")
+
+# ---------------------------------------------------------------------------
+# URL Filter (garbage URL rejection)
+# ---------------------------------------------------------------------------
+# binary / non-page files must be rejected
+assert is_garbage_url("https://example.com/video.mp4")
+assert is_garbage_url("https://example.com/stream.m3u8")
+assert is_garbage_url("https://example.com/seg-123.m4s")
+assert is_garbage_url("https://example.com/photo.JPG?w=100")  # uppercase + query
+assert is_garbage_url("https://example.com/archive.zip")
+assert is_garbage_url("https://example.com/app.exe")
+assert is_garbage_url("https://example.com/report.pdf")
+assert garbage_reason("https://example.com/video.mp4") == "binary/non-page file (.mp4)"
+
+# HLS .ts segments rejected; TypeScript source must pass
+assert is_garbage_url("https://cdn.example.com/hls2/abc/seg-1-v1-a1.ts?t=123")
+assert garbage_reason("https://cdn.example.com/hls2/abc/seg-1.ts") == "HLS video segment (.ts)"
+assert not is_garbage_url("https://raw.githubusercontent.com/org/repo/main/src/client.ts")
+assert garbage_reason("https://raw.githubusercontent.com/org/repo/main/src/client.ts") is None
+
+# legitimate pages must pass
+assert not is_garbage_url("https://example.com/")
+assert not is_garbage_url("https://example.com/blog/post")
+assert not is_garbage_url("https://example.com/page.html")
+assert not is_garbage_url("https://example.com/docs?version=2")
+assert garbage_reason("https://example.com/blog/post") is None
+print("OK url_filter")
 
 # ---------------------------------------------------------------------------
 # Version Single-Source-Of-Truth
