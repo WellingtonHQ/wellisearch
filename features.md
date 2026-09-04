@@ -71,7 +71,6 @@ It will periodically reorder the providers to put the highest quality one at the
 
 # Dashboard
 
-- Ability to move/reorder the provider list
 - Drop the "Top pages by search_hit_count"
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.
