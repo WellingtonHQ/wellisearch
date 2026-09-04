@@ -37,6 +37,37 @@ Filter at URL-extraction time:
 - non-numeric / backticked ports: `$`, `PORT`, `bash`, `3000\``
 - internal docker service names: `ollama:11434`, `open-terminal:8000`, `sandbox:8080`, `postgres`
 
+## Record Metrics
+Publish API response times P50, P95, P99s.
+
+---
+# Fetching
+
+## Always return by timeout
+Some clients will timeout waiting for a page for fetch.
+
+## Simultaneous fetches will sometimes hang:
+```
+Executing fetch_page...
+INPUT
+url
+https://www.pedroalonso.net/blog/qwen-mtp-speculative-decoding-4090/
+max_chars
+15000
+Executing fetch_page...
+INPUT
+url
+https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+max_chars
+12000
+Executing fetch_page...
+INPUT
+url
+https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+max_chars
+12000
+```
+
 ---
 
 # Search
@@ -74,7 +105,6 @@ It will periodically reorder the providers to put the highest quality one at the
 - Drop the "Top pages by search_hit_count"
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.
-
 
 ---
 
