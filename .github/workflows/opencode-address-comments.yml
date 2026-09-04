@@ -110,8 +110,8 @@ jobs:
 
       - name: Configure Git user
         run: |
-          git config --global user.name "opencode-bot"
-          git config --global user.email "opencode@github-actions[bot]"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Install opencode (if needed)
         run: |

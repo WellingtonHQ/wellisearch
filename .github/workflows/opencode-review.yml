@@ -7,7 +7,6 @@ on:
 jobs:
   review:
     if: |
-      github.actor != 'github-actions[bot]' &&
       !github.event.pull_request.draft &&
       github.event.pull_request.user.type != 'Bot' &&
       (
@@ -28,8 +27,8 @@ jobs:
           persist-credentials: true
       - name: Configure Git user
         run: |
-          git config --global user.name "opencode-bot"
-          git config --global user.email "opencode@github-actions[bot]"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Install opencode (if needed)
         run: |
