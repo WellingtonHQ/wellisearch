@@ -43,6 +43,16 @@ VIEWPORT: dict[str, int] = {"width": 1366, "height": 900}
 LOCALE = "en-US"
 TIMEZONE = "America/Los_Angeles"
 
+# Cooldown after a failed launch so a broken environment (e.g. missing X
+# server) does not spawn one doomed chromium per URL in a hot loop: each
+# failed launch leaves an orphaned process behind and wastes CPU. Fail fast
+# for the window instead, then retry once.
+LAUNCH_RETRY_AFTER_S = 30.0
+
+
+class LaunchBackoffError(RuntimeError):
+    """A recent launch for this profile key failed; backing off."""
+
 
 class BrowserPool:
     """Bounded pool of warm persistent browser contexts, keyed by profile."""
@@ -63,6 +73,7 @@ class BrowserPool:
         self._last_used: dict[str, float] = {}
         self._in_use: dict[str, int] = {}
         self._launch_locks: dict[str, asyncio.Lock] = {}
+        self._launch_failed_at: dict[str, float] = {}
         self._reaped: set[str] = set()
         self._pw = None
         self._lock = asyncio.Lock()
@@ -101,6 +112,7 @@ class BrowserPool:
         self._contexts.clear()
         self._last_used.clear()
         self._in_use.clear()
+        self._launch_failed_at.clear()
         if self._pw is not None:
             try:
                 await self._pw.stop()
@@ -147,8 +159,24 @@ class BrowserPool:
                 if key in self._contexts:
                     self._last_used[key] = time.monotonic()
                     return self._contexts[key]
+                failed_at = self._launch_failed_at.get(key)
+                if (
+                    failed_at is not None
+                    and time.monotonic() - failed_at < LAUNCH_RETRY_AFTER_S
+                ):
+                    raise LaunchBackoffError(
+                        f"browser launch for {key!r} recently failed; "
+                        f"backing off {LAUNCH_RETRY_AFTER_S:.0f}s to avoid a relaunch storm"
+                    )
                 await self._evict_lru_if_needed()
-                ctx = await self._launch(key, pw)
+                try:
+                    ctx = await self._launch(key, pw)
+                except BaseException:
+                    # Record the failure (also on cancellation: a launch cut
+                    # short may have left an orphaned chromium behind).
+                    self._launch_failed_at[key] = time.monotonic()
+                    raise
+                self._launch_failed_at.pop(key, None)
                 self._contexts[key] = ctx
                 self._last_used[key] = time.monotonic()
                 return ctx
