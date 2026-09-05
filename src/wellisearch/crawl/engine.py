@@ -19,35 +19,6 @@ from .results import ChallengeDetected, CrawlResult, Escalate, Fitted
 log = logging.getLogger("wellisearch.crawl.engine")
 
 
-def _flat_backstop(name: str) -> float:
-    """Fallback per-tier backstop for tiers that don't report a worst case.
-
-    Generous on purpose: each tier manages its own goto/challenge timeouts
-    internally; this only guards against a hang. The CF-lane browser tier needs
-    goto (CF timeout) + the full challenge loop (CF timeout budget), so it gets
-    2× the CF timeout.
-    """
-    s = get_settings()
-    if name == "stealth":
-        return float(s.CRAWL_STEALTH_TIMEOUT_S)
-    if name == "browser" and get_lane() == CF:
-        return float(s.CRAWL_CF_TIMEOUT_S) * 2
-    return float(s.CRAWL_TIMEOUT_S)
-
-
-def _tier_backstop(tier: "tiers.Tier", name: str, p: "Policy") -> float:
-    """Per-tier asyncio.wait_for backstop, derived from the tier's worst case.
-
-    Prefers the tier's own worst_case_s() (goto + settle + network_idle +
-    challenge loop + recovery), which is accurate per tier. Falls back to the
-    flat per-name budget for tiers that don't report one (e.g. test fakes).
-    """
-    fn = getattr(tier, "worst_case_s", None)
-    if callable(fn):
-        return float(fn(p))
-    return _flat_backstop(name)
-
-
 async def crawl(url: str) -> CrawlResult:
     """Crawl one URL through its policy's tier ladder.
 
@@ -88,10 +59,7 @@ async def crawl(url: str) -> CrawlResult:
             f = ex.fit(r)
         except Escalate as esc:
             attempts.append({"tier": name, "error": f"escalate: {esc.tier}"})
-            if esc.tier in p.tiers and p.tiers.index(esc.tier) > i:
-                i = p.tiers.index(esc.tier)
-            else:
-                i += 1
+            i = _next_index_after_escalation(p, i, esc)
             continue
         if ex.accept(f):
             ms = int((time.monotonic() - start) * 1000)
@@ -121,3 +89,48 @@ async def crawl(url: str) -> CrawlResult:
             flags=best.flags,
         )
     return CrawlResult(ok=False, title=None, md="", tier="none", ms=ms, attempts=attempts)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _next_index_after_escalation(p: Policy, i: int, esc: Escalate) -> int:
+    """Next tier index after an Escalate: the named tier if it's ahead, else i+1."""
+    if esc.tier in p.tiers and p.tiers.index(esc.tier) > i:
+        return p.tiers.index(esc.tier)
+    return i + 1
+
+
+def _flat_backstop(name: str) -> float:
+    """Fallback per-tier backstop for tiers that don't report a worst case.
+
+    Generous on purpose: each tier manages its own goto/challenge timeouts
+    internally; this only guards against a hang. The CF-lane browser tier needs
+    goto (CF timeout) + the full challenge loop (CF timeout budget), so it gets
+    2× the CF timeout.
+    """
+    s = get_settings()
+    if name == "stealth":
+        return float(s.CRAWL_STEALTH_TIMEOUT_S)
+    if name == "browser" and get_lane() == CF:
+        return float(s.CRAWL_CF_TIMEOUT_S) * 2
+    return float(s.CRAWL_TIMEOUT_S)
+
+
+def _tier_backstop(
+    tier: "tiers.Tier",
+    name: str,
+    p: "Policy",
+) -> float:
+    """Per-tier asyncio.wait_for backstop, derived from the tier's worst case.
+
+    Prefers the tier's own worst_case_s() (goto + settle + network_idle +
+    challenge loop + recovery), which is accurate per tier. Falls back to the
+    flat per-name budget for tiers that don't report one (e.g. test fakes).
+    """
+    fn = getattr(tier, "worst_case_s", None)
+    if callable(fn):
+        return float(fn(p))
+    return _flat_backstop(name)

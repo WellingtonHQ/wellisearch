@@ -182,3 +182,10 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .DS_Store
+
+# AI
+.opencode
+.qwen
+
+# Database backups (pg_dump output — large, never commit)
+backups/

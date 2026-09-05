@@ -20,78 +20,6 @@ from ..results import Fitted, Rendered
 from . import register
 from .base import trim_md
 
-_PRICE_SELECTORS = (
-    "[data-asin] .a-price .a-offscreen",
-    ".a-price .a-offscreen",
-    "#corePriceDisplay_desktop_feature_div .a-offscreen",
-    "#priceblock_ourprice",
-    "#priceblock_dealprice",
-)
-_DETAILS_IDS = (
-    "productDetails_techSpec_section_1",
-    "productDetails_detailBullets_sections1",
-    "detailBullets_feature_div",
-    "productDetails_db_sections",
-)
-
-
-def _soup(html: str) -> BeautifulSoup:
-    return BeautifulSoup(html, "lxml")
-
-
-def _title(soup: BeautifulSoup) -> str | None:
-    el = soup.find(id="productTitle")
-    if el:
-        t = el.get_text(" ", strip=True)
-        if t:
-            return t
-    h1 = soup.find("h1")
-    if h1:
-        t = h1.get_text(" ", strip=True)
-        if t:
-            return t
-    return None
-
-
-def _price(soup: BeautifulSoup) -> str | None:
-    for sel in _PRICE_SELECTORS:
-        for e in soup.select(sel):
-            t = e.get_text(strip=True)
-            if t and t.lower() != "null":
-                return t
-    return None
-
-
-def _stock(soup: BeautifulSoup) -> str | None:
-    el = soup.find(id="availability")
-    if el:
-        t = el.get_text(" ", strip=True)
-        if t:
-            return t
-    return None
-
-
-def _feature_bullets(soup: BeautifulSoup) -> list[str]:
-    fb = soup.find(id="feature-bullets")
-    if not fb:
-        return []
-    out: list[str] = []
-    for li in fb.select("li"):
-        t = li.get_text(" ", strip=True)
-        if t:
-            out.append(t)
-    return out
-
-
-def _product_details(soup: BeautifulSoup) -> str | None:
-    for tid in _DETAILS_IDS:
-        el = soup.find(id=tid)
-        if el:
-            t = el.get_text(" ", strip=True)
-            if t:
-                return t
-    return None
-
 
 class AmazonExtractor:
     """Amazon product page: element-anchored extraction + site gate."""
@@ -99,6 +27,7 @@ class AmazonExtractor:
     name = "amazon"
 
     def fit(self, r: Rendered) -> Fitted:
+        """Fit an Amazon product page into structured markdown."""
         soup = _soup(r.html)
         title = _title(soup)
         price = _price(soup)
@@ -136,6 +65,90 @@ class AmazonExtractor:
             and bool(f.signals.get("price"))
             and int(f.signals.get("bullets", 0)) >= 1
         )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+_PRICE_SELECTORS = (
+    "[data-asin] .a-price .a-offscreen",
+    ".a-price .a-offscreen",
+    "#corePriceDisplay_desktop_feature_div .a-offscreen",
+    "#priceblock_ourprice",
+    "#priceblock_dealprice",
+)
+_DETAILS_IDS = (
+    "productDetails_techSpec_section_1",
+    "productDetails_detailBullets_sections1",
+    "detailBullets_feature_div",
+    "productDetails_db_sections",
+)
+
+
+def _soup(html: str) -> BeautifulSoup:
+    """Parse HTML into a BeautifulSoup tree."""
+    return BeautifulSoup(html, "lxml")
+
+
+def _title(soup: BeautifulSoup) -> str | None:
+    """Product title from #productTitle, falling back to <h1>."""
+    el = soup.find(id="productTitle")
+    if el:
+        t = el.get_text(" ", strip=True)
+        if t:
+            return t
+    h1 = soup.find("h1")
+    if h1:
+        t = h1.get_text(" ", strip=True)
+        if t:
+            return t
+    return None
+
+
+def _price(soup: BeautifulSoup) -> str | None:
+    """First real price found by the buy-box selectors."""
+    for sel in _PRICE_SELECTORS:
+        for e in soup.select(sel):
+            t = e.get_text(strip=True)
+            if t and t.lower() != "null":
+                return t
+    return None
+
+
+def _stock(soup: BeautifulSoup) -> str | None:
+    """Availability text from #availability."""
+    el = soup.find(id="availability")
+    if el:
+        t = el.get_text(" ", strip=True)
+        if t:
+            return t
+    return None
+
+
+def _feature_bullets(soup: BeautifulSoup) -> list[str]:
+    """Feature bullets from #feature-bullets."""
+    fb = soup.find(id="feature-bullets")
+    if not fb:
+        return []
+    out: list[str] = []
+    for li in fb.select("li"):
+        t = li.get_text(" ", strip=True)
+        if t:
+            out.append(t)
+    return out
+
+
+def _product_details(soup: BeautifulSoup) -> str | None:
+    """First product-details section text from the known section IDs."""
+    for tid in _DETAILS_IDS:
+        el = soup.find(id=tid)
+        if el:
+            t = el.get_text(" ", strip=True)
+            if t:
+                return t
+    return None
 
 
 register(AmazonExtractor(), "amazon.com")

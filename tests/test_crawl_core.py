@@ -1,10 +1,12 @@
 """Unit tests: native crawl core (policy, botwall, signals, extractor, engine loop)."""
+from __future__ import annotations
+
 import asyncio
 
 from wellisearch.crawl import engine, tiers
 from wellisearch.crawl.botwall import is_botwall
 from wellisearch.crawl.extractors.base import GenericExtractor
-from wellisearch.crawl.policy import match
+from wellisearch.crawl.policy import Policy, match
 from wellisearch.crawl.results import Rendered
 from wellisearch.crawl.signals import find_price, find_stock
 
@@ -75,7 +77,12 @@ BOTWALL_HTML = '<html><body>Just a moment...<div class="cf-turnstile"></div></bo
 class FakeTier:
     name = "http"
 
-    async def fetch(self, url, p):
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Fake fetch for testing."""
         return Rendered(html=GOOD_HTML, title="Test Article", status=200, ms=1, engine="fake")
 
 
@@ -90,14 +97,24 @@ assert res.md
 class BotwallHttpTier:
     name = "http"
 
-    async def fetch(self, url, p):
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Fake fetch returning a botwall page."""
         return Rendered(html=BOTWALL_HTML, title=None, status=200, ms=1, engine="fake")
 
 
 class FakeBotwallTier:
     name = "browser"
 
-    async def fetch(self, url, p):
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Fake fetch returning a botwall page."""
         return Rendered(html=BOTWALL_HTML, title=None, status=200, ms=1, engine="fake")
 
 

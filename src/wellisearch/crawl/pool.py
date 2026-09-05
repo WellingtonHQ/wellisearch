@@ -43,66 +43,26 @@ VIEWPORT: dict[str, int] = {"width": 1366, "height": 900}
 LOCALE = "en-US"
 TIMEZONE = "America/Los_Angeles"
 
-
-def _sanitize_key(key: str) -> str:
-    """Filesystem-safe profile dir name from a profile key."""
-    return re.sub(r"[^A-Za-z0-9._-]", "_", key)
-
-
-def _profile_dir(key: str, prefix: str = "") -> str:
-    """Absolute profile dir for a key under CRAWL_PROFILE_DIR.
-
-    ``prefix`` namespaces the dir (e.g. ``cf`` for the CF lane) so two pools
-    never target the same user-data-dir — otherwise one pool's _reap_orphans
-    would SIGKILL the other pool's live warm browser.
-    """
-    base = get_settings().CRAWL_PROFILE_DIR
-    if prefix:
-        base = os.path.join(base, prefix)
-    return os.path.join(base, _sanitize_key(key))
+# Cooldown after a failed launch so a broken environment (e.g. missing X
+# server) does not spawn one doomed chromium per URL in a hot loop: each
+# failed launch leaves an orphaned process behind and wastes CPU. Fail fast
+# for the window instead, then retry once.
+LAUNCH_RETRY_AFTER_S = 30.0
 
 
-def _remove_singleton_lock(profile_dir: str) -> None:
-    """Drop a stale SingletonLock so a fresh launch can acquire the profile."""
-    lock = os.path.join(profile_dir, "SingletonLock")
-    if os.path.islink(lock) or os.path.exists(lock):
-        try:
-            os.unlink(lock)
-            log.warning("removed stale profile SingletonLock %s", profile_dir)
-        except OSError:
-            pass
-
-
-def _reap_orphans(profile_dir: str) -> None:
-    """Kill leftover chromium holding the profile + drop its SingletonLock.
-
-    Ported from the proven worker's _reap_orphans (Linux /proc scan, guarded
-    for non-Linux). A crashed browser leaves a live chromium with the profile's
-    SingletonLock; the next launch then hangs on the locked profile.
-    """
-    if os.path.isdir("/proc"):
-        marker = f"--user-data-dir={profile_dir}"
-        for entry in os.listdir("/proc"):
-            if not entry.isdigit():
-                continue
-            try:
-                with open(f"/proc/{entry}/cmdline", "rb") as f:
-                    cmd = f.read().decode("utf-8", "replace")
-            except OSError:
-                continue
-            if marker in cmd and "chrom" in cmd:
-                try:
-                    os.kill(int(entry), signal.SIGKILL)
-                    log.warning("reaped orphaned chromium pid=%s", entry)
-                except OSError:
-                    pass
-    _remove_singleton_lock(profile_dir)
+class LaunchBackoffError(RuntimeError):
+    """A recent launch for this profile key failed; backing off."""
 
 
 class BrowserPool:
     """Bounded pool of warm persistent browser contexts, keyed by profile."""
 
-    def __init__(self, size: int | None = None, prefix: str = "") -> None:
+    def __init__(
+        self,
+        size: int | None = None,
+        prefix: str = "",
+    ) -> None:
+        """Initialize a bounded pool of warm browser contexts."""
         # size defaults to the fast-lane pool size; the CF lane passes its own
         # (smaller) CRAWL_CF_POOL_SIZE so challenge crawls get their own contexts.
         # prefix namespaces the profile dir so the CF pool never reaps the fast
@@ -113,6 +73,7 @@ class BrowserPool:
         self._last_used: dict[str, float] = {}
         self._in_use: dict[str, int] = {}
         self._launch_locks: dict[str, asyncio.Lock] = {}
+        self._launch_failed_at: dict[str, float] = {}
         self._reaped: set[str] = set()
         self._pw = None
         self._lock = asyncio.Lock()
@@ -151,6 +112,7 @@ class BrowserPool:
         self._contexts.clear()
         self._last_used.clear()
         self._in_use.clear()
+        self._launch_failed_at.clear()
         if self._pw is not None:
             try:
                 await self._pw.stop()
@@ -163,12 +125,14 @@ class BrowserPool:
     # ---------------------------------------------------------------------------
 
     def _key_of(self, ctx: BrowserContext) -> str | None:
+        """Profile key for a context, or None when unknown."""
         for key, c in self._contexts.items():
             if c is ctx:
                 return key
         return None
 
     def _launch_lock(self, key: str) -> asyncio.Lock:
+        """Per-key lock so one profile launches at a time."""
         lk = self._launch_locks.get(key)
         if lk is None:
             lk = asyncio.Lock()
@@ -176,6 +140,7 @@ class BrowserPool:
         return lk
 
     async def _ensure_playwright(self) -> Playwright:
+        """Start the shared playwright instance once and return it."""
         if self._pw is None:
             from patchright.async_api import async_playwright
 
@@ -183,6 +148,7 @@ class BrowserPool:
         return self._pw
 
     async def _get_or_launch(self, key: str) -> BrowserContext:
+        """Return the cached context for key or launch a new one."""
         async with self._lock:
             if key in self._contexts:
                 self._last_used[key] = time.monotonic()
@@ -193,8 +159,24 @@ class BrowserPool:
                 if key in self._contexts:
                     self._last_used[key] = time.monotonic()
                     return self._contexts[key]
+                failed_at = self._launch_failed_at.get(key)
+                if (
+                    failed_at is not None
+                    and time.monotonic() - failed_at < LAUNCH_RETRY_AFTER_S
+                ):
+                    raise LaunchBackoffError(
+                        f"browser launch for {key!r} recently failed; "
+                        f"backing off {LAUNCH_RETRY_AFTER_S:.0f}s to avoid a relaunch storm"
+                    )
                 await self._evict_lru_if_needed()
-                ctx = await self._launch(key, pw)
+                try:
+                    ctx = await self._launch(key, pw)
+                except BaseException:
+                    # Record the failure (also on cancellation: a launch cut
+                    # short may have left an orphaned chromium behind).
+                    self._launch_failed_at[key] = time.monotonic()
+                    raise
+                self._launch_failed_at.pop(key, None)
                 self._contexts[key] = ctx
                 self._last_used[key] = time.monotonic()
                 return ctx
@@ -216,7 +198,12 @@ class BrowserPool:
             except Exception as e:
                 log.warning("evict close %s failed: %s", lru_key, e)
 
-    async def _launch(self, key: str, pw: Playwright) -> BrowserContext:
+    async def _launch(
+        self,
+        key: str,
+        pw: Playwright,
+    ) -> BrowserContext:
+        """Launch a persistent context for key under its profile dir."""
         s = get_settings()
         profile_dir = _profile_dir(key, self._prefix)
         os.makedirs(profile_dir, exist_ok=True)
@@ -260,3 +247,71 @@ def get_cf_pool() -> BrowserPool:
     if _cf_pool is None:
         _cf_pool = BrowserPool(size=get_settings().CRAWL_CF_POOL_SIZE, prefix="cf")
     return _cf_pool
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_key(key: str) -> str:
+    """Filesystem-safe profile dir name from a profile key."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", key)
+
+
+def _profile_dir(key: str, prefix: str = "") -> str:
+    """Absolute profile dir for a key under CRAWL_PROFILE_DIR.
+
+    ``prefix`` namespaces the dir (e.g. ``cf`` for the CF lane) so two pools
+    never target the same user-data-dir — otherwise one pool's _reap_orphans
+    would SIGKILL the other pool's live warm browser.
+    """
+    base = get_settings().CRAWL_PROFILE_DIR
+    if prefix:
+        base = os.path.join(base, prefix)
+    return os.path.join(base, _sanitize_key(key))
+
+
+def _remove_singleton_lock(profile_dir: str) -> None:
+    """Drop a stale SingletonLock so a fresh launch can acquire the profile."""
+    lock = os.path.join(profile_dir, "SingletonLock")
+    if os.path.islink(lock) or os.path.exists(lock):
+        try:
+            os.unlink(lock)
+            log.warning("removed stale profile SingletonLock %s", profile_dir)
+        except OSError:
+            pass
+
+
+def _is_orphan_chromium(pid: str, marker: str) -> bool:
+    """True if /proc/<pid>/cmdline is a chromium holding our profile dir."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmd = f.read().decode("utf-8", "replace")
+    except OSError:
+        return False
+    return marker in cmd and "chrom" in cmd
+
+
+def _kill_pid(pid: str) -> None:
+    """SIGKILL a pid, logging when the orphan is reaped."""
+    try:
+        os.kill(int(pid), signal.SIGKILL)
+        log.warning("reaped orphaned chromium pid=%s", pid)
+    except OSError:
+        pass
+
+
+def _reap_orphans(profile_dir: str) -> None:
+    """Kill leftover chromium holding the profile + drop its SingletonLock.
+
+    Ported from the proven worker's _reap_orphans (Linux /proc scan, guarded
+    for non-Linux). A crashed browser leaves a live chromium with the profile's
+    SingletonLock; the next launch then hangs on the locked profile.
+    """
+    if os.path.isdir("/proc"):
+        marker = f"--user-data-dir={profile_dir}"
+        for entry in os.listdir("/proc"):
+            if entry.isdigit() and _is_orphan_chromium(entry, marker):
+                _kill_pid(entry)
+    _remove_singleton_lock(profile_dir)

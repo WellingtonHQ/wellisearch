@@ -11,9 +11,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
@@ -99,7 +99,7 @@ async def test_search_gateway(c: httpx.AsyncClient) -> str:
     )
     check(
         "search: Markdown contract header + Title/URL/Snippet",
-        all(k in md for k in ("Source:", "Title:", "URL:", "Snippet:")),
+        all(k in md for k in ("Snippet:", "Source:", "Title:", "URL:")),
         md[:120].replace("\n", " | ")
     )
     check(
@@ -200,7 +200,7 @@ async def test_fetch(c: httpx.AsyncClient, url: str) -> None:
     check(
         f"fetch: 200 + Markdown header + body ({url})",
         r.status_code == 200
-        and all(k in md2 for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
+        and all(k in md2 for k in ("Chars:", "From Index:", "Title:", "Truncated:", "URL:"))
         and len(md2) > 200,
         md2[:120].replace("\n", " | ")
     )
@@ -239,7 +239,7 @@ async def test_fetch_bulk(c: httpx.AsyncClient) -> None:
     check(
         "fetch-bulk: 200 + Markdown header + 2 sections",
         r.status_code == 200
-        and all(k in md2 for k in ("Strategy:", "Pages Fetched:", "Total Chars:", "Truncated:"))
+        and all(k in md2 for k in ("Pages Fetched:", "Strategy:", "Total Chars:", "Truncated:"))
         and "Pages Fetched: 2" in md2
         and len(re.findall(r"^Title: ", md2, re.M)) == 2,
         md2[:120].replace("\n", " | ")
@@ -427,7 +427,7 @@ async def test_window_logs(c: httpx.AsyncClient) -> None:
     check(
         "logs: 200 + rows with ts/kind/message/info",
         r.status_code == 200 and len(logs) >= 1
-        and all(k in logs[0] for k in ("ts", "kind", "message", "info")),
+        and all(k in logs[0] for k in ("info", "kind", "message", "ts")),
         f"n={len(logs)} first={json.dumps(logs[0])[:120] if logs else '-'}"
     )
     r10 = await c.get("/api/logs", params={"secs": "600"})
@@ -468,13 +468,13 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
     )
     check(
         "search json: envelope keys",
-        isinstance(j, dict) and all(k in j for k in ("source", "degraded", "count", "results")),
+        isinstance(j, dict) and all(k in j for k in ("count", "degraded", "results", "source")),
         str(sorted(j.keys())) if isinstance(j, dict) else type(j).__name__
     )
     check(
         "search json: results list with url/title/snippet",
         isinstance(j.get("results"), list) and len(j["results"]) >= 1
-        and all(k in j["results"][0] for k in ("url", "title", "snippet")),
+        and all(k in j["results"][0] for k in ("snippet", "title", "url")),
         json.dumps((j.get("results") or [{}])[0])[:120]
     )
     check(
@@ -520,7 +520,7 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
     check(
         "fetch json: 200 + content-type json + envelope keys",
         r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
-        and all(k in j for k in ("ok", "url", "title", "markdown", "chars", "truncated", "from_index")),
+        and all(k in j for k in ("chars", "from_index", "markdown", "ok", "title", "truncated", "url")),
         r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
     )
     check(
@@ -541,13 +541,13 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
     check(
         "fetch-bulk json: 200 + content-type json + envelope keys",
         r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
-        and all(k in j for k in ("ok", "pages_fetched", "total_chars", "strategy", "pages")),
+        and all(k in j for k in ("ok", "pages", "pages_fetched", "strategy", "total_chars")),
         r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
     )
     check(
         "fetch-bulk json: pages list with content/chars",
         isinstance(j.get("pages"), list) and len(j["pages"]) >= 1
-        and all(k in j["pages"][0] for k in ("url", "title", "content", "chars", "truncated")),
+        and all(k in j["pages"][0] for k in ("chars", "content", "title", "truncated", "url")),
         json.dumps((j.get("pages") or [{}])[0])[:120]
     )
     check(
@@ -716,7 +716,7 @@ async def _mcp_http_tool_call_checks(session: ClientSession) -> None:
     md = res.content[0].text if res.content else ""
     check(
         "mcp/http: fetch_page Markdown + header (2nd stateless request)",
-        all(k in md for k in ("Title:", "URL:", "From Index:", "Chars:", "Truncated:"))
+        all(k in md for k in ("Chars:", "From Index:", "Title:", "Truncated:", "URL:"))
         and len(md) > 200,
         md[:120].replace("\n", " | ")
     )

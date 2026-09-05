@@ -39,6 +39,8 @@ MOUSE_MOVE_PAUSE_MS = 400
 MIN_SLUG_TOKENS = 3
 # Minimum slug-token overlap for a walmart search match to count.
 MIN_SLUG_TOKEN_OVERLAP = 3
+# Max slug tokens used to build the walmart search query.
+MAX_SLUG_QUERY_TOKENS = 8
 
 # Walmart serves missing items as a 200 soft-404 shell. Anchor to the visible
 # <h1>: the strings also appear in walmart's site-wide JS bundle on good pages.
@@ -50,7 +52,11 @@ class BrowserTier:
 
     name = "browser"
 
-    async def fetch(self, url: str, p: Policy) -> Rendered:
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         """Fetch one URL in a pooled browser; always closes the page + releases.
 
         The CF lane uses its own pool (get_cf_pool) so a challenge crawl holding
@@ -68,7 +74,13 @@ class BrowserTier:
         finally:
             await pool.release(ctx)
 
-    async def _crawl(self, page: Page, url: str, p: Policy) -> Rendered:
+    async def _crawl(
+        self,
+        page: Page,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Drive the page: goto, settle, challenge handling, walmart recovery."""
         s = get_settings()
         is_cf = get_lane() == CF
         timeout_s = s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S
@@ -111,7 +123,12 @@ class BrowserTier:
         return Rendered(html=html, title=title, status=status, ms=ms, engine="browser", notes=notes)
 
     async def _resolve_challenge(
-        self, page: Page, url: str, html: str, status: int, budget: int | None = None
+        self,
+        page: Page,
+        url: str,
+        html: str,
+        status: int,
+        budget: int | None = None,
     ) -> str:
         """Click the turnstile checkbox until clean or the budget is exhausted."""
         budget = budget if budget is not None else get_settings().CRAWL_CHALLENGE_BUDGET_S
@@ -227,6 +244,7 @@ async def _click_turnstile_checkbox(page: Page) -> bool:
 
 
 def _is_walmart_item_url(url: str) -> bool:
+    """True when the URL is a walmart.com item page (/ip/...)."""
     try:
         parsed = urlparse(url)
     except ValueError:
@@ -245,6 +263,7 @@ def _is_walmart_item_404(url: str, html: str) -> bool:
 
 
 def _slug_tokens(slug: str) -> set[str]:
+    """Slug split into lowercase tokens longer than one character."""
     return {t for t in re.split(r"[-_]+", slug.lower()) if len(t) > 1}
 
 
@@ -261,7 +280,7 @@ async def _walmart_recover_item_url(page: Page, url: str) -> str | None:
     orig_tokens = _slug_tokens(parts[1])
     if len(orig_tokens) < MIN_SLUG_TOKENS:
         return None
-    query = " ".join(parts[1].split("-")[:8])
+    query = " ".join(parts[1].split("-")[:MAX_SLUG_QUERY_TOKENS])
     search_url = "https://www.walmart.com/search?q=" + quote_plus(query)
     await page.goto(search_url, wait_until="domcontentloaded")
     await page.wait_for_timeout(WALMART_SEARCH_SETTLE_MS)

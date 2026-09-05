@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-STRATEGIES = ("smart", "head", "tail", "even", "priority")
+STRATEGIES = ("even", "head", "priority", "smart", "tail")
 
 
 def boundary_cut_head(text: str, n: int) -> str:
