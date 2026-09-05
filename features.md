@@ -37,6 +37,65 @@ Filter at URL-extraction time:
 - non-numeric / backticked ports: `$`, `PORT`, `bash`, `3000\``
 - internal docker service names: `ollama:11434`, `open-terminal:8000`, `sandbox:8080`, `postgres`
 
+## Record Metrics
+Publish API response times P50, P95, P99s.
+
+---
+# Fetching
+
+## Always return by timeout
+Some clients will timeout waiting for a page for fetch.
+
+## Simultaneous fetches will sometimes hang:
+```
+Executing fetch_page...
+INPUT
+url
+https://www.pedroalonso.net/blog/qwen-mtp-speculative-decoding-4090/
+max_chars
+15000
+Executing fetch_page...
+INPUT
+url
+https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+max_chars
+12000
+Executing fetch_page...
+INPUT
+url
+https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+max_chars
+12000
+```
+
+then after 2-5 minutes:
+```
+INPUT
+url
+https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+max_chars
+12000
+OUTPUT
+URL: https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+Status: failed
+Error: couldn't get a connection after 30.00 sec
+Time: 53920 ms
+View Result from fetch_page
+INPUT
+url
+https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+max_chars
+12000
+OUTPUT
+URL: https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+Status: failed
+Error: https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/: bot-wall detected; routed to the CF challenge lane
+Time: 94552 ms
+```
+
+The responses are good but they shouldn't take so long to come back. If a bot-wall is detected, let the client know right away
+and tell them to try again in x seconds, rather than keep them waiting.
+
 ---
 
 # Search
@@ -71,11 +130,9 @@ It will periodically reorder the providers to put the highest quality one at the
 
 # Dashboard
 
-- Ability to move/reorder the provider list
 - Drop the "Top pages by search_hit_count"
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.
-
 
 ---
 
