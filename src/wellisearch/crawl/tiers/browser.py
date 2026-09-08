@@ -29,18 +29,18 @@ log = logging.getLogger("wellisearch.crawl.tiers.browser")
 
 # Wait after each turnstile click before re-reading the page (spec: ~2s).
 CHALLENGE_POLL_MS = 2000
-# Let the walmart search results render before scraping the item links.
-WALMART_SEARCH_SETTLE_MS = 4000
-# Checkbox offset from the turnstile widget row's left edge (proven worker).
-TURNSTILE_OFFSET_X = 24
-# Brief pause between the mouse move and the click (proven worker uses 0.4s).
-MOUSE_MOVE_PAUSE_MS = 400
-# Minimum slug tokens to trust a walmart search recovery.
-MIN_SLUG_TOKENS = 3
-# Minimum slug-token overlap for a walmart search match to count.
-MIN_SLUG_TOKEN_OVERLAP = 3
 # Max slug tokens used to build the walmart search query.
 MAX_SLUG_QUERY_TOKENS = 8
+# Minimum slug-token overlap for a walmart search match to count.
+MIN_SLUG_TOKEN_OVERLAP = 3
+# Minimum slug tokens to trust a walmart search recovery.
+MIN_SLUG_TOKENS = 3
+# Brief pause between the mouse move and the click (proven worker uses 0.4s).
+MOUSE_MOVE_PAUSE_MS = 400
+# Checkbox offset from the turnstile widget row's left edge (proven worker).
+TURNSTILE_OFFSET_X = 24
+# Let the walmart search results render before scraping the item links.
+WALMART_SEARCH_SETTLE_MS = 4000
 
 # Walmart serves missing items as a 200 soft-404 shell. Anchor to the visible
 # <h1>: the strings also appear in walmart's site-wide JS bundle on good pages.
