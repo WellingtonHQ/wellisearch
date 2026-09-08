@@ -119,6 +119,7 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `QUEUE_MAX_ATTEMPTS` | `3` | retries before a queue row is `failed` |
 | `CRAWL_TIMEOUT_S` | `45` | per-URL crawl timeout |
 | `CRAWL_MAX_PARALLEL` | `3` | concurrent crawls |
+| `CRAWL_LAUNCH_RETRY_AFTER_S` | `30` | relaunch backoff after a failed browser launch; keep equal to the entrypoint.sh Xvfb self-heal poll interval |
 
 ### Server
 | Var | Default | Notes |

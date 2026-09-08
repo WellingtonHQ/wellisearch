@@ -149,6 +149,14 @@ dedicated for high-risk retail (amazon / walmart / target / bestbuy), shared
 for the long-tail — LRU-GC'd, persisted on a volume. Ported from the proven
 fork worker.
 
+**Launch backoff (`CRAWL_LAUNCH_RETRY_AFTER_S`).** A recent launch failure for
+a profile key refuses relaunch until this window elapses; otherwise a broken
+environment (e.g. Xvfb dead) would spawn one doomed chromium per URL in a hot
+loop, each leaving an orphan process behind. The 30 s default is deliberately
+kept equal to the Xvfb self-heal polling interval in `entrypoint.sh`: by the
+time backoff lifts, the healer has had at least one chance to restart a dead
+X server. Keep the two in sync (also noted in deployment.md).
+
 ---
 
 ## 4. Proposed file structure

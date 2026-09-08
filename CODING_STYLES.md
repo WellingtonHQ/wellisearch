@@ -281,6 +281,8 @@ log.warning("queue crawl failed for %s: %s", url, e)
 Separate top-level sections with a three-line divider: a line of dashes, a short
 Title Cased label, and a closing line of dashes (see Rule 2). This is the one
 way to do separators/headings in code — never a single-line `# ----...---- label`.
+Leave exactly **one empty line** between the divider's closing dashes and the
+following element (function, class, variable, etc.).
 
 **Do:**
 ```python
@@ -295,6 +297,16 @@ def _helper() -> None: ...
 ```python
 # --------------------------------------------------------------------- main
 def main() -> None: ...
+```
+
+**Don't:** more than one empty line after the divider.
+```python
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _helper() -> None: ...
 ```
 
 ---
@@ -317,4 +329,28 @@ logging.basicConfig(
 ```python
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
+```
+
+---
+
+## 16. Spacing Between Elements
+
+When defining elements in a file, don't use more than two consecutive empty lines.
+
+**Do:**
+```python
+CONSTANT_1=6
+CONSTANT_2="Cheese"
+
+def main() 
+
+def run()
+```
+
+**Don't:**
+```python
+def main()
+
+
+def run()
 ```

@@ -17,7 +17,13 @@ class Tier(Protocol):
 
     name: str
 
-    async def fetch(self, url: str, p: Policy) -> Rendered: ...
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Fetch one URL and return rendered HTML."""
+        ...
 
     def worst_case_s(self, p: Policy) -> float:
         """Worst-case budget (seconds) the engine uses as its wait_for backstop."""

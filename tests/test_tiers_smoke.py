@@ -18,6 +18,7 @@ URL = "https://python.langchain.com/docs/introduction/"
 
 
 async def main() -> None:
+    """Run the three tier smoke tests against a live URL."""
     p = match(URL)
 
     # ---------------------------------------------------------------------------

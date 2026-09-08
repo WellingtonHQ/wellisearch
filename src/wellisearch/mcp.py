@@ -52,21 +52,35 @@ re-search. If the header carries Degraded: true, results are local-only
 TRANSPORT_SECURITY = TransportSecuritySettings(
     enable_dns_rebinding_protection=True,
     allowed_hosts=[
+        # Every client URL documented elsewhere (docs/api.md, README) needs a
+        # host entry here: the Host header is validated on every request, so
+        # an origin-only entry still 421s. Keep this list mirrored with
+        # allowed_origins below.
         "127.0.0.1:*",
         "localhost:*",
         "[::1]:*",
         "wellisearch:*",
-        # bare + :port forms — the SDK's ":*" wildcard requires a port suffix
+        # bare + :port forms — the SDK's ":*" wildcard requires a port suffix.
+        # One entry per machine that serves this app over Tailscale; each gets
+        # a matching https:// origin in allowed_origins too.
         "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
         "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
+        "normandysr1.tailc2fbf4.ts.net",
+        "normandysr1.tailc2fbf4.ts.net:*",
+        "normandysr2.tailc2fbf4.ts.net",
+        "normandysr2.tailc2fbf4.ts.net:*",
     ],
     allowed_origins=[
         "http://127.0.0.1:*",
-        "http://localhost:*",
         "http://[::1]:*",
+        "http://localhost:*",
         "http://wellisearch:*",
         "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
         "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
+        "https://normandysr1.tailc2fbf4.ts.net",
+        "https://normandysr1.tailc2fbf4.ts.net:*",
+        "https://normandysr2.tailc2fbf4.ts.net",
+        "https://normandysr2.tailc2fbf4.ts.net:*",
     ],
 )
 
@@ -74,7 +88,6 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
 # ---------------------------------------------------------------------------
 # Public
 # ---------------------------------------------------------------------------
-
 
 def mcp_asgi() -> _MCPMount:
     """Stateless streamable HTTP ASGI app: /mcp/http.
@@ -111,7 +124,6 @@ async def mcp_http_lifespan() -> AsyncIterator[None]:
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-
 
 class _Runtime:
     """One MCPServer plus the Starlette app bound to its session manager."""
