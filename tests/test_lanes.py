@@ -31,6 +31,7 @@ CLEAN_HTML = (
 # ---------------------------------------------------------------------------
 # Fake browser page / pool
 # ---------------------------------------------------------------------------
+
 class FakeResp:
     def __init__(self, status: int) -> None:
         """Initialize a fake response with a status."""
@@ -151,6 +152,7 @@ def _install_fake_pool(page: FakePage) -> FakePool:
 # ---------------------------------------------------------------------------
 # 1. lane contextvar
 # ---------------------------------------------------------------------------
+
 assert get_lane() == FAST
 tok = set_lane(CF)
 try:
@@ -163,6 +165,7 @@ print("OK lane contextvar")
 # ---------------------------------------------------------------------------
 # 2. fast-lane browser tier: botwall -> ChallengeDetected (probe, no click)
 # ---------------------------------------------------------------------------
+
 page = FakePage([BOTWALL_HTML])
 _install_fake_pool(page)
 tier = browser_tier.BrowserTier()
@@ -182,6 +185,7 @@ print("OK fast-lane probe raises ChallengeDetected")
 # ---------------------------------------------------------------------------
 # 3. CF-lane browser tier: botwall -> full challenge loop (clicks, resolves)
 # ---------------------------------------------------------------------------
+
 page = FakePage([BOTWALL_HTML, CLEAN_HTML])
 _install_fake_pool(page)
 tok = set_lane(CF)
@@ -197,6 +201,7 @@ print("OK CF-lane runs the challenge loop")
 # ---------------------------------------------------------------------------
 # 4. fast-lane browser tier: clean page -> success (no raise)
 # ---------------------------------------------------------------------------
+
 page = FakePage([CLEAN_HTML])
 _install_fake_pool(page)
 tok = set_lane(FAST)
@@ -212,6 +217,7 @@ print("OK fast-lane clean page succeeds")
 # ---------------------------------------------------------------------------
 # 5. CF pool is separate from the fast pool (and each is a singleton)
 # ---------------------------------------------------------------------------
+
 assert pool_mod.get_pool() is not pool_mod.get_cf_pool()
 assert pool_mod.get_pool() is pool_mod.get_pool()
 assert pool_mod.get_cf_pool() is pool_mod.get_cf_pool()
@@ -220,6 +226,7 @@ print("OK separate pools")
 # ---------------------------------------------------------------------------
 # 6. CF semaphore is separate from the fast semaphore (and each is a singleton)
 # ---------------------------------------------------------------------------
+
 assert crawler_mod.crawl_semaphore() is not crawler_mod.cf_crawl_semaphore()
 assert crawler_mod.crawl_semaphore() is crawler_mod.crawl_semaphore()
 assert crawler_mod.cf_crawl_semaphore() is crawler_mod.cf_crawl_semaphore()
@@ -228,6 +235,7 @@ print("OK separate semaphores")
 # ---------------------------------------------------------------------------
 # 7. crawl_deduped picks the semaphore by lane
 # ---------------------------------------------------------------------------
+
 called = []
 
 
@@ -285,6 +293,7 @@ print("OK crawl_deduped picks semaphore by lane")
 # ---------------------------------------------------------------------------
 # 8. engine propagates ChallengeDetected (does not swallow it as a tier error)
 # ---------------------------------------------------------------------------
+
 class ChallengeTier:
     name = "http"
 
@@ -318,6 +327,7 @@ print("OK engine propagates ChallengeDetected")
 # ---------------------------------------------------------------------------
 # 9. worker routes ChallengeDetected to the CF lane (fake db)
 # ---------------------------------------------------------------------------
+
 class FakeDB:
     def __init__(self) -> None:
         """Initialize a fake db with recorded calls."""

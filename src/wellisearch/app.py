@@ -542,6 +542,7 @@ async def api_logs(
 # ---------------------------------------------------------------------------
 # OWUI
 # ---------------------------------------------------------------------------
+
 # Curated OpenAPI spec for OWUI's OpenAPI tool server: exposes only the three
 # user-facing tools (fetch_page, fetch_pages, search_web) with clean
 # operationIds, so OWUI never sees the admin endpoints (logs/pages/providers/
@@ -558,6 +559,7 @@ async def owui_openapi() -> Any:
 # ---------------------------------------------------------------------------
 # MCP
 # ---------------------------------------------------------------------------
+
 # mounted before the catch-all static mount; endpoint: /mcp/http
 # (stateless streamable HTTP)
 
@@ -567,6 +569,7 @@ app.mount("/mcp", mcp_asgi(), name="mcp")
 # ---------------------------------------------------------------------------
 # Static
 # ---------------------------------------------------------------------------
+
 # catch-all last: serves static/index.html at / and any static assets
 
 if STATIC_DIR.is_dir():

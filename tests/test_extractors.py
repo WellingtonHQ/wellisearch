@@ -23,6 +23,7 @@ def rendered(html: str, title: str | None = None) -> Rendered:
 # ---------------------------------------------------------------------------
 # Amazon
 # ---------------------------------------------------------------------------
+
 AMAZON_HTML = (
     "<html><head><title>Kindle (10th generation) : Amazon.com</title></head><body>"
     "<span id=\"productTitle\">Kindle (10th generation)</span>"
@@ -77,6 +78,7 @@ print("OK amazon")
 # ---------------------------------------------------------------------------
 # Walmart
 # ---------------------------------------------------------------------------
+
 _WALM = (
     "Key item features: a 27-inch full HD IPS display with a 100Hz refresh rate, AMD "
     "FreeSync, and three-sided slim bezels for a clean desk setup. The 100Hz refresh rate "
@@ -104,6 +106,7 @@ print("OK walmart")
 # ---------------------------------------------------------------------------
 # Target
 # ---------------------------------------------------------------------------
+
 _TARG = (
     "This 7-in-1 USB-C hub adds HDMI, three USB 3.0 ports, an SD card slot, a microSD "
     "card slot, and a 100W power pass-through to any laptop. The HDMI port outputs "
@@ -129,6 +132,7 @@ print("OK target")
 # ---------------------------------------------------------------------------
 # BestBuy
 # ---------------------------------------------------------------------------
+
 _BB = (
     "The thinnest and lightest MacBook ever, with the M3 chip for fast performance, up "
     "to 18 hours of battery life, and a gorgeous 13.6-inch Liquid Retina display. The M3 "
@@ -160,6 +164,7 @@ print("OK bestbuy")
 # ---------------------------------------------------------------------------
 # NYTimes
 # ---------------------------------------------------------------------------
+
 NYT_STUB_HTML = (
     "<html><head><title>Sample Paywall Stub | The New York Times</title></head><body>"
     "<h1>Sample Paywall Stub</h1>"
@@ -198,6 +203,7 @@ print("OK nytimes")
 # ---------------------------------------------------------------------------
 # WSJ
 # ---------------------------------------------------------------------------
+
 WSJ_STUB_HTML = (
     "<html><head><title>Sample Paywall Stub | The Wall Street Journal</title></head><body>"
     "<h1>Sample Paywall Stub</h1>"
@@ -222,6 +228,7 @@ print("OK wsj")
 # ---------------------------------------------------------------------------
 # Reuters
 # ---------------------------------------------------------------------------
+
 REUTERS_HTML = (
     "<html><head><title>Sample Market Wrap | Reuters</title></head><body>"
     "<h1>Sample Market Wrap</h1>"
@@ -246,6 +253,7 @@ print("OK reuters")
 # ---------------------------------------------------------------------------
 # Guardian
 # ---------------------------------------------------------------------------
+
 GUARDIAN_HTML = (
     "<html><head><title>Sample Climate Piece | theguardian.com</title></head><body>"
     "<h1>Sample Climate Piece</h1>"
@@ -270,6 +278,7 @@ print("OK guardian")
 # ---------------------------------------------------------------------------
 # AP
 # ---------------------------------------------------------------------------
+
 AP_HTML = (
     "<html><head><title>Sample Senate Story | AP News</title></head><body>"
     "<p>AP News | Most Popular | Newsletters | Sign up</p>"
@@ -295,6 +304,7 @@ print("OK ap")
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
+
 assert for_url("https://www.amazon.com/dp/B08WM3LJQB").name == "amazon"
 assert for_url("https://www.nytimes.com/2026/x.html").name == "nytimes"
 assert for_url("https://example.com/x").name == "generic"

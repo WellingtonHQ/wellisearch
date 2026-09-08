@@ -16,6 +16,7 @@ from wellisearch.url_filter import garbage_reason, is_garbage_url
 # ---------------------------------------------------------------------------
 # Chunker
 # ---------------------------------------------------------------------------
+
 md = "Intro paragraph. " * 100
 md += "\n\n# Section One\n" + "text " * 300
 md += "\n\n" + "```python\n" + "x = 1\n" * 200 + "```\n"
@@ -32,6 +33,7 @@ print("OK chunker")
 # ---------------------------------------------------------------------------
 # Boundary Cuts
 # ---------------------------------------------------------------------------
+
 t = "word " * 5000
 h = boundary_cut_head(t, 1000)
 assert len(h) <= 1000
@@ -48,6 +50,7 @@ print("OK boundary cuts")
 # ---------------------------------------------------------------------------
 # Allocation
 # ---------------------------------------------------------------------------
+
 b = allocate_budgets("even", [1000, 2000, 3000], [0, 0, 0], 6000, None)
 # even split = 2000 each, clamped to page length (page 1 only has 1000)
 assert b == [1000, 2000, 2000], b
@@ -70,6 +73,7 @@ print("OK allocation")
 # ---------------------------------------------------------------------------
 # Per-Page Trim
 # ---------------------------------------------------------------------------
+
 text, trunc = truncate_page("x" * 100, 50, "head")
 assert trunc and len(text) <= 50
 text, trunc = truncate_page("x" * 100, 50, "tail")
@@ -81,6 +85,7 @@ print("OK per-page trim")
 # ---------------------------------------------------------------------------
 # Timing Header (feature: response timing)
 # ---------------------------------------------------------------------------
+
 # format_timing: None/empty -> no line
 assert format_timing(None) is None
 assert format_timing({}) is None
@@ -190,6 +195,7 @@ print("OK render_fetch_pages_markdown timing")
 # ---------------------------------------------------------------------------
 # URL Filter (garbage URL rejection)
 # ---------------------------------------------------------------------------
+
 # binary / non-page files must be rejected
 assert is_garbage_url("https://example.com/video.mp4")
 assert is_garbage_url("https://example.com/stream.m3u8")
@@ -223,6 +229,7 @@ print("OK url_filter")
 # ---------------------------------------------------------------------------
 # Version Single-Source-Of-Truth
 # ---------------------------------------------------------------------------
+
 # installed package metadata (pyproject, via hatch) must equal the source
 # of truth (wellisearch.__version__). Skipped for source-tree dev runs where
 # the package is not installed.

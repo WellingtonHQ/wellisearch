@@ -131,6 +131,7 @@ async def test_error_mapping(cls: type[Provider], settings: Settings) -> None:
 # ---------------------------------------------------------------------------
 # Per-Provider Tests
 # ---------------------------------------------------------------------------
+
 # One function per adapter: configured flag, request contract, response
 # normalization, and the ProviderError mapping the gateway relies on.
 
