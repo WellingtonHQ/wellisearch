@@ -206,6 +206,12 @@ assert garbage_reason("https://cdn.example.com/hls2/abc/seg-1.ts") == "HLS video
 assert not is_garbage_url("https://raw.githubusercontent.com/org/repo/main/src/client.ts")
 assert garbage_reason("https://raw.githubusercontent.com/org/repo/main/src/client.ts") is None
 
+# "hls"/"seg-" only count as segment markers in full path/filename components,
+# so TypeScript source with those substrings must pass (not just not reject)
+assert is_garbage_url("https://cdn.example.com/video/seg-12.ts")  # seg-<N> filename alone
+assert not is_garbage_url("https://raw.githubusercontent.com/org/repo/main/src/hls-utils.ts")
+assert garbage_reason("https://example.com/downloads/legacy-seg-archive.ts") is None
+
 # legitimate pages must pass
 assert not is_garbage_url("https://example.com/")
 assert not is_garbage_url("https://example.com/blog/post")

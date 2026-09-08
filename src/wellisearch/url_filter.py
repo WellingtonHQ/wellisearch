@@ -33,10 +33,11 @@ GARBAGE_EXTENSIONS: frozenset[str] = frozenset({
     "apk", "deb", "dmg", "exe", "msi", "rpm",
 })
 
-# HLS video segments: .ts files whose path contains an HLS/segment marker.
-# Catches dej02es2pfpm.tnmr.org/hls2/.../seg-N-v1-a1.ts without rejecting
-# raw.githubusercontent.com/.../client.ts (TypeScript source).
-_HLS_SEGMENT_RE = re.compile(r"(?:hls|seg-)", re.IGNORECASE)
+# HLS video segments: .ts files sitting under a path component named "hls" or
+# "hls<N>", or whose filename is "seg-<N>". Catches
+# dej02es2pfpm.tnmr.org/hls2/.../seg-N-v1-a1.ts without rejecting TypeScript
+# source such as /repo/src/client.ts or /repo/src/hls-utils.ts.
+_HLS_SEGMENT_RE = re.compile(r"(?:^|/)hls\d*/|(?:^|/)seg-\d+", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
