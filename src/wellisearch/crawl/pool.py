@@ -43,11 +43,11 @@ VIEWPORT: dict[str, int] = {"width": 1366, "height": 900}
 LOCALE = "en-US"
 TIMEZONE = "America/Los_Angeles"
 
-# Cooldown after a failed launch so a broken environment (e.g. missing X
-# server) does not spawn one doomed chromium per URL in a hot loop: each
-# failed launch leaves an orphaned process behind and wastes CPU. Fail fast
-# for the window instead, then retry once.
-LAUNCH_RETRY_AFTER_S = 30.0
+# Cooldown after a failed launch (CRAWL_LAUNCH_RETRY_AFTER_S in config.py):
+# a broken environment (e.g. missing X server) otherwise spawns one doomed
+# chromium per URL in a hot loop, each leaving an orphan behind and wasting
+# CPU. Its 30s default mirrors the entrypoint.sh Xvfb self-heal poll interval,
+# so a dead X has been restarted by the time relaunch is allowed again.
 
 
 class LaunchBackoffError(RuntimeError):
@@ -159,14 +159,15 @@ class BrowserPool:
                 if key in self._contexts:
                     self._last_used[key] = time.monotonic()
                     return self._contexts[key]
+                retry_after_s = get_settings().CRAWL_LAUNCH_RETRY_AFTER_S
                 failed_at = self._launch_failed_at.get(key)
                 if (
                     failed_at is not None
-                    and time.monotonic() - failed_at < LAUNCH_RETRY_AFTER_S
+                    and time.monotonic() - failed_at < retry_after_s
                 ):
                     raise LaunchBackoffError(
                         f"browser launch for {key!r} recently failed; "
-                        f"backing off {LAUNCH_RETRY_AFTER_S:.0f}s to avoid a relaunch storm"
+                        f"backing off {retry_after_s:.0f}s to avoid a relaunch storm"
                     )
                 await self._evict_lru_if_needed()
                 try:

@@ -28,9 +28,14 @@ fi
 
 # Self-heal: if Xvfb dies at runtime (e.g. OOM), restart it within ~30s so
 # headful launches stop failing and leaking orphaned chromium processes.
+# Poll interval is kept equal to CRAWL_LAUNCH_RETRY_AFTER_S in
+# src/wellisearch/config.py: after an X death the browser pool backs off its
+# relaunches for exactly that long, so by the time a retry is allowed this
+# loop must have had a chance to restart X. Keep the two values in sync.
+XVFB_HEAL_POLL_S=30
 (
   while true; do
-    sleep 30
+    sleep "$XVFB_HEAL_POLL_S"
     if ! x_alive; then
       start_xvfb || true
     fi
