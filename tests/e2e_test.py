@@ -685,7 +685,7 @@ async def _mcp_http_handshake_checks(session: ClientSession) -> None:
 
     tools = await session.list_tools()
     names = {t.name for t in tools.tools}
-    expect = {"fetch_page", "fetch_pages", "index_stats", "refresh_page", "seed_url", "search_web"}
+    expect = {"fetch_page", "fetch_pages", "index_stats", "refresh_page", "search_web", "seed_url"}
     check("mcp/http: exactly 6 tools", names == expect, str(sorted(names)))
 
 

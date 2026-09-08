@@ -29,13 +29,13 @@ CHROME_UA = (
 
 # Stealth launch args ported from the proven nodriver worker (worker.py ~460).
 STEALTH_ARGS: list[str] = [
-    "--disable-session-crashed-bubble",
-    "--disable-features=IsolateOrigins,site-per-process",
     "--disable-dev-shm-usage",
+    "--disable-features=IsolateOrigins,site-per-process",
     "--disable-gpu",
-    "--window-size=1366,900",
+    "--disable-session-crashed-bubble",
     "--lang=en-US",
     "--no-sandbox",
+    "--window-size=1366,900",
 ]
 
 # Consistent, realistic viewport / locale / timezone fingerprint.

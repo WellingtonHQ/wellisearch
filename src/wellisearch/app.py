@@ -543,9 +543,9 @@ async def api_logs(
 # OWUI
 # ---------------------------------------------------------------------------
 # Curated OpenAPI spec for OWUI's OpenAPI tool server: exposes only the three
-# user-facing tools (search_web, fetch_page, fetch_pages) with clean
-# operationIds, so OWUI never sees the admin endpoints (seed/refresh/providers/
-# pages/logs). The spec lives in owui/openapi.json (ships inside the package)
+# user-facing tools (fetch_page, fetch_pages, search_web) with clean
+# operationIds, so OWUI never sees the admin endpoints (logs/pages/providers/
+# refresh/seed). The spec lives in owui/openapi.json (ships inside the package)
 # and is served unauthenticated — it is a public API contract; OWUI still
 # sends the bearer token, and the endpoints themselves stay auth-gated.
 

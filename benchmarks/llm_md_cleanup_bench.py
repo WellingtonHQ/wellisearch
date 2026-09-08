@@ -118,11 +118,11 @@ JUDGE_SYSTEM_PROMPT = (
 )
 
 _BOILERPLATE_PATTERNS = [
-    r"sign\s+in", r"log\s+in", r"cookie", r"privacy\s+policy", r"terms\s+of",
-    r"subscribe", r"newsletter", r"all\s+rights\s+reserved", r"copyright",
-    r"facebook", r"twitter", r"linkedin", r"youtube", r"instagram",
-    r"navigation", r"skip\s+to\s+content", r"accept\s+all", r"back\s+to\s+top",
-    r"related\s+articles", r"share\s+this", r"follow\s+us",
+    r"accept\s+all", r"all\s+rights\s+reserved", r"back\s+to\s+top", r"cookie",
+    r"copyright", r"facebook", r"follow\s+us", r"instagram", r"linkedin",
+    r"log\s+in", r"navigation", r"newsletter", r"privacy\s+policy",
+    r"related\s+articles", r"share\s+this", r"sign\s+in", r"skip\s+to\s+content",
+    r"subscribe", r"terms\s+of", r"twitter", r"youtube",
 ]
 
 _BOILERPLATE_RE = re.compile("|".join(_BOILERPLATE_PATTERNS), re.IGNORECASE)
