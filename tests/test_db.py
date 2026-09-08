@@ -32,7 +32,6 @@ async def main() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 async def _clean_slate() -> None:
     """Delete this test's URLs (DB persists between runs)."""
     for table in ("crawl_queue", "pages"):

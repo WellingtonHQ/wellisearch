@@ -253,7 +253,6 @@ def get_cf_pool() -> BrowserPool:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _sanitize_key(key: str) -> str:
     """Filesystem-safe profile dir name from a profile key."""
     return re.sub(r"[^A-Za-z0-9._-]", "_", key)

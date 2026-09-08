@@ -155,7 +155,6 @@ async def search_web(
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 async def _search_local_index(
     query: str,
     k: int,

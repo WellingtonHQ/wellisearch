@@ -40,7 +40,6 @@ def main() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 async def _reembed_page(p: dict[str, Any]) -> str:
     """Re-embed one page; return 'ok', 'unchanged', or 'failed'."""
     url = p["url"]

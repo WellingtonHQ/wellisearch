@@ -48,7 +48,6 @@ def register_tools(server: MCPServer) -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _clean(obj: Any) -> Any:
     """JSON-safe: datetimes → ISO strings."""
     return json.loads(json.dumps(obj, default=str))

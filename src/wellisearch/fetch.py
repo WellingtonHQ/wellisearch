@@ -264,7 +264,6 @@ async def fetch_pages(
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _valid_url(url: str) -> bool:
     """True when the URL is http(s) with a host."""
     try:

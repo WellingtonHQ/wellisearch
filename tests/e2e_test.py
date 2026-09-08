@@ -603,7 +603,6 @@ async def main() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _load_api_key() -> str:
     """The API key from the environment or the .env file (exit if absent)."""
     key = os.environ.get("WELLISEARCH_API_KEY")

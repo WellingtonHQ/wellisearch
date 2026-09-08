@@ -109,7 +109,6 @@ class PagePatch(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
-
 @app.get("/health")
 async def health() -> dict[str, Any]:
     """Liveness probe with dependency status: database, crawler, and each
@@ -597,7 +596,6 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 
 async def _ev(message: str, info: dict | None = None) -> None:
     """Best-effort event logging (dashboard log view)."""

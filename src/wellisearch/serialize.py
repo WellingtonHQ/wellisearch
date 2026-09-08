@@ -83,7 +83,6 @@ def resolve_format(format_param: str | None, accept_header: str | None = None) -
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _json_default(o: Any) -> Any:
     """json.dumps fallback for Postgres types: datetime/date/time → ISO
     string, Decimal → float, set → sorted list."""

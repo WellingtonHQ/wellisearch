@@ -81,7 +81,6 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
 # Public
 # ---------------------------------------------------------------------------
 
-
 def mcp_asgi() -> _MCPMount:
     """Stateless streamable HTTP ASGI app: /mcp/http.
 
@@ -117,7 +116,6 @@ async def mcp_http_lifespan() -> AsyncIterator[None]:
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-
 
 class _Runtime:
     """One MCPServer plus the Starlette app bound to its session manager."""

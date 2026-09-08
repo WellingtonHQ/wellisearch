@@ -110,7 +110,6 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _tokens(text: str) -> int:
     """Rough token estimate: ~4 chars per token, minimum 1."""
     return max(1, len(text) // CHARS_PER_TOKEN)

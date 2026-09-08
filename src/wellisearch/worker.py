@@ -122,7 +122,6 @@ def main() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 async def _crawl_and_store(url: str, trigger: str) -> dict:
     """One crawl+store attempt (in-flight-deduped by the caller)."""
     t0 = time.monotonic()

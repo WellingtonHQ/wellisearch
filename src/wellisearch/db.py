@@ -517,7 +517,6 @@ db = Database()
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _month() -> str:
     """Current UTC month as ``YYYY-MM`` (the provider_quota key)."""
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m")

@@ -50,7 +50,6 @@ def embed_one(text: str) -> list[float]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _cache_dir() -> str:
     """fastembed's model cache dir (FASTEMBED_CACHE_DIR, or ~/.cache/fastembed)."""
     return os.environ.get("FASTEMBED_CACHE_DIR") or str(pathlib.Path.home() / ".cache" / "fastembed")

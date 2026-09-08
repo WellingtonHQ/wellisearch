@@ -71,7 +71,6 @@ class AmazonExtractor:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 _PRICE_SELECTORS = (
     "[data-asin] .a-price .a-offscreen",
     ".a-price .a-offscreen",
