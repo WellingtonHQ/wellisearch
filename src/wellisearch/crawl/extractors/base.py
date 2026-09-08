@@ -12,10 +12,10 @@ import re
 from ...config import get_settings
 from ..results import Fitted, Rendered
 
-MIN_MD_CHARS = 200
+MIN_MD_CHARS = 100
 # News article body gate (ap/guardian/reuters): a real article body clears this;
 # nav/decoy/related-links stubs do not.
-MIN_ARTICLE_BODY_CHARS = 1000
+MIN_ARTICLE_BODY_CHARS = 800
 # Retail product pages (buy-box + "About this item" + specs) are 5k+ chars once
 # extracted; a thin/degraded render (e.g. the HTTP tier's lazy buy-box) is well
 # under this. The gate uses it to reject thin renders so the engine escalates
