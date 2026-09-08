@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- postgres (shared infra container; "postgres" is the network alias) ---
+    # --- postgres (host must be resolvable + reachable from the app container) ---
     POSTGRES_HOST: str = "postgres"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "wellington"

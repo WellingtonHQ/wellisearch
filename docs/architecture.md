@@ -18,7 +18,7 @@ talking to **two external services**:
 
 The crawler is **native and in-process** (no external crawler service) — see
 `crawler.py` and the `crawl/` package. Both external services are reachable
-via the shared Docker network (hostname `postgres`). Postgres is **shared infrastructure outside this
+at their configured endpoints (Postgres at `POSTGRES_HOST`, any reachable name/IP; providers over HTTPS). Postgres is **shared infrastructure outside this
 repo** — wellisearch self-creates its app database at startup
 (`POSTGRES_ADMIN_DB`, default `postgres`) and applies `schema.sql` idempotently.
 

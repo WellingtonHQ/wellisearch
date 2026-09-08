@@ -58,7 +58,7 @@ docker logs -f wellisearch
 
 Then open the dashboard at **http://localhost:8780/**.
 
-> **Note on Postgres.** Out of the box, wellisearch expects a Postgres reachable at host `postgres` on a Docker network named `postgres-net` (the author's layout, where Postgres lives in a separate `infra` project). `docker compose up` will fail if that network doesn't exist — create it, or edit the `networks` block in [`compose.yml`](compose.yml) to match your setup. The app **creates its own database on first boot**, so there's nothing to pre-create.
+> **Note on Postgres.** wellisearch reaches Postgres at whatever host you set in `POSTGRES_HOST` (any hostname or IP resolvable and reachable from this container — no shared Docker network required). The app **creates its own database on first boot** and retries the connection for ~30 s, so there's nothing to pre-create and Postgres may come up after wellisearch.
 
 ## Connect your LLM (MCP)
 
