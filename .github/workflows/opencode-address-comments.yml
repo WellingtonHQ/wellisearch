@@ -110,20 +110,8 @@ jobs:
 
       - name: Configure Git user
         run: |
-          git config --global user.name "opencode-bot"
-          git config --global user.email "opencode@github-actions[bot]"
-
-      - name: Install opencode (if needed)
-        run: |
-          if [ ! -f "$HOME/.opencode/bin/opencode" ]; then
-            curl -fsSL https://opencode.ai/install | bash
-          fi
-
-      - name: Discover LM Studio model
-        id: lmstudio
-        uses: ./.github/actions/lmstudio-discover
-        with:
-          preferred-model: qwen/qwen3.8-27b
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Write triggering comment(s)
         shell: bash
@@ -151,7 +139,6 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          MODEL: ${{ steps.lmstudio.outputs.model }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           OPENCODE_AUTO_SHARE: "false"
           PROMPT: |
@@ -169,7 +156,7 @@ jobs:
             If no changes are currently pending and there is nothing to reply, do not create reply.md.
         run: |
           set -euo pipefail
-          ~/.opencode/bin/opencode run -m "$MODEL" "$PROMPT"
+          opencode run "$PROMPT"
           if [ -f reply.md ]; then
             gh pr comment "$PR_NUMBER" --body-file reply.md
           else

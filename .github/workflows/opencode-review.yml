@@ -7,7 +7,6 @@ on:
 jobs:
   review:
     if: |
-      github.actor != 'github-actions[bot]' &&
       !github.event.pull_request.draft &&
       github.event.pull_request.user.type != 'Bot' &&
       (
@@ -28,26 +27,13 @@ jobs:
           persist-credentials: true
       - name: Configure Git user
         run: |
-          git config --global user.name "opencode-bot"
-          git config --global user.email "opencode@github-actions[bot]"
-
-      - name: Install opencode (if needed)
-        run: |
-          if [ ! -f "$HOME/.opencode/bin/opencode" ]; then
-            curl -fsSL https://opencode.ai/install | bash
-          fi
-
-      - name: Discover LM Studio model
-        id: lmstudio
-        uses: ./.github/actions/lmstudio-discover
-        with:
-          preferred-model: qwen/qwen3.8-27b
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run opencode (local) and post review
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          MODEL: ${{ steps.lmstudio.outputs.model }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           OPENCODE_AUTO_SHARE: "false"
           PROMPT: |
@@ -94,7 +80,7 @@ jobs:
             - If you find no issues, say so in one line instead of the findings list.
         run: |
           set -euo pipefail
-          ~/.opencode/bin/opencode run -m "$MODEL" "$PROMPT"
+          opencode run "$PROMPT"
           if [ ! -f review.md ]; then
             echo "::error::opencode did not produce review.md"
             exit 1
