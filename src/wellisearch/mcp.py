@@ -54,11 +54,13 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
     allowed_hosts=[
         "127.0.0.1:*",
         "[::1]:*",
-        "localhost:*",
-        # bare + :port forms — the SDK's ":*" wildcard requires a port suffix
+        "wellisearch:*",
+        # bare + :port forms — the SDK's ":*" wildcard requires a port suffix.
+        # One entry per machine that serves this app over Tailscale.
         "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
         "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
-        "wellisearch:*",
+        "normandysr1.tailc2fbf4.ts.net",
+        "normandysr1.tailc2fbf4.ts.net:*",
     ],
     allowed_origins=[
         "http://127.0.0.1:*",
@@ -67,6 +69,10 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
         "http://wellisearch:*",
         "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
         "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
+        "https://normandysr1.tailc2fbf4.ts.net",
+        "https://normandysr1.tailc2fbf4.ts.net:*",
+        "https://normandysr2.tailc2fbf4.ts.net",
+        "https://normandysr2.tailc2fbf4.ts.net:*",
     ],
 )
 
