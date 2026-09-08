@@ -11,6 +11,7 @@ import logging
 
 from .config import get_settings
 from .crawl.engine import crawl
+from .crawl.extractors.base import title_from_markdown
 
 log = logging.getLogger("wellisearch.crawler")
 
@@ -66,15 +67,15 @@ class CrawlError(Exception):
 async def fit_markdown(url: str) -> tuple[str | None, str]:
     """Crawl one URL → (page title, clean fit-markdown). Raises CrawlError on failure.
 
-    title is the page's <title> captured by the engine's extractor; None when
-    the page has none — callers then store/keep no title.
+    title is the page's <title> captured by the engine's extractor, else a
+    markdown-derived fallback; None only when neither source yields a candidate.
     """
     result = await crawl(url)
     # result.ok is the success signal (the engine's gate passed). A failed crawl
     # can still carry a non-empty partial markdown (e.g. a bot-wall page with
     # some text); storing that as a success would poison the index, so require ok.
     if result.ok and result.md and result.md.strip():
-        return result.title, result.md
+        return result.title or title_from_markdown(result.md), result.md
     raise CrawlError(url, "all tiers failed or empty markdown")
 
 

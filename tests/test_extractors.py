@@ -4,7 +4,7 @@ from __future__ import annotations
 from wellisearch.crawl.extractors import for_url
 from wellisearch.crawl.extractors.amazon import AmazonExtractor
 from wellisearch.crawl.extractors.ap import APExtractor
-from wellisearch.crawl.extractors.base import generic_md
+from wellisearch.crawl.extractors.base import TITLE_MAX_LEN, generic_md, title_from_markdown
 from wellisearch.crawl.extractors.bestbuy import BestBuyExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
 from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
@@ -309,5 +309,25 @@ assert for_url("https://www.amazon.com/dp/B08WM3LJQB").name == "amazon"
 assert for_url("https://www.nytimes.com/2026/x.html").name == "nytimes"
 assert for_url("https://example.com/x").name == "generic"
 print("OK registry")
+
+# ---------------------------------------------------------------------------
+# title_from_markdown
+# ---------------------------------------------------------------------------
+
+assert title_from_markdown(
+    "Nav junk\n# Real Article Title\nBody text of the article."
+) == "Real Article Title", "H1 must win over an earlier plain line"
+nav_md = "[Skip to main content](#main)\nActual Headline Here\nSome body copy."
+assert title_from_markdown(nav_md) == "Actual Headline Here", "first link line must be skipped"
+assert "[Skip" not in (title_from_markdown(nav_md) or ""), "title must never contain the nav link"
+assert title_from_markdown(
+    "---\nPlain Text Line\nMore body text."
+) == "Plain Text Line", "symbol-only first line must be skipped"
+long_line = "w" * 200
+assert len(title_from_markdown(long_line)) == TITLE_MAX_LEN, "title must cap at TITLE_MAX_LEN"
+assert title_from_markdown("") is None, "empty md must yield None"
+assert title_from_markdown("   \n") is None, "whitespace-only md must yield None"
+assert title_from_markdown("[a](b)\n[c](d)") is None, "all-link md must yield None"
+print("OK title_from_markdown")
 
 print("ALL EXTRACTOR TESTS PASSED")

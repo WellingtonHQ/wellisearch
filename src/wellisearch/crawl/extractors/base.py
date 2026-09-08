@@ -21,6 +21,7 @@ MIN_NEWS_ARTICLE_BODY_CHARS = 800
 # under this. The gate uses it to reject thin renders so the engine escalates
 # to the browser tier instead of accepting a stub (design §3.2 retail gate).
 MIN_PRODUCT_CHARS = 3000
+TITLE_MAX_LEN = 120  # max chars kept when deriving a title from markdown
 
 
 class GenericExtractor:
@@ -72,9 +73,30 @@ def cut_at_first(md: str, markers: tuple[str, ...]) -> str:
     return md[:cut]
 
 
+def title_from_markdown(md: str) -> str | None:
+    """Best-effort page title from fit-markdown (the crawler's last resort)."""
+    if not md or not md.strip():
+        return None
+    h1 = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
+    if h1 and _is_title_candidate(h1.group(1)):
+        return h1.group(1).strip()[:TITLE_MAX_LEN]
+    for line in md.splitlines():
+        candidate = line.strip()
+        if _is_title_candidate(candidate):
+            return candidate[:TITLE_MAX_LEN]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _is_title_candidate(line: str) -> bool:
+    """True when a stripped markdown line can stand as a title (no links/symbols)."""
+    if not line or re.fullmatch(r"\[.*\]\(.*\)", line):
+        return False
+    return re.search(r"\w", line) is not None
+
 
 def _trafilatura_title(html: str) -> str | None:
     """Best-effort page title via trafilatura metadata; None on any failure."""

@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
 from urllib.parse import urlparse
 
 from . import crawler
 from .config import get_settings
+from .crawl.extractors.base import title_from_markdown
 from .crawl.results import ChallengeDetected
 from .db import db
 from .serialize import format_timing
@@ -34,7 +34,6 @@ from .worker import crawl_url
 
 log = logging.getLogger("wellisearch.fetch")
 
-TITLE_MAX_LEN = 120  # max chars kept when deriving a title from the first line
 ERROR_MAX_LEN = 300  # max chars kept in a per-URL fetch error message
 
 _OMITTED = object()  # sentinel: "parameter not provided"
@@ -278,18 +277,6 @@ def _valid_url(url: str) -> bool:
         return False
 
 
-def _title_from_markdown(md: str) -> str | None:
-    """First H1, else the first non-empty line (120 chars), else None."""
-    m = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
-    if m:
-        return m.group(1).strip()
-    for line in md.splitlines():
-        line = line.strip()
-        if line:
-            return line[:TITLE_MAX_LEN]
-    return None
-
-
 async def _resolve_page(url: str) -> dict:
     """Content for one URL: from index when present, else crawl on demand.
 
@@ -302,7 +289,7 @@ async def _resolve_page(url: str) -> dict:
     if page and not page.get("disabled") and page.get("fit_markdown"):
         return {
             "url": url,
-            "title": page.get("title") or _title_from_markdown(page["fit_markdown"]) or url,
+            "title": page.get("title") or title_from_markdown(page["fit_markdown"]) or url,
             "content": page["fit_markdown"],
             "from_index": True,
             "fetch_count": page.get("fetch_count") or 0,
@@ -329,7 +316,7 @@ async def _resolve_page(url: str) -> dict:
         raise RuntimeError(f"crawl succeeded but no content stored for {url}")
     return {
         "url": url,
-        "title": (page or {}).get("title") or _title_from_markdown(md) or url,
+        "title": (page or {}).get("title") or title_from_markdown(md) or url,
         "content": md,
         "from_index": False,
         "fetch_count": (page or {}).get("fetch_count") or 0,
