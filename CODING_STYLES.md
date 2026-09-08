@@ -281,7 +281,7 @@ log.warning("queue crawl failed for %s: %s", url, e)
 Separate top-level sections with a three-line divider: a line of dashes, a short
 Title Cased label, and a closing line of dashes (see Rule 2). This is the one
 way to do separators/headings in code — never a single-line `# ----...---- label`.
-Leave at most **one empty line** between the divider's closing dashes and the
+Leave exactly **one empty line** between the divider's closing dashes and the
 following element (function, class, variable, etc.).
 
 **Do:**
@@ -304,6 +304,7 @@ def main() -> None: ...
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _helper() -> None: ...
 ```
