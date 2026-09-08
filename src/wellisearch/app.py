@@ -45,29 +45,6 @@ log = logging.getLogger("wellisearch.app")
 # static/ ships inside the package (works in dev layout and installed wheel)
 STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 
-@asynccontextmanager
-async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """App lifespan: the streamable-HTTP session manager's task group must be
-    live before the first request (Starlette does not run lifespans of
-    mounted sub-apps), then the worker + DB for the app's lifetime."""
-    async with mcp_http_lifespan():
-        await _startup()
-        yield
-        await _shutdown()
-
-
-app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
-
-_worker_task: asyncio.Task | None = None
-
-WINDOW_MIN_SECS = 600    # window floor: 10 minutes
-WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
-
-API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
-API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
-API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
-API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
-
 
 class FetchBody(BaseModel):
     """Request body for POST /api/fetch: the URL to fetch, with optional
@@ -103,6 +80,30 @@ class ProviderOrder(BaseModel):
 class PagePatch(BaseModel):
     """Request body for PATCH /api/pages/{url}: the new ``disabled`` flag."""
     disabled: bool = Field(default=False)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """App lifespan: the streamable-HTTP session manager's task group must be
+    live before the first request (Starlette does not run lifespans of
+    mounted sub-apps), then the worker + DB for the app's lifetime."""
+    async with mcp_http_lifespan():
+        await _startup()
+        yield
+        await _shutdown()
+
+
+app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
+
+_worker_task: asyncio.Task | None = None
+
+WINDOW_MIN_SECS = 600    # window floor: 10 minutes
+WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
+
+API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
+API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
+API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
+API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
 
 
 # ---------------------------------------------------------------------------
