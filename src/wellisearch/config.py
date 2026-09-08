@@ -98,12 +98,7 @@ class Settings(BaseSettings):
     CRAWL_CHALLENGE_PARALLEL: int = 2
     CRAWL_HEADLESS: bool = False
     CRAWL_HTTP_TIER: bool = True
-    # Launch backoff (crawl/pool.py): a recent launch failure for a profile key
-    # refuses relaunch until this window elapses, so a broken environment (e.g.
-    # Xvfb dead) does not spawn one doomed chromium per URL in a hot loop. The
-    # default 30s is deliberately kept equal to the Xvfb self-heal polling
-    # interval in entrypoint.sh: by the time backoff lifts, the healer has had
-    # at least one chance to restart a dead X server. Keep the two in sync.
+    # Launch backoff after a failed browser launch (see native-crawler-design.md §3.4).
     CRAWL_LAUNCH_RETRY_AFTER_S: float = 30.0
     CRAWL_MD_MAX_CHARS: int = 150000
     CRAWL_POOL_SIZE: int = 3
