@@ -46,12 +46,13 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
         """Append the accumulated lines as one chunk (if any) and reset the
         accumulator."""
         nonlocal current, current_tokens
-        if current:
-            text = "\n".join(current).strip()
-            if text:
-                chunks.append(text)
-            current = []
-            current_tokens = 0
+        if not current:
+            return
+        text = "\n".join(current).strip()
+        if text:
+            chunks.append(text)
+        current = []
+        current_tokens = 0
 
     i = 0
     while i < len(lines):

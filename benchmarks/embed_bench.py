@@ -473,46 +473,47 @@ def main(argv: list[str] | None = None) -> int:
 
     print_report(results, total_wall)
 
-    if not args.no_save:
-        args.results.mkdir(parents=True, exist_ok=True)
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        for r in results:
-            out = args.results / f"{slug(r['model'])}_{stamp}.json"
-            out.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
-            print(f"wrote {out}")
-        summary = {
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "total_wall_seconds": round(total_wall, 2),
-            "n_models": len(results),
-            "n_chunks": len(chunks),
-            "n_queries": len(queries),
-            "env": {
-                "cpu": detect_cpu(),
-                "cpu_count": os.cpu_count(),
-                "machine": platform.machine(),
-                "python": sys.version.split()[0],
-                "threads": args.threads,
-                "batch": args.batch,
-                "max_len": args.max_len,
-            },
-            "models": [
-                {
-                    "model": r["model"],
-                    "backend": r["backend"],
-                    "embedding_dim": r["embedding_dim"],
-                    "recall@1": r["quality"]["recall@1"],
-                    "recall@10": r["quality"]["recall@10"],
-                    "mrr@10": r["quality"]["mrr@10"],
-                    "tokens_per_sec": r["speed"]["tokens_per_sec"],
-                    "median_doc_ms": (r["speed"]["doc_latency"] or {}).get("median_ms"),
-                    "engine_version": r["env"]["engine_version"],
-                }
-                for r in results
-            ],
-        }
-        sout = args.results / f"summary_{stamp}.json"
-        sout.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"wrote {sout}")
+    if args.no_save:
+        return 0
+    args.results.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for r in results:
+        out = args.results / f"{slug(r['model'])}_{stamp}.json"
+        out.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"wrote {out}")
+    summary = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "total_wall_seconds": round(total_wall, 2),
+        "n_models": len(results),
+        "n_chunks": len(chunks),
+        "n_queries": len(queries),
+        "env": {
+            "cpu": detect_cpu(),
+            "cpu_count": os.cpu_count(),
+            "machine": platform.machine(),
+            "python": sys.version.split()[0],
+            "threads": args.threads,
+            "batch": args.batch,
+            "max_len": args.max_len,
+        },
+        "models": [
+            {
+                "model": r["model"],
+                "backend": r["backend"],
+                "embedding_dim": r["embedding_dim"],
+                "recall@1": r["quality"]["recall@1"],
+                "recall@10": r["quality"]["recall@10"],
+                "mrr@10": r["quality"]["mrr@10"],
+                "tokens_per_sec": r["speed"]["tokens_per_sec"],
+                "median_doc_ms": (r["speed"]["doc_latency"] or {}).get("median_ms"),
+                "engine_version": r["env"]["engine_version"],
+            }
+            for r in results
+        ],
+    }
+    sout = args.results / f"summary_{stamp}.json"
+    sout.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"wrote {sout}")
     return 0
 
 # ---------------------------------------------------------------------------
