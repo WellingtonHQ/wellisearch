@@ -25,7 +25,9 @@ POLICY: dict[str, Policy] = {
         "amazon", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
     ),
     "apnews.com": Policy("ap", ("http", "browser", "stealth"), ("settle",), (), "shared"),
-    "bestbuy.com": Policy("bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated"),
+    "bestbuy.com": Policy(
+        "bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
+    ),
     "boardgamegeek.com": Policy("bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated"),
     "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
@@ -33,7 +35,9 @@ POLICY: dict[str, Policy] = {
         "target", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
     ),
     "theguardian.com": Policy("guardian", ("http", "browser", "stealth"), ("settle",), (), "shared"),
-    "walmart.com": Policy("walmart", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated"),
+    "walmart.com": Policy(
+        "walmart", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
+    ),
     "wsj.com": Policy("wsj", ("http", "browser", "stealth"), ("settle",), (), "shared"),
 }
 

@@ -122,7 +122,6 @@ def main() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 async def _crawl_and_store(url: str, trigger: str) -> dict:
     """One crawl+store attempt (in-flight-deduped by the caller)."""
     t0 = time.monotonic()
@@ -197,7 +196,7 @@ async def _drain_queue(deadline: float) -> dict:
                     await db.queue_route_to_cf(url)
                 except Exception as e:
                     log.warning("queue crawl failed for %s: %s", url, e)
-                    await db.queue_done(url, ok=False, error=str(e)[:1000])
+                    await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
                 finally:
                     processed += 1
         finally:
@@ -247,7 +246,7 @@ async def _drain_cf_queue(deadline: float) -> dict:
                 await db.queue_done(url, ok=True)
             except Exception as e:
                 log.warning("CF lane crawl failed for %s: %s", url, e)
-                await db.queue_done(url, ok=False, error=str(e)[:1000])
+                await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
             finally:
                 processed += 1
         finally:

@@ -72,12 +72,12 @@ class Settings(BaseSettings):
     SEARCH_STATEMENT_TIMEOUT_MS: int = 15000
 
     # --- fetch_pages truncation (swappable strategies) ---
-    FETCH_DEFAULT_STRATEGY: str = "smart"  # smart | head | tail | even | priority
+    FETCH_DEFAULT_STRATEGY: str = "smart"  # even | head | priority | smart | tail
     FETCH_MAX_CHARS: int = 40000  # default total budget when max_chars omitted
     FETCH_PER_PAGE_CHARS: int = 12000  # default per-page cap
 
     # --- worker / queue (async indexing) ---
-    WORKER_INTERVAL_MIN: int = 30
+    WORKER_INTERVAL_MIN: float = 30
     WORKER_BUDGET_PER_RUN: int = 25
     REFRESH_MIN_AGE_HOURS: int = 72  # refresh pass skips pages crawled less than this long ago
     WORKER_TICK_BUDGET_MIN: int = 15
@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     CRAWL_CHALLENGE_PARALLEL: int = 2
     CRAWL_HEADLESS: bool = False
     CRAWL_HTTP_TIER: bool = True
+    # Launch backoff after a failed browser launch (see native-crawler-design.md §3.4).
+    CRAWL_LAUNCH_RETRY_AFTER_S: float = 30.0
     CRAWL_MD_MAX_CHARS: int = 150000
     CRAWL_POOL_SIZE: int = 3
     CRAWL_PROFILE_DIR: str = "/profiles"

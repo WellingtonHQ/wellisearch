@@ -12,8 +12,8 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
+import logging
 
 from . import worker
 from .config import get_settings

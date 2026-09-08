@@ -1,2 +1,4 @@
 # Auto detect text files and perform LF normalization
-* text=auto
+* text=auto eol=lf
+# Shell scripts must keep LF endings: a CRLF shebang breaks exec in the container
+*.sh text eol=lf

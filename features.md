@@ -1,15 +1,5 @@
 # Engine
 
-## Replace Crawl4AI with homegrown crawler.
-We've had to modift Crawl4ai quite a bit to fit our use cases, and even then
-we still have numerous issues with it. For example, the error messages that it kicks back
-are extremely opaque and don't tell you what happened.
-Crawl4ai also uses an excessive amount of memory and the usage does not come down during idle periods.
-
-### Native Crawler
-We can build a native crawler that is built on patchwright and scrapling. It gives us a level of control and visibility we cannot currently achieve with crawl4ai. It also reduces our service dependencies from 1 -> 0. wellisearch becomes a true all-in-one soution.
-
-
 ## Multi-crawl
 When seeding a URL, wellisearch should use crawl4ai to do a breadth/depth crawl and load adjacent URLs as well. 
 
@@ -29,13 +19,6 @@ qwen3:4b
 Pages that haven't been fetched in a specified time (let's say, 1 year) get dropped from the index.
 This is optional and is used to save space.
 
----
-
-# Fetching
-
-## Max age param
-Add a max-age parameter, similar to search. If an indexed page is older than specified, a new crawl will run. The client will wait for the new crawl to complete.
-
 ## Crawl-failure handling
 
 Crawl4AI returns HTTP 500 for anti-bot blocks (Cloudflare, DataDome, PerimeterX, Akamai,
@@ -54,21 +37,68 @@ Filter at URL-extraction time:
 - non-numeric / backticked ports: `$`, `PORT`, `bash`, `3000\``
 - internal docker service names: `ollama:11434`, `open-terminal:8000`, `sandbox:8080`, `postgres`
 
+## Record Metrics
+Publish API response times P50, P95, P99s.
+
+---
+# Fetching
+
+## Always return by timeout
+Some clients will timeout waiting for a page for fetch.
+
+## Simultaneous fetches will sometimes hang:
+```
+Executing fetch_page...
+INPUT
+url
+https://www.pedroalonso.net/blog/qwen-mtp-speculative-decoding-4090/
+max_chars
+15000
+Executing fetch_page...
+INPUT
+url
+https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+max_chars
+12000
+Executing fetch_page...
+INPUT
+url
+https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+max_chars
+12000
+```
+
+then after 2-5 minutes:
+```
+INPUT
+url
+https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+max_chars
+12000
+OUTPUT
+URL: https://bestllmfor.com/guides/lm-studio-mtp-multi-token-prediction/
+Status: failed
+Error: couldn't get a connection after 30.00 sec
+Time: 53920 ms
+View Result from fetch_page
+INPUT
+url
+https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+max_chars
+12000
+OUTPUT
+URL: https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/
+Status: failed
+Error: https://www.reddit.com/r/Qwen_AI/comments/1vqzl5l/qwen3827b_at_160k_context_on_a_single_rtx_4090/: bot-wall detected; routed to the CF challenge lane
+Time: 94552 ms
+```
+
+The responses are good but they shouldn't take so long to come back. If a bot-wall is detected, let the client know right away
+and tell them to try again in x seconds, rather than keep them waiting.
+
 ---
 
 # Search
-
-## New param (skip-local: true) to skip the local index entirely. 
-This is done if for example on a search, the LLM was unsatisfied 
-with the results from the local index and wants the server to
-search one of the providers.
-
-## New response field capturing time
-Add a field to the response text in the header that indicates
-how long the query took over. It should say how much time was spent
-searching the postgres index and how much time (if used) was spent
-waiting for the provider response.
-
 
 ## Tiered providers
 Ability to put providers on tiers:
@@ -87,39 +117,22 @@ The way it works is as follows.
 This will help rotate search engines to prevent burning one API limit, and then moving to burn the next one.
 
 ## Add new providers:
-1. Exa — Done 2026-08-29
+1. ~~Exa~~ (done)
 2. ddgs (duck duck go custom crawler)
-3. you.com — Done 2026-08-29
+3. ~~you.com~~
 
 ## Provider auto-ranking
 Rather than having the user manually select the tiers, the system itself
 will track results from the providers and score the relevancy of the results to the query.
 It will periodically reorder the providers to put the highest quality one at the top.
 
-## Remove searxng
-It is no longer needed or useful.
-— Done 2026-08-29 (SearXNG removed; EXA added as third provider).
-
-## Ability to specify specific provider in search
-Currently we have the search_mode param that lets you pick between local, provider, and auto modes. 
-When you pick provider, you currently don't have any option to specify which specific provider you want to use.
-This would give the LLM flexibility in choosing its own provider depending on the context.
-And it opens the door for....
-
-## Domain specific searching
-Imagine if wellisearch allowed the caller to search Amazon's inventory, or Home Depot's inventory.
-How would it do that? Simple. Crawl the site's "search?query=x" pages as a normal user does.
-Wellisearch would then return markdown as normal and it would look like any other web result.
-
 ---
 
 # Dashboard
 
-- Ability to move/reorder the provider list — Done 2026-08-29 (dashboard ↑/↓ reorder + "reset to default order"; `PUT /api/providers/order`; persists in `provider_state.sort_order`, effective immediately)
 - Drop the "Top pages by search_hit_count"
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.
-
 
 ---
 

@@ -23,11 +23,16 @@ class StealthTier:
 
     name = "stealth"
 
-    async def fetch(self, url: str, p: Policy) -> Rendered:
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
         """Run the sync StealthySession in a worker thread."""
         return await asyncio.to_thread(self._fetch_sync, url)
 
     def _fetch_sync(self, url: str) -> Rendered:
+        """Run one sync StealthySession fetch and return the rendered page."""
         from scrapling.fetchers import StealthySession
 
         s = get_settings()
