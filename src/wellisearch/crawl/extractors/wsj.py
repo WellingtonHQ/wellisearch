@@ -7,6 +7,8 @@ from .base import generic_md, trim_md
 
 PAYWALL_MARKERS = ("metered", "paywall", "sign in to continue", "subscribe to read")
 
+MIN_BODY_CHARS = 500  # min chars of extracted markdown for a page to pass the gate
+
 
 class WSJExtractor:
     """WSJ article: detect the paywall stub and flag it, don't escalate."""
@@ -25,7 +27,7 @@ class WSJExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: a lead paragraph is enough (a paywall stub is acceptable)."""
-        return len(f.md.strip()) >= 500
+        return len(f.md.strip()) >= MIN_BODY_CHARS
 
 
 register(WSJExtractor(), "wsj.com")

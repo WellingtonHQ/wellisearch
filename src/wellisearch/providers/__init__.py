@@ -163,12 +163,14 @@ class Gateway:
             log.info("provider %s served %r in %d ms (%d results)", p.name, query, ms, len(results))
             await self._ev(
                 f"provider {p.name} served search",
-                {"query": query[:200], "ms": ms, "results": len(results),
+                {"query": query[:QUERY_LOG_MAX_LEN], "ms": ms, "results": len(results),
                  "skipped": [e["provider"] for e in errors] or None},
             )
             return results, p.name, errors
 
-        await self._ev("search failed — all providers exhausted", {"query": query[:200], "errors": errors})
+        await self._ev(
+            "search failed — all providers exhausted", {"query": query[:QUERY_LOG_MAX_LEN], "errors": errors}
+        )
         raise GatewayExhausted(errors)
 
     async def _provider_available(

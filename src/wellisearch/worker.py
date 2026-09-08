@@ -31,8 +31,9 @@ from .index import store_page
 
 log = logging.getLogger("wellisearch.worker")
 
-ERROR_DETAIL_MAX_LEN = 1000  # max chars kept in a crawl error detail (crawl_log)
-ERROR_REPR_MAX_LEN = 500     # max chars kept in a crash repr (crawl_log)
+ERROR_DETAIL_MAX_LEN = 1000    # max chars kept in a crawl error detail (crawl_log)
+ERROR_REPR_MAX_LEN = 500       # max chars kept in a crash repr (crawl_log)
+REFRESH_ERROR_MAX_LEN = 200    # max chars kept in a refresh-stats error entry
 
 # runtime state for the dashboard "Now" panel
 STATE: dict = {
@@ -282,7 +283,9 @@ async def _refresh_watchlist(deadline: float) -> dict:
             results.append(r)
         except Exception as e:
             log.warning("refresh failed for %s: %s", url, e)
-            results.append({"url": url, "status": "error", "error": str(e)[:200]})
+            results.append(
+                {"url": url, "status": "error", "error": str(e)[:REFRESH_ERROR_MAX_LEN]}
+            )
 
     await asyncio.gather(*(refresh(r) for r in rows))
     unchanged = sum(1 for r in results if r.get("status") == "unchanged")

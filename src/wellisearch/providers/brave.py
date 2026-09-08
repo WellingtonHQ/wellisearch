@@ -11,6 +11,8 @@ import httpx
 
 from .base import Provider, ProviderError, Result
 
+ERROR_BODY_MAX_LEN = 200  # max chars of an HTTP error body kept in a ProviderError
+
 
 class Brave(Provider):
     """Brave Search API adapter (web search endpoint)."""
@@ -44,7 +46,11 @@ class Brave(Provider):
         if r.status_code in (402, 429):
             raise ProviderError(self.name, f"quota exhausted ({r.status_code})", status=r.status_code)
         if r.status_code >= 400:
-            raise ProviderError(self.name, f"http {r.status_code}: {r.text[:200]}", status=r.status_code)
+            raise ProviderError(
+                self.name,
+                f"http {r.status_code}: {r.text[:ERROR_BODY_MAX_LEN]}",
+                status=r.status_code,
+            )
 
         data = r.json()
         out: list[Result] = []
