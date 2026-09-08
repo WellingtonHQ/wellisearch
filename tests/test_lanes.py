@@ -241,7 +241,7 @@ class FakeSem:
         called.append(self.name)
         return self
 
-    async def __aexit__(self, *a) -> bool:
+    async def __aexit__(self, *a: object) -> bool:
         """No-op exit."""
         return False
 
