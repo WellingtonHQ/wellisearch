@@ -128,11 +128,13 @@ async def _run(
             rate = done / elapsed if elapsed > 0 else 0.0
             eta_min = (total - done) / rate / 60 if rate > 0 else 0.0
             print(f"  {done}/{total} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                  f"failed={stats['failed']}) {rate:.1f}/s eta={eta_min:.0f}m", flush=True)
+                f"failed={stats['failed']}) {rate:.1f}/s eta={eta_min:.0f}m", flush=True
+            )
 
         elapsed = time.monotonic() - t0
         print(f"done in {elapsed / 60:.1f}m: ok={stats['ok']} "
-              f"unchanged={stats['unchanged']} failed={stats['failed']}", flush=True)
+            f"unchanged={stats['unchanged']} failed={stats['failed']}", flush=True
+        )
     finally:
         await db.close()
 

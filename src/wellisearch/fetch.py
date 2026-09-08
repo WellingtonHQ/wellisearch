@@ -86,7 +86,8 @@ def render_fetch_pages_markdown(out: dict) -> str:
                 f"URL: {p.get('url') or ''}",
                 "Status: failed",
                 f"Error: {p.get('error') or ''}",
-            ])
+            ]
+            )
             for p in out.get("pages") or []
         ]
         if not sections:
@@ -111,7 +112,9 @@ def render_fetch_pages_markdown(out: dict) -> str:
                 f"URL: {p['url']}",
                 "Status: failed",
                 f"Error: {p['error']}",
-            ]))
+            ]
+            )
+            )
             continue
         sections.append("\n".join([
             f"Title: {p.get('title') or p['url']}",
@@ -121,7 +124,9 @@ def render_fetch_pages_markdown(out: dict) -> str:
             f"Truncated: {'true' if p.get('truncated') else 'false'}",
             "---",
             p.get("content") or "",
-        ]))
+        ]
+        )
+        )
     if not sections:
         return "\n".join(lines)
     return "\n\n".join(["\n".join(lines), "\n\n".join(sections)])
@@ -397,5 +402,6 @@ def _allocate_pages(
             "truncated": truncated,
             "omitted": omitted if truncated else 0,
             "from_index": p["from_index"],
-        })
+        }
+        )
     return pages_out, total_chars, any_truncated

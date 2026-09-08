@@ -26,4 +26,5 @@ for q in [
         deg.group(1) if deg else "?",
         len(re.findall(r"^URL: ", md, re.M)),
         m.group(1) if m else "(none)",
-    ))
+    )
+    )

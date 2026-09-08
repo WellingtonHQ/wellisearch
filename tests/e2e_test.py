@@ -711,7 +711,8 @@ async def _mcp_http_tool_call_checks(session: ClientSession) -> None:
     # stateless: a second request must work in the same
     # "session" (each POST gets a fresh transport server-side)
     res = await session.call_tool(
-        "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"})
+        "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"}
+    )
     md = res.content[0].text if res.content else ""
     check(
         "mcp/http: fetch_page Markdown + header (2nd stateless request)",

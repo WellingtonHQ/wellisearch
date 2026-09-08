@@ -113,7 +113,8 @@ def main() -> None:
     )
     if "--once" not in sys.argv:
         print("worker --once not given; run `python -m wellisearch.worker --once` "
-              "for a manual run (the app starts the worker itself).", file=sys.stderr)
+            "for a manual run (the app starts the worker itself).", file=sys.stderr
+        )
         sys.exit(2)
     result = asyncio.run(_once())
     print(result)

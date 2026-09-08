@@ -520,7 +520,8 @@ async def run_model(
                     log(f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
                         f"(faith={sc.get('faithfulness')} "
                         f"noise={sc.get('noise_removal')} "
-                        f"presv={sc.get('preservation')})")
+                        f"presv={sc.get('preservation')})"
+                    )
                 else:
                     log(f"{who} — {stats}")
             except Exception as e:
@@ -662,7 +663,8 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     judge = bool(c.get("judge_model"))
     log(f"[report] summary — {c['sample_size']} pages, judge={c['judge_model'] or 'off'}")
     log("       speed: wall_s=total model time, secs/doc=avg per page, tok_s=tokens/sec; "
-        "docs/s=pages/wall_s; judge scores are 1-5 (5=best)")
+        "docs/s=pages/wall_s; judge scores are 1-5 (5=best)"
+    )
 
     cols = ["model", "pages", "wall_s", "secs/doc", "docs/s", "tok_s"]
     if judge:

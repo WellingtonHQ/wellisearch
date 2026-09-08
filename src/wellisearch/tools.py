@@ -122,7 +122,8 @@ async def _index_stats_data() -> dict:
             "used": r["used"],
             "limit": limit,
             "pct": round(r["used"] / limit * 100, 1) if limit else None,
-        })
+        }
+        )
 
     # crawl status mix (30d) for the trends panel
     crawls = await db.fetch_all(
@@ -309,7 +310,8 @@ def _tool_seed_url(server: MCPServer) -> None:
             "newly_queued": inserted,
             "queue": row,
             "ahead_in_queue": pos["ahead"],
-        })
+        }
+        )
 
 
 def _tool_refresh_page(server: MCPServer) -> None:
@@ -336,7 +338,8 @@ def _tool_refresh_page(server: MCPServer) -> None:
                 "url": url,
                 "error": str(e),
                 "last_status": (page or {}).get("last_status"),
-            })
+            }
+            )
         page = await db.page_get(url)
         return _clean({
             "ok": True,
@@ -346,4 +349,5 @@ def _tool_refresh_page(server: MCPServer) -> None:
             "ms": r.get("ms"),
             "last_crawled": (page or {}).get("last_crawled"),
             "last_status": (page or {}).get("last_status"),
-        })
+        }
+        )
