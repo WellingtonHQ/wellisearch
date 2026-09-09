@@ -57,21 +57,25 @@ assert fitted.signals["stock"] == "In Stock", fitted.signals
 assert fitted.title == "Kindle (10th generation)", fitted.title
 assert ex.accept(fitted)
 # no price element -> gate fails
-no_price = ex.fit(rendered(
-    AMAZON_HTML.replace(
-        "<div data-asin=\"B08WM3LJQB\"><span class=\"a-price\">"
-        "<span class=\"a-offscreen\">$129.99</span></span></div>", ""
+no_price = ex.fit(
+    rendered(
+        AMAZON_HTML.replace(
+            "<div data-asin=\"B08WM3LJQB\"><span class=\"a-price\">"
+            "<span class=\"a-offscreen\">$129.99</span></span></div>", ""
+        )
     )
-))
+)
 assert not ex.accept(no_price)
 # no feature bullets (decoy-only page) -> gate fails
-no_bullets = ex.fit(rendered(
-    "<html><body><span id=\"productTitle\">Kindle</span>"
-    "<div data-asin=\"x\"><span class=\"a-price\">"
-    "<span class=\"a-offscreen\">$129.99</span></span></div>"
-    "<div>Frequently bought together: add a case and a screen protector.</div>"
-    "</body></html>"
-))
+no_bullets = ex.fit(
+    rendered(
+        "<html><body><span id=\"productTitle\">Kindle</span>"
+        "<div data-asin=\"x\"><span class=\"a-price\">"
+        "<span class=\"a-offscreen\">$129.99</span></span></div>"
+        "<div>Frequently bought together: add a case and a screen protector.</div>"
+        "</body></html>"
+    )
+)
 assert not ex.accept(no_bullets)
 print("OK amazon")
 

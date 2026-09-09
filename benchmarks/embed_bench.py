@@ -444,7 +444,8 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     chunks, queries, truth = load_data(args.data)
-    print(f"Loaded test set: {len(chunks)} chunks, {len(queries)} queries, "
+    print(
+        f"Loaded test set: {len(chunks)} chunks, {len(queries)} queries, "
         f"{len({c['url'] for c in chunks})} pages"
     )
     print(f"Models: {', '.join(args.model)}\n")

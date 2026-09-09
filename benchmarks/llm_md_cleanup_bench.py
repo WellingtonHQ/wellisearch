@@ -515,7 +515,8 @@ async def run_model(
                     log(f"{who} — {stats} → awaiting judge …")
                     rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
                     sc = rec["judge"].get("scores") or {}
-                    log(f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
+                    log(
+                        f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
                         f"(faith={sc.get('faithfulness')} "
                         f"noise={sc.get('noise_removal')} "
                         f"presv={sc.get('preservation')})"
@@ -660,7 +661,8 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     c = payload["config"]
     judge = bool(c.get("judge_model"))
     log(f"[report] summary — {c['sample_size']} pages, judge={c['judge_model'] or 'off'}")
-    log("       speed: wall_s=total model time, secs/doc=avg per page, tok_s=tokens/sec; "
+    log(
+        "       speed: wall_s=total model time, secs/doc=avg per page, tok_s=tokens/sec; "
         "docs/s=pages/wall_s; judge scores are 1-5 (5=best)"
     )
 

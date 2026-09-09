@@ -106,22 +106,24 @@ def render_fetch_pages_markdown(out: dict) -> str:
     sections = []
     for p in out.get("pages") or []:
         if p.get("error"):
-            sections.append("\n".join([
-                f"URL: {p['url']}",
-                "Status: failed",
-                f"Error: {p['error']}",
-            ])
+            sections.append(
+                "\n".join([
+                    f"URL: {p['url']}",
+                    "Status: failed",
+                    f"Error: {p['error']}",
+                ])
             )
             continue
-        sections.append("\n".join([
-            f"Title: {p.get('title') or p['url']}",
-            f"URL: {p['url']}",
-            f"From Index: {'true' if p.get('from_index') else 'false'}",
-            f"Chars: {p.get('chars') or len(p.get('content') or '')}",
-            f"Truncated: {'true' if p.get('truncated') else 'false'}",
-            "---",
-            p.get("content") or "",
-        ])
+        sections.append(
+            "\n".join([
+                f"Title: {p.get('title') or p['url']}",
+                f"URL: {p['url']}",
+                f"From Index: {'true' if p.get('from_index') else 'false'}",
+                f"Chars: {p.get('chars') or len(p.get('content') or '')}",
+                f"Truncated: {'true' if p.get('truncated') else 'false'}",
+                "---",
+                p.get("content") or "",
+            ])
         )
     if not sections:
         return "\n".join(lines)

@@ -112,7 +112,8 @@ def main() -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
     if "--once" not in sys.argv:
-        print("worker --once not given; run `python -m wellisearch.worker --once` "
+        print(
+            "worker --once not given; run `python -m wellisearch.worker --once` "
             "for a manual run (the app starts the worker itself).", file=sys.stderr
         )
         sys.exit(2)
