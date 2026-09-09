@@ -14,8 +14,8 @@ ordered provider failover on a miss.
 
 ## Code style
 
-**All Python must follow [`@CODING_STYLES.md`](CODING_STYLES.md)** — the 15
-rules there (parameter layout, file ordering, imports, type hints, docstrings,
+**All Python must follow [`@CODING_STYLES.md`](CODING_STYLES.md)** — all rules
+there (parameter layout, file ordering, imports, type hints, docstrings,
 settings over magic numbers, lazy `%s` logging, section separators, etc.) are
 the contract. Read it before touching `.py` files in `src/`, `tests/`, or
 `benchmarks/`. Match the surrounding code's style.
