@@ -389,6 +389,5 @@ def _allocate_pages(
             "truncated": truncated,
             "omitted": omitted if truncated else 0,
             "from_index": p["from_index"],
-        }
-        )
+        })
     return pages_out, total_chars, any_truncated

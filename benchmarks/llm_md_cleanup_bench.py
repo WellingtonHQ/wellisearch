@@ -502,12 +502,10 @@ async def run_model(
                         {"role": "user", "content": page["fit_markdown"]},
                     ],
                 )
-                rec.update(
-                    {
-                        k: out[k]
-                        for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
-                    }
-                )
+                rec.update({
+                    k: out[k]
+                    for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
+                })
                 rec["output"] = out["text"]
                 rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
                 stats = (f"model done in {out['total_ms'] / 1000:.0f}s "

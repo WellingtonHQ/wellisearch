@@ -250,8 +250,7 @@ async def api_providers() -> Any:
             "quota_limit": limit,
             "last_served": state.get("last_served"),
             "last_error": state.get("last_error"),
-        }
-        )
+        })
     return {"providers": out, "order": order, "order_source": source}
 
 
@@ -503,8 +502,7 @@ async def api_logs(
                 "chunks": c["chunks_written"],
                 "detail": c["detail"],
             },
-        }
-        )
+        })
     for srow in searches:
         n_results = len(srow["results"] or [])
         if srow["source"] == "local":
@@ -521,16 +519,14 @@ async def api_logs(
                 "local_hits": srow["local_hits"],
                 "results": n_results,
             },
-        }
-        )
+        })
     for e in events:
         logs.append({
             "ts": e["ts"],
             "kind": "event",
             "message": e["message"],
             "info": e["info"] or {},
-        }
-        )
+        })
     logs.sort(key=lambda r: r["ts"], reverse=True)
     q = (q or "").strip().lower()
     if q:

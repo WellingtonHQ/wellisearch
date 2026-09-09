@@ -31,8 +31,7 @@ GARBAGE_EXTENSIONS: frozenset[str] = frozenset({
     "doc", "docx", "ods", "odt", "pdf", "ppt", "pptx", "xls", "xlsx",
     # executables / installers
     "apk", "deb", "dmg", "exe", "msi", "rpm",
-}
-)
+})
 
 # HLS video segments: .ts files sitting under a path component named "hls" or
 # "hls<N>", or whose filename is "seg-<N>". Catches
