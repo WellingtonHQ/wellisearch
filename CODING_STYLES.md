@@ -315,7 +315,8 @@ def _helper() -> None: ...
 
 When a call spans multiple lines, indent the parameters with a 4-space hanging
 indent (not aligned to the opening paren) and put the closing paren on its own
-line.
+line — except when it closes an inline dict literal that opened right after the
+opening paren; that pair stays together per Rule 17.
 
 **Do:**
 ```python
@@ -353,4 +354,33 @@ def main()
 
 
 def run()
+```
+
+---
+
+## 17. Inline Dict Literals Stay with Their Call
+
+When a dict literal is passed to a call and its opening brace sits inline on the
+call line (`name({`), keep the pair bound at both ends: the closing brace and
+the call's closing paren share one line — `})` at the enclosing indent — never
+two separate lines. Dropping the opening brace onto its own line under a bare
+`(` is the mirror-image violation of this rule (this takes precedence over
+Rule 15's "closing paren on its own line" for exactly this shape).
+
+**Do:**
+```python
+thing.addObject({
+    "field1": "value1",
+    "field2": "value2",
+})
+```
+
+**Don't:**
+```python
+thing.addObject(
+    {
+        "field1": "value1",
+        "field2": "value2",
+    }
+)
 ```
