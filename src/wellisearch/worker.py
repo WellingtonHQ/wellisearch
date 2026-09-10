@@ -24,6 +24,7 @@ import time
 
 from . import crawler, queue
 from .config import get_settings
+from .crawl.extractors.base import title_from_markdown
 from .crawl.lane import CF, FAST, reset_lane, set_lane
 from .crawl.results import ChallengeDetected
 from .db import db
@@ -150,8 +151,15 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
         await db.log_crawl(url, trigger, "error", ms, detail=repr(e)[:ERROR_REPR_MAX_LEN])
         raise
 
+    # A markdown-derived fallback must never clobber a stored title: resolve in
+    # priority order — fresh <title> > previously stored title > derived from the
+    # markdown. Re-crawls that miss <title> then only backfill pages whose title
+    # is still NULL, while a genuine new <title> always wins over the old one.
+    old_title = ((await db.page_get(url)) or {}).get("title")
+    resolved_title = title or old_title or title_from_markdown(md)
+
     try:
-        status, chunks_written = await store_page(url, md, title=title)
+        status, chunks_written = await store_page(url, md, title=resolved_title)
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
         await db.log_crawl(url, trigger, "error", ms, detail=f"store: {e!r}"[:ERROR_REPR_MAX_LEN])
