@@ -332,6 +332,22 @@ assert len(title_from_markdown(long_line)) == TITLE_MAX_LEN, "title must cap at 
 assert title_from_markdown("") is None, "empty md must yield None"
 assert title_from_markdown("   \n") is None, "whitespace-only md must yield None"
 assert title_from_markdown("[a](b)\n[c](d)") is None, "all-link md must yield None"
+mixed_nav = "Home | [Log in](/login)\nReal Headline Below\nSome body copy."
+assert title_from_markdown(mixed_nav) == "Real Headline Below", "mixed nav-junk line with a link must be skipped"
+assert title_from_markdown("___\nPlain Title Here\nBody text.") == "Plain Title Here", \
+    "underscore HR (symbol-only, word-char-ish) first line must be skipped"
+fenced_h1 = (
+    "```\n# Fake H1 inside a code block\nx = 1\n```\n"
+    "# Real Article Heading\nBody.\n"
+)
+assert title_from_markdown(fenced_h1) == "Real Article Heading", \
+    "H1 matches inside fenced code blocks must be skipped"
+fenced_line = (
+    "```\nsome code line here\n# not a title either\n```\n"
+    "The Real Title Line\nBody text.\n"
+)
+assert title_from_markdown(fenced_line) == "The Real Title Line", \
+    "lines inside fenced code blocks must never become titles"
 print("OK title_from_markdown")
 
 print("ALL EXTRACTOR TESTS PASSED")

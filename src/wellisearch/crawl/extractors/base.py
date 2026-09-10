@@ -77,10 +77,16 @@ def title_from_markdown(md: str) -> str | None:
     """Best-effort page title from fit-markdown (the crawler's last resort)."""
     if not md or not md.strip():
         return None
-    h1 = re.search(r"^#\s+(.+)$", md, re.MULTILINE)
-    if h1 and _is_title_candidate(h1.group(1)):
+    lines = _lines_outside_fences(md)
+    h1 = None
+    for ln in lines:
+        m = re.match(r"^#\s+(.+)$", ln)
+        if m is not None:
+            h1 = m
+            break
+    if h1 is not None and _is_title_candidate(h1.group(1)):
         return h1.group(1).strip()[:TITLE_MAX_LEN]
-    for line in md.splitlines():
+    for line in lines:
         candidate = line.strip()
         if _is_title_candidate(candidate):
             return candidate[:TITLE_MAX_LEN]
@@ -91,11 +97,27 @@ def title_from_markdown(md: str) -> str | None:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _lines_outside_fences(md: str) -> list[str]:
+    """The markdown's prose lines, with fenced code-block content (markers included)."""
+    out: list[str] = []
+    in_fence = False
+    for line in md.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            out.append(line)
+    return out
+
+
 def _is_title_candidate(line: str) -> bool:
-    """True when a stripped markdown line can stand as a title (no links/symbols)."""
-    if not line or re.fullmatch(r"\[.*\]\(.*\)", line):
+    """True when a stripped markdown line can stand as a title (no link syntax; has word text)."""
+    # Reject any embedded link, not only pure single-link lines — mixed nav junk like
+    # "Home | [Log in](/login)" must not become a stored title.
+    if not line or re.search(r"\[[^\]]*\]\([^)]*\)", line):
         return False
-    return re.search(r"\w", line) is not None
+    # [A-Za-z0-9] rather than \w: underscores are word chars, so \w would admit ___ HR lines.
+    return re.search(r"[A-Za-z0-9]", line) is not None
 
 
 def _trafilatura_title(html: str) -> str | None:
