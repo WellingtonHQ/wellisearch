@@ -6,6 +6,7 @@ from wellisearch.crawl.extractors.amazon import AmazonExtractor
 from wellisearch.crawl.extractors.ap import APExtractor
 from wellisearch.crawl.extractors.base import TITLE_MAX_LEN, generic_md, title_from_markdown
 from wellisearch.crawl.extractors.bestbuy import BestBuyExtractor
+from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
 from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
 from wellisearch.crawl.extractors.reuters import ReutersExtractor
@@ -166,6 +167,52 @@ assert ex.accept(fitted)
 print("OK bestbuy")
 
 # ---------------------------------------------------------------------------
+# Greenhouse
+# ---------------------------------------------------------------------------
+
+GREENHOUSE_HTML = (
+    "<html><head><title>Sample Platform Engineer - Remote, Nationwide | Careers</title></head><body>"
+    '<h1><span class="editor-placeholder">Sample Platform Engineer</span></h1>'
+    '<script type="application/ld+json">'
+    '{"@context":"http://schema.org","@type":"JobPosting",'
+    '"title":"Sample Platform Engineer","employmentType":"FULL_TIME",'
+    '"jobLocation":[{"@type":"Place","address":{"@type":"PostalAddress",'
+    '"streetAddress":"Remote","addressLocality":"Remote","addressRegion":"Nationwide","addressCountry":"US"}}],'
+    '"description":"<p>We are building the platform that keeps thousands of customer teams productive every day. '
+    "The team ships small, reviewed changes through a fast continuous delivery pipeline with an emphasis on observability.</p>"
+    "<ul><li>Design and build services in Python and Go with a focus on reliability</li>"
+    "<li>Own deployment pipelines end to end and improve developer experience</li>"
+    "<li>Mentor engineers on architecture, testing, and incident response</li></ul>\""
+    "}</script>"
+    '<div class="footer-noise">Cookie Notice: we use cookies. Third-party analytics vendors measure traffic. '
+    "Performance preferences can be adjusted at any time.</div>"
+    "</body></html>"
+)
+ex = GreenhouseExtractor()
+fitted = ex.fit(rendered(GREENHOUSE_HTML))
+assert fitted.title == "Sample Platform Engineer", fitted.title
+assert "* Design and build services in Python" in fitted.md, fitted.md[:300]
+assert "* Mentor engineers on architecture" in fitted.md  # bullets survive extraction
+assert "**Location:** Remote, Nationwide, US — **Type:** Full Time" in fitted.md, fitted.md[:200]
+assert "Cookie Notice" not in fitted.md  # footer noise outside the job body is excluded
+assert ex.accept(fitted)
+# fallback: no JSON-LD, only the server-rendered .job-description div (title from <h1>)
+fallback = ex.fit(
+    rendered(
+        "<html><body><h1>Sample Ops Role</h1>"
+        "<div class=\"job-description\"><p>We run the platform that keeps customers productive around the clock.</p>"
+        "<ul><li>Triage production incidents and drive them to resolution</li></ul></div>"
+        "</body></html>"
+    )
+)
+assert fallback.title == "Sample Ops Role", fallback.title
+assert "* Triage production incidents" in fallback.md, fallback.md[:200]
+# non-job page (board index): no posting, nothing but nav -> gate fails
+thin = ex.fit(rendered("<html><body><h1>Careers</h1><p>We hire great people.</p></body></html>"))
+assert not ex.accept(thin)
+print("OK greenhouse")
+
+# ---------------------------------------------------------------------------
 # NYTimes
 # ---------------------------------------------------------------------------
 
@@ -310,6 +357,10 @@ print("OK ap")
 # ---------------------------------------------------------------------------
 
 assert for_url("https://www.amazon.com/dp/B08WM3LJQB").name == "amazon"
+assert for_url("https://boards.greenhouse.io/acme/1234567").name == "greenhouse"
+assert for_url(
+    "https://careers.ascensus.com/jobs/principal-software-engineer?source=linkedin_posting"
+).name == "greenhouse"
 assert for_url("https://www.nytimes.com/2026/x.html").name == "nytimes"
 assert for_url("https://example.com/x").name == "generic"
 print("OK registry")
