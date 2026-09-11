@@ -18,6 +18,8 @@ CHALLENGE_MARKERS: tuple[str, ...] = (
     "attention required",
     "unusual traffic",
     "request blocked",
+    "javascript is disabled",
+    "verify that you're not a robot",
 )
 
 

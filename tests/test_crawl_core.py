@@ -33,6 +33,12 @@ assert is_botwall(wall, 200) is not None
 assert is_botwall("hello world article text", 200) is None
 assert is_botwall("anything", 403) == "http_403"
 assert is_botwall("superturnstile", 200) is None  # word-boundary: no marker inside a longer word
+js_wall = (
+    "<html><head><title>JavaScript is disabled</title></head>"
+    "<body>In order to continue, we need to verify that you're not a robot. "
+    "This requires JavaScript. Enable JavaScript and then reload the page.</body></html>"
+)
+assert is_botwall(js_wall, 200) is not None  # JS-disabled bot-wall must escalate, not store
 print("OK botwall")
 
 # ---------------------------------------------------------------------------
