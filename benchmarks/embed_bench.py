@@ -479,10 +479,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     args.results.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
+
     for r in results:
         out = args.results / f"{slug(r['model'])}_{stamp}.json"
         out.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"wrote {out}")
+
     summary = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "total_wall_seconds": round(total_wall, 2),
@@ -498,23 +500,27 @@ def main(argv: list[str] | None = None) -> int:
             "batch": args.batch,
             "max_len": args.max_len,
         },
-        "models": [
-            {
-                "model": r["model"],
-                "backend": r["backend"],
-                "embedding_dim": r["embedding_dim"],
-                "recall@1": r["quality"]["recall@1"],
-                "recall@10": r["quality"]["recall@10"],
-                "mrr@10": r["quality"]["mrr@10"],
-                "tokens_per_sec": r["speed"]["tokens_per_sec"],
-                "median_doc_ms": (r["speed"]["doc_latency"] or {}).get("median_ms"),
-                "engine_version": r["env"]["engine_version"],
-            }
-            for r in results
-        ],
+        "models": [{
+            "model": r["model"],
+            "backend": r["backend"],
+            "embedding_dim": r["embedding_dim"],
+            "recall@1": r["quality"]["recall@1"],
+            "recall@10": r["quality"]["recall@10"],
+            "mrr@10": r["quality"]["mrr@10"],
+            "tokens_per_sec": r["speed"]["tokens_per_sec"],
+            "median_doc_ms": (r["speed"]["doc_latency"] or {}).get("median_ms"),
+            "engine_version": r["env"]["engine_version"],
+        } for r in results],
     }
     sout = args.results / f"summary_{stamp}.json"
-    sout.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    sout.write_text(
+        json.dumps(
+            summary,
+            indent=2,
+            ensure_ascii=False
+        ),
+        encoding="utf-8"
+    )
     print(f"wrote {sout}")
     return 0
 
@@ -545,20 +551,25 @@ def _tok_len(
     max_len: int,
 ) -> int:
     """Token count of text after truncation to max_len."""
-    return len(tok(text, truncation=True, max_length=max_len, add_special_tokens=False)["input_ids"])
+    return len(
+        tok(
+            text, 
+            truncation=True, 
+            max_length=max_len, 
+            add_special_tokens=False
+        )["input_ids"]
+    )
 
 def _read_proc_cpuinfo() -> str | None:
     """Return the CPU model name from /proc/cpuinfo, or None if unavailable."""
     try:
         with open("/proc/cpuinfo", encoding="utf-8", errors="ignore") as f:
-            return next(
-                (
-                    line.split(":", 1)[1].strip()
-                    for line in f
-                    if line.lower().startswith("model name")
-                ),
-                None,
+            nextGenerator = (
+                line.split(":", 1)[1].strip()
+                for line in f
+                if line.lower().startswith("model name")
             )
+            return next(nextGenerator, None)
     except Exception:
         return None
 
