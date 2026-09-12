@@ -54,3 +54,16 @@ Time: 8 ms (index: 4 ms)
 
 - We need the ability to full job descriptions from jobs posted on linked.
 - Access publicly available info that does not require customer to be authenticated. 
+
+---
+
+# Bot-wall recrawl leftovers (index-wide scan)
+
+Scanned the whole index for stored pages whose saved markdown/title contains bot-wall / challenge wording — same issue as the Greenhouse fix above. Found 27 of ~9,570 pages; force-recrawled all 27. 23 now hold real content; these 4 came back `challenge detected` (the improved detector correctly refused to store junk), so their old stub is still in place:
+
+- https://raw.githubusercontent.com/onyx-dot-app/onyx/main/backend/onyx/connectors/web/connector.py — **suspected false positive.** It's a plain source file, but the detector text-scans *every* response body, and this one (a crawler library) plausibly contains marker-like strings ("access denied", "request blocked", …). If confirmed: consider skipping or tightening the marker scan for non-HTML content types (`text/plain`, JSON APIs), so code files can't trip it.
+- https://s2f.kytta.dev/?text=https%3A%2F%2Fdev — likely a genuine wall this time; re-attempt later.
+- https://www.spectrumbusiness.net/ — cookie/JS wall served to us; re-attempt later (a browser-tier pass also failed).
+- https://xdaforums.com/m/wellingtonhq.9307974/about — challenge on both http and browser tiers this run; re-attempt later.
+
+Next step: diagnose which exact marker fires on each URL with surrounding context, confirm the GitHub raw-file false positive, then decide on a content-type guard for `is_botwall`.
