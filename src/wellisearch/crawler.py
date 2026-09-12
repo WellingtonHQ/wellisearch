@@ -66,8 +66,10 @@ class CrawlError(Exception):
 async def fit_markdown(url: str) -> tuple[str | None, str]:
     """Crawl one URL → (page title, clean fit-markdown). Raises CrawlError on failure.
 
-    title is the page's <title> captured by the engine's extractor; None when
-    the page has none — callers then store/keep no title.
+    title is the page's <title> captured by the engine's extractor; None when no
+    <title> was found. The markdown-derived fallback is applied at store time
+    against stored state (worker._crawl_and_store) so it backfills NULL titles
+    without clobbering an existing one.
     """
     result = await crawl(url)
     # result.ok is the success signal (the engine's gate passed). A failed crawl

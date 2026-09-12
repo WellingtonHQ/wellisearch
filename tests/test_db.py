@@ -38,7 +38,7 @@ async def _clean_slate() -> None:
         await db.execute(f"DELETE FROM {table} WHERE url LIKE 'https://example.com/%%'")
     await db.execute("DELETE FROM provider_quota")
     await db.execute("DELETE FROM provider_state")
-    # note: search_log / crawl_log are left untouched — they are shared history
+    # note: crawl_log / search_log are left untouched — they are shared history
 
 
 async def _check_tables() -> None:

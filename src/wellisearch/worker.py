@@ -24,6 +24,7 @@ import time
 
 from . import crawler, queue
 from .config import get_settings
+from .crawl.extractors.base import title_from_markdown
 from .crawl.lane import CF, FAST, reset_lane, set_lane
 from .crawl.results import ChallengeDetected
 from .db import db
@@ -31,8 +32,9 @@ from .index import store_page
 
 log = logging.getLogger("wellisearch.worker")
 
-ERROR_DETAIL_MAX_LEN = 1000  # max chars kept in a crawl error detail (crawl_log)
-ERROR_REPR_MAX_LEN = 500     # max chars kept in a crash repr (crawl_log)
+ERROR_DETAIL_MAX_LEN = 1000    # max chars kept in a crawl error detail (crawl_log)
+ERROR_REPR_MAX_LEN = 500       # max chars kept in a crash repr (crawl_log)
+REFRESH_ERROR_MAX_LEN = 200    # max chars kept in a refresh-stats error entry
 
 # runtime state for the dashboard "Now" panel
 STATE: dict = {
@@ -111,8 +113,10 @@ def main() -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
     if "--once" not in sys.argv:
-        print("worker --once not given; run `python -m wellisearch.worker --once` "
-              "for a manual run (the app starts the worker itself).", file=sys.stderr)
+        print(
+            "worker --once not given; run `python -m wellisearch.worker --once` "
+            "for a manual run (the app starts the worker itself).", file=sys.stderr
+        )
         sys.exit(2)
     result = asyncio.run(_once())
     print(result)
@@ -147,8 +151,15 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
         await db.log_crawl(url, trigger, "error", ms, detail=repr(e)[:ERROR_REPR_MAX_LEN])
         raise
 
+    # A markdown-derived fallback must never clobber a stored title: resolve in
+    # priority order — fresh <title> > previously stored title > derived from the
+    # markdown. Re-crawls that miss <title> then only backfill pages whose title
+    # is still NULL, while a genuine new <title> always wins over the old one.
+    old_title = ((await db.page_get(url)) or {}).get("title")
+    resolved_title = title or old_title or title_from_markdown(md)
+
     try:
-        status, chunks_written = await store_page(url, md, title=title)
+        status, chunks_written = await store_page(url, md, title=resolved_title)
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
         await db.log_crawl(url, trigger, "error", ms, detail=f"store: {e!r}"[:ERROR_REPR_MAX_LEN])
@@ -282,7 +293,9 @@ async def _refresh_watchlist(deadline: float) -> dict:
             results.append(r)
         except Exception as e:
             log.warning("refresh failed for %s: %s", url, e)
-            results.append({"url": url, "status": "error", "error": str(e)[:200]})
+            results.append(
+                {"url": url, "status": "error", "error": str(e)[:REFRESH_ERROR_MAX_LEN]}
+            )
 
     await asyncio.gather(*(refresh(r) for r in rows))
     unchanged = sum(1 for r in results if r.get("status") == "unchanged")

@@ -313,9 +313,12 @@ def _helper() -> None: ...
 
 ## 15. Multi-line Call Parameters
 
-When a call spans multiple lines, indent the parameters with a 4-space hanging
-indent (not aligned to the opening paren) and put the closing paren on its own
-line.
+When a call spans multiple lines, break immediately after the opening paren —
+no parameter may sit on the same line as `(` — indent the parameters with a
+4-space hanging indent (not aligned to the opening paren) and put the closing
+paren on its own line. The one exception is a literal (dict or list) that opens
+inline right after the opening paren; it stays bound per Rule 17, so its
+closing bracket shares the call's closing-paren line (`})` / `])`).
 
 **Do:**
 ```python
@@ -323,12 +326,27 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s"
 )
+
+sections.append(
+    "\n".join([
+        f"URL: {p['url']}",
+        "Status: failed",
+    ])
+)
 ```
 
 **Don't:**
 ```python
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
+```
+
+**Don't:** first parameter left on the call line while the rest hang below —
+break right after `(`:
+```python
+print(f"  {done}/{total} (ok={stats['ok']} unchanged={stats['unchanged']} "
+    f"failed={stats['failed']}) eta={eta_min:.0f}m", flush=True
+)
 ```
 
 ---
@@ -353,4 +371,46 @@ def main()
 
 
 def run()
+```
+
+---
+
+## 17. Inline Literals Stay with Their Call
+
+When a literal (dict or list) is passed to a call and its opening bracket sits
+inline on the call line (`name({` / `name([`), keep the pair bound at both ends:
+the closing bracket and the call's closing paren share one line — `})` / `])`
+at the enclosing indent — never two separate lines. Dropping the opening
+bracket onto its own line under a bare `(` is the mirror-image violation of
+this rule (this takes precedence over Rule 15's "closing paren on its own line"
+for exactly this shape).
+
+**Do:**
+```python
+thing.addObject({
+    "field1": "value1",
+    "field2": "value2",
+})
+
+lines = "\n".join([
+    f"title: {title}",
+    body,
+])
+```
+
+**Don't:**
+```python
+thing.addObject(
+    {
+        "field1": "value1",
+        "field2": "value2",
+    }
+)
+
+lines = "\n".join(
+    [
+        f"title: {title}",
+        body,
+    ]
+)
 ```

@@ -28,6 +28,8 @@ log = logging.getLogger("wellisearch.search_web")
 #   provider — provider gateway only; the local index is not consulted
 SEARCH_MODES = ("auto", "local", "provider")
 
+SNIPPET_MAX_LEN = 400  # max chars of a snippet in search results (local + provider)
+
 
 def render_search_markdown(out: dict) -> str:
     """The search response as plain Markdown (no JSON envelope): a
@@ -207,7 +209,7 @@ def _local_result(r: dict) -> dict:
     return {
         "url": r["url"],
         "title": r.get("title") or r["url"],
-        "snippet": (r.get("snippet") or "")[:400],
+        "snippet": (r.get("snippet") or "")[:SNIPPET_MAX_LEN],
         "score": r.get("score"),
         "coverage": r.get("coverage"),
         "last_crawled": r.get("last_crawled"),
@@ -244,7 +246,7 @@ async def _provider_search(
             {
                 "url": r.url,
                 "title": r.title,
-                "snippet": r.snippet[:400],
+                "snippet": r.snippet[:SNIPPET_MAX_LEN],
                 "score": r.score,
             }
             for r in provider_results[:k]

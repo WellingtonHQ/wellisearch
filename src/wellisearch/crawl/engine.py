@@ -95,7 +95,11 @@ async def crawl(url: str) -> CrawlResult:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _next_index_after_escalation(p: Policy, i: int, esc: Escalate) -> int:
+def _next_index_after_escalation(
+    p: Policy,
+    i: int,
+    esc: Escalate,
+) -> int:
     """Next tier index after an Escalate: the named tier if it's ahead, else i+1."""
     if esc.tier in p.tiers and p.tiers.index(esc.tier) > i:
         return p.tiers.index(esc.tier)

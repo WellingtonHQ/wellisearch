@@ -20,10 +20,12 @@ for q in [
     src = re.search(r"^Source: (\S+)", md, re.M)
     deg = re.search(r"^Degraded: (\S+)", md, re.M)
     m = re.search(r"URL: (\S+)", md)
-    print("query=%r src=%s degraded=%s count=%s first=%s" % (
-        q,
-        src.group(1) if src else "?",
-        deg.group(1) if deg else "?",
-        len(re.findall(r"^URL: ", md, re.M)),
-        m.group(1) if m else "(none)",
-    ))
+    print(
+        "query=%r src=%s degraded=%s count=%s first=%s" % (
+            q,
+            src.group(1) if src else "?",
+            deg.group(1) if deg else "?",
+            len(re.findall(r"^URL: ", md, re.M)),
+            m.group(1) if m else "(none)",
+        )
+    )

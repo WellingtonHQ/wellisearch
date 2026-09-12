@@ -118,11 +118,11 @@ JUDGE_SYSTEM_PROMPT = (
 )
 
 _BOILERPLATE_PATTERNS = [
-    r"sign\s+in", r"log\s+in", r"cookie", r"privacy\s+policy", r"terms\s+of",
-    r"subscribe", r"newsletter", r"all\s+rights\s+reserved", r"copyright",
-    r"facebook", r"twitter", r"linkedin", r"youtube", r"instagram",
-    r"navigation", r"skip\s+to\s+content", r"accept\s+all", r"back\s+to\s+top",
-    r"related\s+articles", r"share\s+this", r"follow\s+us",
+    r"accept\s+all", r"all\s+rights\s+reserved", r"back\s+to\s+top", r"cookie",
+    r"copyright", r"facebook", r"follow\s+us", r"instagram", r"linkedin",
+    r"log\s+in", r"navigation", r"newsletter", r"privacy\s+policy",
+    r"related\s+articles", r"share\s+this", r"sign\s+in", r"skip\s+to\s+content",
+    r"subscribe", r"terms\s+of", r"twitter", r"youtube",
 ]
 
 _BOILERPLATE_RE = re.compile("|".join(_BOILERPLATE_PATTERNS), re.IGNORECASE)
@@ -502,12 +502,10 @@ async def run_model(
                         {"role": "user", "content": page["fit_markdown"]},
                     ],
                 )
-                rec.update(
-                    {
-                        k: out[k]
-                        for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
-                    }
-                )
+                rec.update({
+                    k: out[k]
+                    for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
+                })
                 rec["output"] = out["text"]
                 rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
                 stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
@@ -517,10 +515,12 @@ async def run_model(
                     log(f"{who} — {stats} → awaiting judge …")
                     rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
                     sc = rec["judge"].get("scores") or {}
-                    log(f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
+                    log(
+                        f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
                         f"(faith={sc.get('faithfulness')} "
                         f"noise={sc.get('noise_removal')} "
-                        f"presv={sc.get('preservation')})")
+                        f"presv={sc.get('preservation')})"
+                    )
                 else:
                     log(f"{who} — {stats}")
             except Exception as e:
@@ -661,8 +661,10 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
     c = payload["config"]
     judge = bool(c.get("judge_model"))
     log(f"[report] summary — {c['sample_size']} pages, judge={c['judge_model'] or 'off'}")
-    log("       speed: wall_s=total model time, secs/doc=avg per page, tok_s=tokens/sec; "
-        "docs/s=pages/wall_s; judge scores are 1-5 (5=best)")
+    log(
+        "       speed: wall_s=total model time, secs/doc=avg per page, tok_s=tokens/sec; "
+        "docs/s=pages/wall_s; judge scores are 1-5 (5=best)"
+    )
 
     cols = ["model", "pages", "wall_s", "secs/doc", "docs/s", "tok_s"]
     if judge:

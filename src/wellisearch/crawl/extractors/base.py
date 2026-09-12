@@ -14,13 +14,14 @@ from ..results import Fitted, Rendered
 
 MIN_MD_CHARS = 100
 # News article body gate (ap/guardian/reuters): a real article body clears this;
-# nav/decoy/related-links stubs do not.
+# decoy/nav/related-links stubs do not.
 MIN_NEWS_ARTICLE_BODY_CHARS = 800
 # Retail product pages (buy-box + "About this item" + specs) are 5k+ chars once
 # extracted; a thin/degraded render (e.g. the HTTP tier's lazy buy-box) is well
 # under this. The gate uses it to reject thin renders so the engine escalates
 # to the browser tier instead of accepting a stub (design §3.2 retail gate).
 MIN_PRODUCT_CHARS = 3000
+TITLE_MAX_LEN = 120  # max chars kept when deriving a title from markdown
 
 
 class GenericExtractor:
@@ -72,9 +73,52 @@ def cut_at_first(md: str, markers: tuple[str, ...]) -> str:
     return md[:cut]
 
 
+def title_from_markdown(md: str) -> str | None:
+    """Best-effort page title from fit-markdown (the crawler's last resort)."""
+    if not md or not md.strip():
+        return None
+    lines = _lines_outside_fences(md)
+    h1 = None
+    for ln in lines:
+        m = re.match(r"^#\s+(.+)$", ln)
+        if m is not None:
+            h1 = m
+            break
+    if h1 is not None and _is_title_candidate(h1.group(1)):
+        return h1.group(1).strip()[:TITLE_MAX_LEN]
+    for line in lines:
+        candidate = line.strip()
+        if _is_title_candidate(candidate):
+            return candidate[:TITLE_MAX_LEN]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _lines_outside_fences(md: str) -> list[str]:
+    """The markdown's prose lines, with fenced code-block content (markers included)."""
+    out: list[str] = []
+    in_fence = False
+    for line in md.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            out.append(line)
+    return out
+
+
+def _is_title_candidate(line: str) -> bool:
+    """True when a stripped markdown line can stand as a title (no link syntax; has word text)."""
+    # Reject any embedded link, not only pure single-link lines — mixed nav junk like
+    # "Home | [Log in](/login)" must not become a stored title.
+    if not line or re.search(r"\[[^\]]*\]\([^)]*\)", line):
+        return False
+    # [A-Za-z0-9] rather than \w: underscores are word chars, so \w would admit ___ HR lines.
+    return re.search(r"[A-Za-z0-9]", line) is not None
+
 
 def _trafilatura_title(html: str) -> str | None:
     """Best-effort page title via trafilatura metadata; None on any failure."""

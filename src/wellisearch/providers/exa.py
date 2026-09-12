@@ -13,6 +13,8 @@ from .base import Provider, ProviderError, Result
 
 EXA_MAX_CHARS = 800  # max page-text chars requested per result (snippet source)
 
+ERROR_BODY_MAX_LEN = 200  # max chars of an HTTP error body kept in a ProviderError
+
 
 class Exa(Provider):
     """EXA Search API adapter (semantic search endpoint)."""
@@ -48,7 +50,11 @@ class Exa(Provider):
         if r.status_code in (402, 429):
             raise ProviderError(self.name, f"quota exhausted ({r.status_code})", status=r.status_code)
         if r.status_code >= 400:
-            raise ProviderError(self.name, f"http {r.status_code}: {r.text[:200]}", status=r.status_code)
+            raise ProviderError(
+                self.name,
+                f"http {r.status_code}: {r.text[:ERROR_BODY_MAX_LEN]}",
+                status=r.status_code,
+            )
 
         data = r.json()
         out: list[Result] = []

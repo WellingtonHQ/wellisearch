@@ -69,8 +69,10 @@ async def _run(force: bool, dry_run: bool) -> None:
             "ORDER BY fetch_count DESC",
             (force, s.EMBED_MODEL, s.EMBED_MODEL),
         )
-        print(f"index: {total['n']} pages; to (re)embed: {len(stale)} "
-              f"(model={model_name()}, EMBED_DIMS={s.EMBED_DIMS})")
+        print(
+            f"index: {total['n']} pages; to (re)embed: {len(stale)} "
+            f"(model={model_name()}, EMBED_DIMS={s.EMBED_DIMS})"
+        )
         if dry_run:
             return
 
@@ -79,8 +81,10 @@ async def _run(force: bool, dry_run: bool) -> None:
             outcome = await _reembed_page(p)
             stats[outcome] += 1
             if i % PROGRESS_INTERVAL == 0 or i == len(stale):
-                print(f"  {i}/{len(stale)} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                      f"failed={stats['failed']})")
+                print(
+                    f"  {i}/{len(stale)} (ok={stats['ok']} unchanged={stats['unchanged']} "
+                    f"failed={stats['failed']})"
+                )
 
         print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
     finally:

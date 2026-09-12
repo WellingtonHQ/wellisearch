@@ -14,8 +14,8 @@ from urllib.parse import urlparse
 # ---------------------------------------------------------------------------
 
 # File extensions that are binary / non-HTML and can never be crawled as a page.
-# Observed in the 953-row pending backlog (2026-09-01): mp4, m3u8, m4s, jpg,
-# zip, pdf, png, exe, xz, svg, and similar.
+# Observed in the 953-row pending backlog (2026-09-01): exe, jpg, m3u8, m4s,
+# mp4, pdf, png, svg, xz, zip, and similar.
 GARBAGE_EXTENSIONS: frozenset[str] = frozenset({
     # video
     "3gp", "avi", "flv", "m4s", "m4v", "mkv", "mov", "mp4", "webm", "wmv",

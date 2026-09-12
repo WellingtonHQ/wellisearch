@@ -7,9 +7,10 @@
 #                          reaching `wellisearch:8780` for its external web
 #                          loader.
 #
-# Postgres: reached over the network via POSTGRES_HOST (Tailscale hostname),
-# not a shared docker network. This lets a second wellisearch instance on
-# another machine join the same queue — both connect to the same Postgres.
+# Postgres: reached over the network at whatever host POSTGRES_HOST points to
+# (any hostname/IP reachable from this container), not via a shared docker
+# network. This lets a second wellisearch instance on another machine join
+# the same queue — both connect to the same Postgres.
 # No depends_on on postgres: ordering is handled by the app's startup DB
 # retry (~10 x 3 s) + self-creating the `wellisearch` DB.
 name: wellisearch

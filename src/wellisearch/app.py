@@ -45,29 +45,6 @@ log = logging.getLogger("wellisearch.app")
 # static/ ships inside the package (works in dev layout and installed wheel)
 STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 
-@asynccontextmanager
-async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """App lifespan: the streamable-HTTP session manager's task group must be
-    live before the first request (Starlette does not run lifespans of
-    mounted sub-apps), then the worker + DB for the app's lifetime."""
-    async with mcp_http_lifespan():
-        await _startup()
-        yield
-        await _shutdown()
-
-
-app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
-
-_worker_task: asyncio.Task | None = None
-
-WINDOW_MIN_SECS = 600    # window floor: 10 minutes
-WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
-
-API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
-API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
-API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
-API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
-
 
 class FetchBody(BaseModel):
     """Request body for POST /api/fetch: the URL to fetch, with optional
@@ -103,6 +80,30 @@ class ProviderOrder(BaseModel):
 class PagePatch(BaseModel):
     """Request body for PATCH /api/pages/{url}: the new ``disabled`` flag."""
     disabled: bool = Field(default=False)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """App lifespan: the streamable-HTTP session manager's task group must be
+    live before the first request (Starlette does not run lifespans of
+    mounted sub-apps), then the worker + DB for the app's lifetime."""
+    async with mcp_http_lifespan():
+        await _startup()
+        yield
+        await _shutdown()
+
+
+app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
+
+_worker_task: asyncio.Task | None = None
+
+WINDOW_MIN_SECS = 600    # window floor: 10 minutes
+WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
+
+API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
+API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
+API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
+API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
 
 
 # ---------------------------------------------------------------------------
@@ -541,10 +542,11 @@ async def api_logs(
 # ---------------------------------------------------------------------------
 # OWUI
 # ---------------------------------------------------------------------------
+
 # Curated OpenAPI spec for OWUI's OpenAPI tool server: exposes only the three
-# user-facing tools (search_web, fetch_page, fetch_pages) with clean
-# operationIds, so OWUI never sees the admin endpoints (seed/refresh/providers/
-# pages/logs). The spec lives in owui/openapi.json (ships inside the package)
+# user-facing tools (fetch_page, fetch_pages, search_web) with clean
+# operationIds, so OWUI never sees the admin endpoints (logs/pages/providers/
+# refresh/seed). The spec lives in owui/openapi.json (ships inside the package)
 # and is served unauthenticated — it is a public API contract; OWUI still
 # sends the bearer token, and the endpoints themselves stay auth-gated.
 
@@ -557,6 +559,7 @@ async def owui_openapi() -> Any:
 # ---------------------------------------------------------------------------
 # MCP
 # ---------------------------------------------------------------------------
+
 # mounted before the catch-all static mount; endpoint: /mcp/http
 # (stateless streamable HTTP)
 
@@ -566,6 +569,7 @@ app.mount("/mcp", mcp_asgi(), name="mcp")
 # ---------------------------------------------------------------------------
 # Static
 # ---------------------------------------------------------------------------
+
 # catch-all last: serves static/index.html at / and any static assets
 
 if STATIC_DIR.is_dir():

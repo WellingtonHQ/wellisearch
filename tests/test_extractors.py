@@ -4,8 +4,9 @@ from __future__ import annotations
 from wellisearch.crawl.extractors import for_url
 from wellisearch.crawl.extractors.amazon import AmazonExtractor
 from wellisearch.crawl.extractors.ap import APExtractor
-from wellisearch.crawl.extractors.base import generic_md
+from wellisearch.crawl.extractors.base import TITLE_MAX_LEN, generic_md, title_from_markdown
 from wellisearch.crawl.extractors.bestbuy import BestBuyExtractor
+from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
 from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
 from wellisearch.crawl.extractors.reuters import ReutersExtractor
@@ -23,6 +24,7 @@ def rendered(html: str, title: str | None = None) -> Rendered:
 # ---------------------------------------------------------------------------
 # Amazon
 # ---------------------------------------------------------------------------
+
 AMAZON_HTML = (
     "<html><head><title>Kindle (10th generation) : Amazon.com</title></head><body>"
     "<span id=\"productTitle\">Kindle (10th generation)</span>"
@@ -56,27 +58,32 @@ assert fitted.signals["stock"] == "In Stock", fitted.signals
 assert fitted.title == "Kindle (10th generation)", fitted.title
 assert ex.accept(fitted)
 # no price element -> gate fails
-no_price = ex.fit(rendered(
-    AMAZON_HTML.replace(
-        "<div data-asin=\"B08WM3LJQB\"><span class=\"a-price\">"
-        "<span class=\"a-offscreen\">$129.99</span></span></div>", ""
+no_price = ex.fit(
+    rendered(
+        AMAZON_HTML.replace(
+            "<div data-asin=\"B08WM3LJQB\"><span class=\"a-price\">"
+            "<span class=\"a-offscreen\">$129.99</span></span></div>", ""
+        )
     )
-))
+)
 assert not ex.accept(no_price)
 # no feature bullets (decoy-only page) -> gate fails
-no_bullets = ex.fit(rendered(
-    "<html><body><span id=\"productTitle\">Kindle</span>"
-    "<div data-asin=\"x\"><span class=\"a-price\">"
-    "<span class=\"a-offscreen\">$129.99</span></span></div>"
-    "<div>Frequently bought together: add a case and a screen protector.</div>"
-    "</body></html>"
-))
+no_bullets = ex.fit(
+    rendered(
+        "<html><body><span id=\"productTitle\">Kindle</span>"
+        "<div data-asin=\"x\"><span class=\"a-price\">"
+        "<span class=\"a-offscreen\">$129.99</span></span></div>"
+        "<div>Frequently bought together: add a case and a screen protector.</div>"
+        "</body></html>"
+    )
+)
 assert not ex.accept(no_bullets)
 print("OK amazon")
 
 # ---------------------------------------------------------------------------
 # Walmart
 # ---------------------------------------------------------------------------
+
 _WALM = (
     "Key item features: a 27-inch full HD IPS display with a 100Hz refresh rate, AMD "
     "FreeSync, and three-sided slim bezels for a clean desk setup. The 100Hz refresh rate "
@@ -104,6 +111,7 @@ print("OK walmart")
 # ---------------------------------------------------------------------------
 # Target
 # ---------------------------------------------------------------------------
+
 _TARG = (
     "This 7-in-1 USB-C hub adds HDMI, three USB 3.0 ports, an SD card slot, a microSD "
     "card slot, and a 100W power pass-through to any laptop. The HDMI port outputs "
@@ -129,6 +137,7 @@ print("OK target")
 # ---------------------------------------------------------------------------
 # BestBuy
 # ---------------------------------------------------------------------------
+
 _BB = (
     "The thinnest and lightest MacBook ever, with the M3 chip for fast performance, up "
     "to 18 hours of battery life, and a gorgeous 13.6-inch Liquid Retina display. The M3 "
@@ -158,8 +167,55 @@ assert ex.accept(fitted)
 print("OK bestbuy")
 
 # ---------------------------------------------------------------------------
+# Greenhouse
+# ---------------------------------------------------------------------------
+
+GREENHOUSE_HTML = (
+    "<html><head><title>Sample Platform Engineer - Remote, Nationwide | Careers</title></head><body>"
+    '<h1><span class="editor-placeholder">Sample Platform Engineer</span></h1>'
+    '<script type="application/ld+json">'
+    '{"@context":"http://schema.org","@type":"JobPosting",'
+    '"title":"Sample Platform Engineer","employmentType":"FULL_TIME",'
+    '"jobLocation":[{"@type":"Place","address":{"@type":"PostalAddress",'
+    '"streetAddress":"Remote","addressLocality":"Remote","addressRegion":"Nationwide","addressCountry":"US"}}],'
+    '"description":"<p>We are building the platform that keeps thousands of customer teams productive every day. '
+    "The team ships small, reviewed changes through a fast continuous delivery pipeline with an emphasis on observability.</p>"
+    "<ul><li>Design and build services in Python and Go with a focus on reliability</li>"
+    "<li>Own deployment pipelines end to end and improve developer experience</li>"
+    "<li>Mentor engineers on architecture, testing, and incident response</li></ul>\""
+    "}</script>"
+    '<div class="footer-noise">Cookie Notice: we use cookies. Third-party analytics vendors measure traffic. '
+    "Performance preferences can be adjusted at any time.</div>"
+    "</body></html>"
+)
+ex = GreenhouseExtractor()
+fitted = ex.fit(rendered(GREENHOUSE_HTML))
+assert fitted.title == "Sample Platform Engineer", fitted.title
+assert "* Design and build services in Python" in fitted.md, fitted.md[:300]
+assert "* Mentor engineers on architecture" in fitted.md  # bullets survive extraction
+assert "**Location:** Remote, Nationwide, US — **Type:** Full Time" in fitted.md, fitted.md[:200]
+assert "Cookie Notice" not in fitted.md  # footer noise outside the job body is excluded
+assert ex.accept(fitted)
+# fallback: no JSON-LD, only the server-rendered .job-description div (title from <h1>)
+fallback = ex.fit(
+    rendered(
+        "<html><body><h1>Sample Ops Role</h1>"
+        "<div class=\"job-description\"><p>We run the platform that keeps customers productive around the clock.</p>"
+        "<ul><li>Triage production incidents and drive them to resolution</li></ul></div>"
+        "</body></html>"
+    )
+)
+assert fallback.title == "Sample Ops Role", fallback.title
+assert "* Triage production incidents" in fallback.md, fallback.md[:200]
+# non-job page (board index): no posting, nothing but nav -> gate fails
+thin = ex.fit(rendered("<html><body><h1>Careers</h1><p>We hire great people.</p></body></html>"))
+assert not ex.accept(thin)
+print("OK greenhouse")
+
+# ---------------------------------------------------------------------------
 # NYTimes
 # ---------------------------------------------------------------------------
+
 NYT_STUB_HTML = (
     "<html><head><title>Sample Paywall Stub | The New York Times</title></head><body>"
     "<h1>Sample Paywall Stub</h1>"
@@ -198,6 +254,7 @@ print("OK nytimes")
 # ---------------------------------------------------------------------------
 # WSJ
 # ---------------------------------------------------------------------------
+
 WSJ_STUB_HTML = (
     "<html><head><title>Sample Paywall Stub | The Wall Street Journal</title></head><body>"
     "<h1>Sample Paywall Stub</h1>"
@@ -222,6 +279,7 @@ print("OK wsj")
 # ---------------------------------------------------------------------------
 # Reuters
 # ---------------------------------------------------------------------------
+
 REUTERS_HTML = (
     "<html><head><title>Sample Market Wrap | Reuters</title></head><body>"
     "<h1>Sample Market Wrap</h1>"
@@ -246,6 +304,7 @@ print("OK reuters")
 # ---------------------------------------------------------------------------
 # Guardian
 # ---------------------------------------------------------------------------
+
 GUARDIAN_HTML = (
     "<html><head><title>Sample Climate Piece | theguardian.com</title></head><body>"
     "<h1>Sample Climate Piece</h1>"
@@ -270,6 +329,7 @@ print("OK guardian")
 # ---------------------------------------------------------------------------
 # AP
 # ---------------------------------------------------------------------------
+
 AP_HTML = (
     "<html><head><title>Sample Senate Story | AP News</title></head><body>"
     "<p>AP News | Most Popular | Newsletters | Sign up</p>"
@@ -295,9 +355,50 @@ print("OK ap")
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
+
 assert for_url("https://www.amazon.com/dp/B08WM3LJQB").name == "amazon"
+assert for_url("https://boards.greenhouse.io/acme/1234567").name == "greenhouse"
+assert for_url(
+    "https://careers.ascensus.com/jobs/principal-software-engineer?source=linkedin_posting"
+).name == "greenhouse"
 assert for_url("https://www.nytimes.com/2026/x.html").name == "nytimes"
 assert for_url("https://example.com/x").name == "generic"
 print("OK registry")
+
+# ---------------------------------------------------------------------------
+# title_from_markdown
+# ---------------------------------------------------------------------------
+
+assert title_from_markdown(
+    "Nav junk\n# Real Article Title\nBody text of the article."
+) == "Real Article Title", "H1 must win over an earlier plain line"
+nav_md = "[Skip to main content](#main)\nActual Headline Here\nSome body copy."
+assert title_from_markdown(nav_md) == "Actual Headline Here", "first link line must be skipped"
+assert "[Skip" not in (title_from_markdown(nav_md) or ""), "title must never contain the nav link"
+assert title_from_markdown(
+    "---\nPlain Text Line\nMore body text."
+) == "Plain Text Line", "symbol-only first line must be skipped"
+long_line = "w" * 200
+assert len(title_from_markdown(long_line)) == TITLE_MAX_LEN, "title must cap at TITLE_MAX_LEN"
+assert title_from_markdown("") is None, "empty md must yield None"
+assert title_from_markdown("   \n") is None, "whitespace-only md must yield None"
+assert title_from_markdown("[a](b)\n[c](d)") is None, "all-link md must yield None"
+mixed_nav = "Home | [Log in](/login)\nReal Headline Below\nSome body copy."
+assert title_from_markdown(mixed_nav) == "Real Headline Below", "mixed nav-junk line with a link must be skipped"
+assert title_from_markdown("___\nPlain Title Here\nBody text.") == "Plain Title Here", \
+    "underscore HR (symbol-only, word-char-ish) first line must be skipped"
+fenced_h1 = (
+    "```\n# Fake H1 inside a code block\nx = 1\n```\n"
+    "# Real Article Heading\nBody.\n"
+)
+assert title_from_markdown(fenced_h1) == "Real Article Heading", \
+    "H1 matches inside fenced code blocks must be skipped"
+fenced_line = (
+    "```\nsome code line here\n# not a title either\n```\n"
+    "The Real Title Line\nBody text.\n"
+)
+assert title_from_markdown(fenced_line) == "The Real Title Line", \
+    "lines inside fenced code blocks must never become titles"
+print("OK title_from_markdown")
 
 print("ALL EXTRACTOR TESTS PASSED")

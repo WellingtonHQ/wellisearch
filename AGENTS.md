@@ -14,8 +14,8 @@ ordered provider failover on a miss.
 
 ## Code style
 
-**All Python must follow [`@CODING_STYLES.md`](CODING_STYLES.md)** — the 15
-rules there (parameter layout, file ordering, imports, type hints, docstrings,
+**All Python must follow [`@CODING_STYLES.md`](CODING_STYLES.md)** — all rules
+there (parameter layout, file ordering, imports, type hints, docstrings,
 settings over magic numbers, lazy `%s` logging, section separators, etc.) are
 the contract. Read it before touching `.py` files in `src/`, `tests/`, or
 `benchmarks/`. Match the surrounding code's style.
@@ -25,8 +25,7 @@ the contract. Read it before touching `.py` files in `src/`, `tests/`, or
 - **Python 3.12**, FastAPI, MCP SDK, uvicorn.
 - **Postgres 18 + pgvector + pg_trgm** — the only database.
 - **fastembed** for embeddings (`all-MiniLM-L6-v2`, 384-dim).
-- **Native crawler** (`crawl/` package: patchright + scrapling + curl_cffi) —
-  Crawl4AI has been removed; do not reintroduce it.
+- **Native crawler** (`crawl/` package: patchright + scrapling + curl_cffi).
 - **Provider gateway** (`providers/`): `tavily → brave → exa → youcom`,
   ordered failover + a monthly quota ledger.
 - One container, one process, one worker task. No queue broker, no object store.

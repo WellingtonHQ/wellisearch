@@ -24,6 +24,7 @@ async def main() -> None:
     # ---------------------------------------------------------------------------
     # Http Tier
     # ---------------------------------------------------------------------------
+
     r = await HttpTier().fetch(URL, p)
     assert r.status == 200, r.status
     assert r.html, "empty html"
@@ -32,6 +33,7 @@ async def main() -> None:
     # ---------------------------------------------------------------------------
     # Browser Tier
     # ---------------------------------------------------------------------------
+
     r = await BrowserTier().fetch(URL, p)
     assert r.html, "empty html"
     assert r.title, "empty title"
@@ -40,6 +42,7 @@ async def main() -> None:
     # ---------------------------------------------------------------------------
     # Stealth Tier
     # ---------------------------------------------------------------------------
+
     r = await StealthTier().fetch(URL, p)
     assert r.html, "empty html"
     print("OK stealth tier")
@@ -47,6 +50,7 @@ async def main() -> None:
     # ---------------------------------------------------------------------------
     # Pool
     # ---------------------------------------------------------------------------
+
     ctx = await get_pool().acquire("shared")
     await get_pool().release(ctx)
     await get_pool().close_all()

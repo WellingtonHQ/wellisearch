@@ -21,15 +21,14 @@
 - `ports: 8780:8780`.
 - `restart: unless-stopped`.
 - a `healthcheck` (Python `urllib` probe of `/health`, 60 s start period).
-- **two external networks**:
-  - `wellisearch_default` — the OWUI/agent stack network: be reachable as
-    `wellisearch:8780` for the MCP endpoints.
-  - `postgres-net` — the infra project network: reach the shared Postgres
-    container by the `postgres` alias.
+- one project-managed network, `wellisearch_default`, pinned by name so the
+  OWUI/agent stack can join it and reach `wellisearch:8780` for the MCP endpoints.
 
-Both networks are **external** (owned by their projects). There is
-deliberately **no `depends_on` on Postgres** — cross-project startup ordering
-is handled by the app's own DB retry (below).
+Postgres is **not** on a shared Docker network — it's reached at whatever host
+`POSTGRES_HOST` points to (any hostname/IP resolvable and reachable from this
+container), so multiple wellisearch instances can share one queue/DB regardless
+of which machines they run on. There is deliberately no ordering dependency;
+startup timing is handled by the app's own DB retry (below).
 
 ```
 docker compose -f compose.yml build
@@ -40,7 +39,7 @@ docker compose -f compose.yml logs -f wellisearch
 
 ## Startup sequence (no depends_on)
 
-`db.startup` (§11, cross-project) does, in order:
+`db.startup` (BLUEPRINT §11 explains the retry rationale) does, in order:
 
 1. **Retry-connect** to the admin DB (`POSTGRES_ADMIN_DB`, default `postgres`)
    — up to `STARTUP_RETRIES` (10) × `STARTUP_RETRY_S` (3 s).
@@ -62,7 +61,7 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 ### Postgres
 | Var | Default | Notes |
 |---|---|---|
-| `POSTGRES_HOST` | `postgres` | network alias of the shared infra container |
+| `POSTGRES_HOST` | `postgres` | DB host's reachable hostname/IP; set this in `.env` |
 | `POSTGRES_PORT` | `5432` | |
 | `POSTGRES_USER` | `wellington` | |
 | `POSTGRES_PASSWORD` | `change-me` | **set this** |
