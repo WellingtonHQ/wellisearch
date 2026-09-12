@@ -55,6 +55,13 @@ Time: 8 ms (index: 4 ms)
 - We need the ability to full job descriptions from jobs posted on linked.
 - Access publicly available info that does not require customer to be authenticated. 
 
+
+---
+# Reddit
+
+- https://www.reddit.com/r/MacOS/comments/1g9hel4/is_it_possible_to_make_screenshots_immediately_go/
+- Other reddit links
+
 ---
 
 # Bot-wall recrawl leftovers (index-wide scan)
