@@ -25,8 +25,7 @@ the contract. Read it before touching `.py` files in `src/`, `tests/`, or
 - **Python 3.12**, FastAPI, MCP SDK, uvicorn.
 - **Postgres 18 + pgvector + pg_trgm** — the only database.
 - **fastembed** for embeddings (`all-MiniLM-L6-v2`, 384-dim).
-- **Native crawler** (`crawl/` package: patchright + scrapling + curl_cffi) —
-  Crawl4AI has been removed; do not reintroduce it.
+- **Native crawler** (`crawl/` package: patchright + scrapling + curl_cffi).
 - **Provider gateway** (`providers/`): `tavily → brave → exa → youcom`,
   ordered failover + a monthly quota ledger.
 - One container, one process, one worker task. No queue broker, no object store.
