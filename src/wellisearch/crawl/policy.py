@@ -29,9 +29,7 @@ POLICY: dict[str, Policy] = {
         "bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
     ),
     "boardgamegeek.com": Policy("bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated"),
-    # SERP is a SvelteKit SPA: results render client-side, so wait for network
-    # idle before capturing (same as amazon/target). Browser-first — the raw
-    # HTML has no content at all, so there is nothing for the http tier to win.
+    # SvelteKit SERP: client-rendered results need a browser + network_idle wait; the raw HTML is empty.
     "search.brave.com": Policy(
         "brave", ("browser",), ("settle", "network_idle"), (), "shared",
     ),
