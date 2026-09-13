@@ -134,7 +134,7 @@ It will periodically reorder the providers to put the highest quality one at the
 
 ## Dashboard
 
-- Drop the "Top pages by search_hit_count"
+- ~~Drop the "Top pages by search_hit_count"~~ → replaced with a "Recent queries (last 10)" panel listing the 10 most recent searches from `search_log` (time, query, source) via `GET /api/logs/searches?limit=10`.
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.
 

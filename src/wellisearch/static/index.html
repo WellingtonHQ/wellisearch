@@ -149,10 +149,9 @@
 </section>
 
 <section>
-  <h2>Top pages by search_hit_count</h2>
-  <div class="card"><table id="top-hits"><thead><tr>
-    <th>url</th><th>title</th><th class="num">search hits</th><th class="num">fetches</th>
-    <th>last crawled</th><th>status</th><th>actions</th>
+  <h2>Recent queries (last 10)</h2>
+  <div class="card"><table id="recent-queries"><thead><tr>
+    <th style="width:150px">time</th><th>query</th><th style="width:90px">source</th>
   </tr></thead><tbody></tbody></table></div>
 </section>
 
@@ -472,14 +471,12 @@ function renderIndex(st, pagesData, win) {
     `<span class="err">errors: ${errs}</span>`;
 }
 
-function pageRows(pages, showHitsFirst) {
+function pageRows(pages) {
   return (pages || []).map(p => `<tr>
     <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${esc(p.url)}">
-       <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a></td>
+        <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a></td>
     <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" class="muted" title="${esc(p.title)}">${esc(p.title) || "—"}</td>
-    ${showHitsFirst
-      ? `<td class="num">${p.search_hit_count}</td><td class="num">${p.fetch_count}</td>`
-      : `<td class="num">${p.fetch_count}</td><td class="num">${p.search_hit_count}</td>`}
+    <td class="num">${p.fetch_count}</td><td class="num">${p.search_hit_count}</td>
     <td>${p.last_crawled ? ts(p.last_crawled) + " <span class='muted'>(" + age(p.last_crawled) + ")</span>" : "never"}</td>
     <td>${p.disabled ? `<span class="pill warn">disabled</span>` : `<span class="muted">ok: ${esc(p.last_status) || "—"}</span>`}</td>
     <td>
@@ -515,16 +512,28 @@ function renderLog(logs) {
   $("#log-table tbody").innerHTML = rows || `<tr><td colspan="3" class="muted">no activity in the last ${winLabel()}</td></tr>`;
 }
 
+function renderRecentQueries(searches) {
+  const rows = (searches || []).map(s => `<tr>
+    <td style="white-space:nowrap">${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></td>
+    <td style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(s.query)}">${esc(s.query)}</td>
+    <td>${s.source === "local" ? `<span class="pill ok">local</span>`
+      : s.source === "error" ? `<span class="pill bad">error</span>`
+      : `<span class="muted">${esc(s.source) || "—"}</span>`}</td>
+  </tr>`).join("");
+  $("#recent-queries tbody").innerHTML = rows
+    || `<tr><td colspan="3" class="muted">no searches yet</td></tr>`;
+}
+
 // ---------------------------------------------------------------------------
 // Refresh
 // ---------------------------------------------------------------------------
 async function refresh() {
   try {
-    const [st, prov, pagesF, pagesH, win, logsData, health] = await Promise.all([
+    const [st, prov, pagesF, searches, win, logsData, health] = await Promise.all([
       api("/api/stats"),
       api("/api/providers"),
       api("/api/pages?sort=fetch_count&limit=5"),
-      api("/api/pages?sort=search_hit_count&limit=5"),
+      api("/api/logs/searches?limit=10"),
       api("/api/window?secs=" + winSecs),
       api("/api/logs?secs=" + winSecs + "&limit=200&q=" + encodeURIComponent(logQ)),
       api("/health").catch(() => null),
@@ -542,8 +551,8 @@ async function refresh() {
     renderProviders(prov);
     renderActivity(win);
     renderIndex(st, pagesF, win);
-    $("#top-fetch tbody").innerHTML = pageRows(pagesF.pages, false);
-    $("#top-hits tbody").innerHTML = pageRows(pagesH.pages, true);
+    $("#top-fetch tbody").innerHTML = pageRows(pagesF.pages);
+    renderRecentQueries(searches.searches);
     renderLog(logsData.logs);
     const qcount = $("#log-q-count");
     if (qcount) qcount.textContent = logQ ? logsData.total + " match" + (logsData.total === 1 ? "" : "es") : "";
