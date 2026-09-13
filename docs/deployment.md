@@ -116,8 +116,11 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `WORKER_TICK_BUDGET_MIN` | `15` | wall-clock budget per tick |
 | `KICK_DEBOUNCE_S` | `5` | coalesce burst enqueues into one tick |
 | `QUEUE_MAX_ATTEMPTS` | `3` | retries before a queue row is `failed` |
+| `REFRESH_MIN_AGE_HOURS` | `72` | watchlist page is eligible for refresh after this age |
+| `REFRESH_BACKOFF_BASE_HOURS` | `6` | consecutive failed refreshes back off `base × 2^(streak−1)`, capped at `REFRESH_MIN_AGE_HOURS`; a successful crawl resets the streak |
 | `CRAWL_TIMEOUT_S` | `45` | per-URL crawl timeout |
 | `CRAWL_MAX_PARALLEL` | `3` | concurrent crawls |
+| `CRAWL_IGNORE_SSL_ERRORS` | `true` | the tiers are read-only (fetch public pages, never send data), so untrusted TLS certs are accepted; set `false` to enforce strict verification |
 | `CRAWL_LAUNCH_RETRY_AFTER_S` | `30` | relaunch backoff after a failed browser launch; keep equal to the entrypoint.sh Xvfb self-heal poll interval |
 
 ### Server

@@ -37,7 +37,12 @@ class StealthTier:
 
         s = get_settings()
         start = time.monotonic()
-        with StealthySession(headless=s.CRAWL_HEADLESS) as session:
+        with StealthySession(
+            headless=s.CRAWL_HEADLESS,
+            # extra_args are merged into the Playwright browser context options;
+            # the tiers are read-only (see CRAWL_IGNORE_SSL_ERRORS).
+            additional_args={"ignore_https_errors": bool(s.CRAWL_IGNORE_SSL_ERRORS)},
+        ) as session:
             page = session.fetch(url, network_idle=True, timeout=s.CRAWL_STEALTH_TIMEOUT_S * 1000)
         ms = int((time.monotonic() - start) * 1000)
         return Rendered(

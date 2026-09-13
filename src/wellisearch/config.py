@@ -82,7 +82,12 @@ class Settings(BaseSettings):
     # --- worker / queue (async indexing) ---
     WORKER_INTERVAL_MIN: float = 30
     WORKER_BUDGET_PER_RUN: int = 25
-    REFRESH_MIN_AGE_HOURS: int = 72  # refresh pass skips pages crawled less than this long ago
+    REFRESH_MIN_AGE_HOURS: int = 72  # refresh pass skips pages whose last crawl is younger than this
+    # Base delay for the watchlist-refresh failure backoff: after N consecutive
+    # failed crawls a page waits base * 2^(N-1) hours (capped at one full refresh
+    # cycle, see Settings.refresh_backoff_hours). Without it, dead pages are
+    # retried on every worker tick (the 2026-09-13 refresh retry loop).
+    REFRESH_BACKOFF_BASE_HOURS: float = 6.0
     WORKER_TICK_BUDGET_MIN: int = 15
     KICK_DEBOUNCE_S: int = 5
     QUEUE_MAX_ATTEMPTS: int = 3
@@ -110,6 +115,11 @@ class Settings(BaseSettings):
     CRAWL_SETTLE_S: float = 2.0
     CRAWL_STEALTH_TIER: bool = True
     CRAWL_STEALTH_TIMEOUT_S: int = 120
+    # The crawl tiers only fetch public read-only pages (they never send data),
+    # so untrusted TLS certs (self-signed, expired, name-mismatch) are accepted
+    # by default and the content is indexed as-is; set to False for strict
+    # certificate verification. Applies to all three transport tiers.
+    CRAWL_IGNORE_SSL_ERRORS: bool = True
 
     # --- server ---
     BIND_PORT: int = 8780
@@ -136,6 +146,18 @@ class Settings(BaseSettings):
         if raw is None or raw <= 0:
             return None
         return int(raw)
+
+    def refresh_backoff_hours(self, streak: int) -> float:
+        """Refresh delay in hours after `streak` consecutive failed crawls.
+
+        Doubles from REFRESH_BACKOFF_BASE_HOURS (6h → 12h → 24h → ...) up to one
+        full refresh cycle (REFRESH_MIN_AGE_HOURS), so a dead page is retried at
+        most once per cycle instead of on every worker tick.
+        """
+        if streak <= 0:
+            return 0.0
+        delay = self.REFRESH_BACKOFF_BASE_HOURS * (2 ** (streak - 1))
+        return min(delay, float(self.REFRESH_MIN_AGE_HOURS))
 
     def conninfo(self, dbname: str | None = None) -> str:
         """psycopg connection string for ``dbname`` (default: POSTGRES_DB)."""
