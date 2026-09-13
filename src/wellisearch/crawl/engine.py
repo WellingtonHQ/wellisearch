@@ -74,9 +74,12 @@ async def crawl(url: str) -> CrawlResult:
                 flags=f.flags,
             )
         best = f
-        attempts.append(
-            {"tier": name, "error": "gate failed", "status": r.status, "md_chars": len(f.md)}
-        )
+        attempts.append({
+            "tier": name,
+            "error": "gate failed",
+            "status": r.status,
+            "md_chars": len(f.md),
+        })
         i += 1
     ms = int((time.monotonic() - start) * 1000)
     log.info("crawl %s failed (tier=none ms=%d)", url, ms)
