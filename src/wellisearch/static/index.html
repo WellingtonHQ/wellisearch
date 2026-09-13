@@ -42,6 +42,7 @@
   button:hover { border-color: var(--accent); }
   button.danger:hover { border-color: var(--bad); color: var(--bad); }
   button.on { border-color: var(--ok); color: var(--ok); }
+  button.warn { border-color: var(--warn); color: var(--warn); }
   button.mini { padding: 1px 6px; font-size: 12px; line-height: 1.5; }
   button:disabled { opacity: .35; cursor: default; }
   button:disabled:hover { border-color: var(--border); }
@@ -99,6 +100,8 @@
     <span class="muted">|</span>
     <input id="refresh-url" placeholder="refresh url" style="flex:1;min-width:200px">
     <button onclick="doRefresh()">refresh now</button>
+    <span class="muted">|</span>
+    <button id="pause-toggle" onclick="togglePause()">pause background indexing</button>
   </div>
 </section>
 
@@ -261,6 +264,21 @@ async function doRefresh() {
         toast(`refreshed: ${r.status} (${r.ms}ms)`); }
   catch (e) { toast(e.message, false); }
 }
+let workerPaused = false;
+async function togglePause() {
+  const target = !workerPaused;
+  try { const r = await api("/api/worker", { method: "PATCH", body: { paused: target } });
+        toast(target ? "background indexing paused — manual seeds/fetches still run"
+                     : `indexing resumed${r.queue_pending ? " — picking up " + r.queue_pending + " queued item(s)" : ""}`);
+        refresh(); }
+  catch (e) { toast(e.message, false); }
+}
+function renderWorkerToggle() {
+  const b = $("#pause-toggle");
+  if (!b) return;
+  b.textContent = workerPaused ? "resume background indexing" : "pause background indexing";
+  b.className = workerPaused ? "warn" : "";
+}
 async function togglePage(url, disabled) {
   try { await api("/api/pages/" + encodeURIComponent(url), { method: "PATCH", body: { disabled } });
         toast("page " + (disabled ? "disabled" : "enabled")); refresh(); }
@@ -317,10 +335,13 @@ function renderNow(st) {
   const cards = [
     {
       sub: "worker",
-      big: w.last_tick_at ? "tick " + age(w.last_tick_at) + " ago" : "no tick yet",
-      html: w.last_tick_stats
-        ? `<div class="sub">last: queue=${w.last_tick_stats.queue?.processed ?? 0} refreshed=${w.last_tick_stats.refresh?.refreshed ?? 0} in ${w.last_tick_stats.ms}ms</div>`
-        : "",
+      big: w.paused ? `<span class="pill warn">paused</span>`
+                    : (w.last_tick_at ? "tick " + age(w.last_tick_at) + " ago" : "no tick yet"),
+      html: w.paused
+        ? `<div class="sub">manual seeds / fetches still run — queued work waits for resume</div>`
+        : (w.last_tick_stats
+            ? `<div class="sub">last: queue=${w.last_tick_stats.queue?.processed ?? 0} refreshed=${w.last_tick_stats.refresh?.refreshed ?? 0} in ${w.last_tick_stats.ms}ms</div>`
+            : ""),
     },
     {
       sub: "in-flight crawls",
@@ -515,6 +536,8 @@ async function refresh() {
       el.textContent = health.status;
       el.title = `db: ${health.database}\ncrawler: ${health.crawler}`;
     }
+    workerPaused = !!(st && st.runtime && st.runtime.worker && st.runtime.worker.paused);
+    renderWorkerToggle();
     renderNow(st);
     renderProviders(prov);
     renderActivity(win);

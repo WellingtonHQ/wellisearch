@@ -132,6 +132,20 @@ CREATE TABLE IF NOT EXISTS provider_state (
 -- startup after this change (idempotent, like the CREATEs above)
 ALTER TABLE provider_state ADD COLUMN IF NOT EXISTS sort_order INT;
 
+-- ---------------------------------------------------------------------------
+-- app_state: general-purpose runtime flags (key → JSONB value). The home for
+-- dashboard toggles that must persist across restarts without a table of
+-- their own — e.g. indexing_paused, which pauses the background worker
+-- (queue drain + watchlist refresh) while on-demand paths keep running.
+-- Env supplies no defaults here; an absent key means the unset default
+-- (see db.worker_paused).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ===========================================================================
 -- fn_search_local(query, qvec, k) — the hybrid ranking core: FTS + trigram +
 -- vector legs (each top-50), RRF fusion with a per-page top-3 cap, then

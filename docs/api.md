@@ -115,7 +115,7 @@ truncated, omitted, from_index }] }` (failed/bad URLs in `pages` carry
 
 ### `GET /api/stats`
 Dashboard payload: index counts, freshness buckets, queue depth, provider
-quota, worker runtime (last tick + stats + in-flight), last search.
+quota, worker runtime (last tick + stats + in-flight + pause state), last search.
 
 ### `GET /api/providers`
 Per-provider gateway state, listed in the order they'll be tried — one of the
@@ -189,6 +189,23 @@ Body: `{ "url": "..." }`. Returns `{ ok, url, newly_queued }`.
 Force an immediate re-crawl of one URL (bypasses queue order).
 Body: `{ "url": "..." }`. Returns `{ ok, url, status, chunks, ms, last_crawled }`.
 Crawl failure → `502`.
+
+### `PATCH /api/worker`
+Pause or resume background indexing/crawling — the worker's queue drain
+(search backfill + manual seeds), the CF challenge lane, and the watchlist
+refresh. The flag persists in `app_state` across restarts and is effective
+immediately (no restart).
+
+Request body: `{ "paused": true }` to pause, `{ "paused": false }` to resume —
+a resume kicks a worker tick so queued work is picked up without waiting for
+the interval. Manual seeds (`POST /api/seed`, drained immediately even while
+paused), on-demand fetches (`POST /api/fetch*`) and manual refreshes
+(`POST /api/refresh`) keep working while paused — the flag stops background
+processing only. Queued work resumes where it left off (the queue is durable).
+
+```json
+{ "ok": true, "paused": true, "queue_pending": 12 }
+```
 
 ### `GET /api/pages`
 List indexed pages.

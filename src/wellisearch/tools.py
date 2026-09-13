@@ -133,6 +133,7 @@ async def _index_stats_data() -> dict:
     order, order_source = await get_gateway().order_names()
 
     return {
+        "worker": {"paused": await db.worker_paused()},
         "at": now.isoformat(),
         "index": {
             "pages": pages["total"],
@@ -268,7 +269,9 @@ def _tool_index_stats(server: MCPServer) -> None:
             "counts, freshness, the current provider failover order and its "
             "source (runtime override vs env default), search hit-rate by "
             "provider (24h/7d/30d), crawl queue depth, monthly quota usage "
-            "vs limit. Use to gauge index freshness before relying on it."
+            "vs limit, and whether background indexing is currently paused "
+            "(when paused, queued work waits — manual seeds/fetches still run). "
+            "Use to gauge index freshness before relying on it."
         ),
     )
     async def index_stats() -> dict:

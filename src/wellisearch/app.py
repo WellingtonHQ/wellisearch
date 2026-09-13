@@ -82,6 +82,11 @@ class PagePatch(BaseModel):
     disabled: bool = Field(default=False)
 
 
+class WorkerPause(BaseModel):
+    """Request body for PATCH /api/worker: pause or resume background indexing."""
+    paused: bool
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """App lifespan: the streamable-HTTP session manager's task group must be
@@ -218,6 +223,8 @@ async def api_stats() -> Any:
             "last_tick_at": last_tick,
             "last_tick_stats": WORKER_STATE.get("last_tick_stats"),
             "tick_age_s": round((now - last_tick).total_seconds(), 1) if last_tick else None,
+            # same flag _index_stats_data() already reads for the MCP surface
+            "paused": bool((data.get("worker") or {}).get("paused")),
         },
         "in_flight_crawls": sorted(queue.INFLIGHT.urls()),
     }
@@ -333,6 +340,23 @@ async def api_refresh(body: RefreshBody) -> Any:
         "ms": r.get("ms"),
         "last_crawled": (page or {}).get("last_crawled"),
     }
+
+
+@app.patch("/api/worker")
+async def api_worker_pause(body: WorkerPause) -> Any:
+    """Pause or resume background indexing/crawling (queue drain, the CF
+    challenge lane, and the watchlist refresh). Manual seeds, on-demand fetches,
+    and manual refreshes keep working while paused; queued work resumes where it
+    left off — a resume kicks a tick so nothing waits for the interval."""
+    await db.set_worker_paused(body.paused)
+    if not body.paused:
+        queue.kick_worker()
+    row = await db.fetch_one(
+        "SELECT count(*) AS n FROM crawl_queue WHERE status = 'pending'"
+    )
+    pending = row["n"] if row else 0
+    await _ev(f"indexing {'paused' if body.paused else 'resumed'}", {"queue_pending": pending})
+    return {"ok": True, "paused": body.paused, "queue_pending": pending}
 
 
 # {url:path} — the URL is percent-encoded in the path, and uvicorn decodes

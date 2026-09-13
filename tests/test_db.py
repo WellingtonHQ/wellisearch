@@ -12,7 +12,7 @@ from wellisearch.db import db  # noqa: E402
 
 async def main() -> None:
     """Run the full DB integration suite (schema, store_page, search, queue,
-    quota, provider state/order, event log)."""
+    quota, provider state/order, app state, event log)."""
     await db.startup()
     print("OK startup (schema applied)")
     await _clean_slate()
@@ -22,6 +22,7 @@ async def main() -> None:
     await _check_local_hit()
     await _check_queue_quota_provider_state()
     await _check_provider_order()
+    await _check_app_state()
     await _check_event_log()
     await _cleanup()
     await db.close()
@@ -48,7 +49,7 @@ async def _check_tables() -> None:
     )
     names = [t["tablename"] for t in tables]
     for expected in (
-        "chunks", "crawl_log", "crawl_queue", "event_log",
+        "app_state", "chunks", "crawl_log", "crawl_queue", "event_log",
         "pages", "provider_quota", "provider_state", "search_log",
     ):
         assert expected in names, f"missing table {expected}"
@@ -167,6 +168,34 @@ async def _check_provider_order() -> None:
     await db.set_provider_order([])
     assert await db.get_provider_order() is None, "reset should clear the override"
     print("OK provider order roundtrip")
+
+
+async def _check_app_state() -> None:
+    """app_state runtime flags: set/get roundtrip. Restores the prior pause
+    state afterwards (the dev DB may be shared with a running instance)."""
+    from wellisearch.db import INDEXING_PAUSED_KEY
+
+    original = await db.get_app_value(INDEXING_PAUSED_KEY)
+    try:
+        assert not await db.worker_paused(), "expected the flag unset at start"
+        await db.set_worker_paused(True)
+        assert (await db.get_app_value(INDEXING_PAUSED_KEY)) is True
+        assert await db.worker_paused()
+        row = await db.fetch_one(
+            "SELECT value, updated_at FROM app_state WHERE key = %s", (INDEXING_PAUSED_KEY,)
+        )
+        assert row and row["value"] is True and row["updated_at"], row
+        # upsert, not insert: setting again updates the same row
+        await db.set_worker_paused(False)
+        n = await db.fetch_one("SELECT count(*) AS n FROM app_state WHERE key = %s", (INDEXING_PAUSED_KEY,))
+        assert n["n"] == 1, f"expected a single flag row, got {n['n']}"
+        assert not await db.worker_paused()
+        print("OK app_state roundtrip")
+    finally:
+        if original is None:
+            await db.execute("DELETE FROM app_state WHERE key = %s", (INDEXING_PAUSED_KEY,))
+        else:
+            await db.set_app_value(INDEXING_PAUSED_KEY, original)
 
 
 async def _check_event_log() -> None:

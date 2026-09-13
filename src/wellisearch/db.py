@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import AsyncIterator
 import contextlib
 import datetime as dt
+import json
 import logging
 import pathlib
 import sys
@@ -37,10 +38,13 @@ SCHEMA_FILE = pathlib.Path(__file__).resolve().parent / "schema.sql"
 STARTUP_RETRIES = 10
 STARTUP_RETRY_S = 3.0
 
+# app_state keys (see schema.sql — general-purpose runtime flags)
+INDEXING_PAUSED_KEY = "indexing_paused"
+
 
 class Database:
     """Postgres access: pool, startup (self-create app DB + DDL), and helpers
-    for pages, quotas, provider state, logs, and the crawl queue."""
+    for pages, quotas, provider state, app-state flags, logs, and the crawl queue."""
 
     def __init__(self) -> None:
         """Starts with no pool; call startup() before use."""
@@ -351,6 +355,35 @@ class Database:
                 """,
                 (name, i),
             )
+
+    # ---------------------------------------------------------------------------
+    # App State (runtime flags)
+    # ---------------------------------------------------------------------------
+
+    async def get_app_value(self, key: str) -> Any | None:
+        """The runtime value stored under `key` in app_state, or None when the
+        key is unset."""
+        row = await self.fetch_one("SELECT value FROM app_state WHERE key = %s", (key,))
+        return row["value"] if row else None
+
+    async def set_app_value(self, key: str, value: Any) -> None:
+        """Upsert the runtime value stored under `key` in app_state."""
+        await self.execute(
+            """
+            INSERT INTO app_state (key, value) VALUES (%s, %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+            """,
+            (key, json.dumps(value)),
+        )
+
+    async def worker_paused(self) -> bool:
+        """Whether the background worker is paused. An absent key means not
+        paused."""
+        return (await self.get_app_value(INDEXING_PAUSED_KEY)) is True
+
+    async def set_worker_paused(self, paused: bool) -> None:
+        """Pause or resume the background worker (persists across restarts)."""
+        await self.set_app_value(INDEXING_PAUSED_KEY, bool(paused))
 
     # ---------------------------------------------------------------------------
     # Logs

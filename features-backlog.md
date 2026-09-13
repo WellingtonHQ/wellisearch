@@ -142,7 +142,6 @@ It will periodically reorder the providers to put the highest quality one at the
 
 ## Indexing
 
-### Pause indexing operations
-- Add ability to pause indexing so worker ticks won't launch re-indexes and will be skipped altogether.
-  Should be a button/toggle on the dashboard.
+### ~~Pause indexing operations~~ (done)
+- ~~Add ability to pause indexing so worker ticks won't launch re-indexes and will be skipped altogether. Should be a button/toggle on the dashboard.~~ → `PATCH /api/worker` + "pause background indexing" toggle in the dashboard Actions card; while paused, watchlist re-indexes are skipped and only manual seeds/fetches run (on-demand paths unaffected); state persists across restarts in `app_state`.
   

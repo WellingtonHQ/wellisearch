@@ -8,6 +8,11 @@ Two jobs per tick:
      (or never), ORDER BY fetch_count DESC, last_crawled ASC
      LIMIT WORKER_BUDGET_PER_RUN → crawl → unchanged? skip re-embed.
 
+Paused (app_state.indexing_paused, dashboard toggle): a paused tick drains only
+manually enqueued rows and skips the watchlist refresh; on-demand paths that call
+crawl_url directly are unaffected. Resuming picks up where it left off — queued
+work is durable and re-claimed on the next kick/interval.
+
 Tick triggers:
   - every WORKER_INTERVAL_MIN unconditionally
   - debounced kick whenever the queue receives items (queue.kick_worker)
@@ -56,7 +61,9 @@ async def crawl_url(url: str, trigger: str) -> dict:
 
 async def tick() -> dict:
     """One worker tick: drain queue + budgeted refresh, wall-clock bounded.
-    Skipped (not queued) if a tick is already running."""
+    Skipped (not queued) if a tick is already running. When the worker is
+    paused, only manually enqueued rows are drained and the watchlist refresh
+    is skipped."""
     if _tick_lock.locked():
         log.info("tick skipped (previous tick still running)")
         return {"skipped": "tick already running"}
@@ -64,12 +71,17 @@ async def tick() -> dict:
         s = get_settings()
         t0 = time.monotonic()
         deadline = t0 + s.WORKER_TICK_BUDGET_MIN * 60
-        log.info("tick start (budget %ss)", int(deadline - t0))
+        paused = await db.worker_paused()
+        log.info(
+            "tick start (budget %ss%s)",
+            int(deadline - t0),
+            " — paused, manual queue only" if paused else "",
+        )
 
         stats = {
-            "queue": await _drain_queue(deadline),
-            "cf_queue": await _drain_cf_queue(deadline),
-            "refresh": await _refresh_watchlist(deadline),
+            "queue": await _drain_queue(deadline, manual_only=paused),
+            "cf_queue": await _drain_cf_queue(deadline, manual_only=paused),
+            "refresh": {"skipped_paused": True} if paused else await _refresh_watchlist(deadline),
             "ms": int((time.monotonic() - t0) * 1000),
         }
         STATE["last_tick_at"] = dt.datetime.now(dt.timezone.utc)
@@ -171,23 +183,32 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     return {"url": url, "status": status, "ms": ms, "chunks": chunks_written}
 
 
-async def _drain_queue(deadline: float) -> dict:
+async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
     """Claim and crawl pending FAST-lane queue rows, up to the per-tick budget.
 
-    A fast-lane crawl that hits a bot-wall raises ChallengeDetected; we route
-    that row to the CF lane (db.queue_route_to_cf) instead of marking it done,
-    so the CF drain can run it with the full challenge loop.
+    With manual_only (worker paused), only source='manual' rows are claimed;
+    search-enqueued backfill waits for resume. A fast-lane crawl that hits a
+    bot-wall raises ChallengeDetected; we route that row to the CF lane
+    (db.queue_route_to_cf) instead of marking it done, so the CF drain can run
+    it with the full challenge loop.
     """
     s = get_settings()
     processed = 0
     sem = asyncio.Semaphore(s.CRAWL_MAX_PARALLEL)
 
+    src_filter = "\n          AND source = 'manual'" if manual_only else ""
     rows = await db.fetch_all(
-        "SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'fast' "
-        "ORDER BY enqueued_at LIMIT %s",
+        f"""
+        SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'fast'
+          {src_filter} ORDER BY enqueued_at LIMIT %s
+        """,
         (s.WORKER_BUDGET_PER_RUN * 2,),
     )
-    log.info("tick: draining fast lane (%d pending in budget window)", len(rows))
+    log.info(
+        "tick: draining fast lane (%d pending in budget window)%s",
+        len(rows),
+        " — manual only" if manual_only else "",
+    )
 
     async def process(url: str) -> None:
         """Claim one fast-lane row and crawl it (bounded by the parallelism cap)."""
@@ -217,9 +238,10 @@ async def _drain_queue(deadline: float) -> dict:
     return {"processed": processed}
 
 
-async def _drain_cf_queue(deadline: float) -> dict:
+async def _drain_cf_queue(deadline: float, manual_only: bool = False) -> dict:
     """Claim and crawl pending CF-lane rows (challenges routed from the fast
-    lane), bounded by the low CF concurrency cap.
+    lane), bounded by the low CF concurrency cap. With manual_only (worker
+    paused), only source='manual' rows are claimed.
 
     These run in the CF lane: the browser tier runs the full turnstile loop
     with the high budget, on the CF pool. A failure here re-enqueues (pending)
@@ -229,14 +251,21 @@ async def _drain_cf_queue(deadline: float) -> dict:
     s = get_settings()
     processed = 0
 
+    src_filter = "\n          AND source = 'manual'" if manual_only else ""
     rows = await db.fetch_all(
-        "SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'cf' "
-        "ORDER BY enqueued_at LIMIT %s",
+        f"""
+        SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'cf'
+          {src_filter} ORDER BY enqueued_at LIMIT %s
+        """,
         (s.CRAWL_CHALLENGE_PARALLEL * 2,),
     )
     if not rows:
         return {"processed": 0}
-    log.info("tick: draining CF lane (%d pending challenges)", len(rows))
+    log.info(
+        "tick: draining CF lane (%d pending challenges)%s",
+        len(rows),
+        " — manual only" if manual_only else "",
+    )
 
     async def process(url: str) -> None:
         """Claim one CF-lane row and crawl it.
