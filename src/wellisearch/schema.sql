@@ -20,9 +20,15 @@ CREATE TABLE IF NOT EXISTS pages (
   crawl_count INT NOT NULL DEFAULT 0,
   fetch_count INT NOT NULL DEFAULT 0, -- the priority/prominence counter
   search_hit_count INT NOT NULL DEFAULT 0,
-  disabled BOOLEAN NOT NULL DEFAULT false
+  disabled BOOLEAN NOT NULL DEFAULT false,
+  refresh_fail_streak INT NOT NULL DEFAULT 0, -- consecutive failed crawls (refresh backoff)
+  refresh_backoff_until TIMESTAMPTZ -- excluded from the watchlist refresh until this time
 );
 CREATE INDEX IF NOT EXISTS pages_domain_idx ON pages (domain);
+-- existing databases: created before these columns existed — add them on first
+-- startup after this change (idempotent, like the crawl_queue.lane add)
+ALTER TABLE pages ADD COLUMN IF NOT EXISTS refresh_fail_streak INT NOT NULL DEFAULT 0;
+ALTER TABLE pages ADD COLUMN IF NOT EXISTS refresh_backoff_until TIMESTAMPTZ;
 
 -- ---------------------------------------------------------------------------
 -- chunks: per-chunk content + tsv (FTS) + embedding (vector)

@@ -222,6 +222,8 @@ class BrowserPool:
             locale=LOCALE,
             timezone_id=TIMEZONE,
             user_agent=CHROME_UA,
+            # The tiers are read-only (see CRAWL_IGNORE_SSL_ERRORS).
+            ignore_https_errors=s.CRAWL_IGNORE_SSL_ERRORS,
         )
 
 

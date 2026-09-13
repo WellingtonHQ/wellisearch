@@ -225,6 +225,36 @@ class Database:
             (urls,),
         )
 
+    async def refresh_fail_bump(self, url: str) -> int | None:
+        """Record a failed crawl of `url` against its watchlist-refresh streak.
+
+        The page is then excluded from the refresh pool until
+        now() + Settings.refresh_backoff_hours(new_streak). Returns the new
+        streak; None when the URL is not (yet) indexed — nothing to back off.
+        """
+        row = await self.fetch_one(
+            "SELECT refresh_fail_streak FROM pages WHERE url = %s",
+            (url,),
+        )
+        if row is None:
+            return None
+        streak = int(row["refresh_fail_streak"]) + 1
+        delay_h = get_settings().refresh_backoff_hours(streak)
+        await self.execute(
+            "UPDATE pages SET refresh_fail_streak = %s, "
+            "refresh_backoff_until = now() + (%s * interval '1 hour') WHERE url = %s",
+            (streak, delay_h, url),
+        )
+        return streak
+
+    async def refresh_success_reset(self, url: str) -> None:
+        """Clear a page's refresh-failure backoff after a successful crawl."""
+        await self.execute(
+            "UPDATE pages SET refresh_fail_streak = 0, "
+            "refresh_backoff_until = NULL WHERE url = %s",
+            (url,),
+        )
+
     # ---------------------------------------------------------------------------
     # Quota
     # ---------------------------------------------------------------------------

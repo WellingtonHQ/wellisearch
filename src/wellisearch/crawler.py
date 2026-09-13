@@ -8,11 +8,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from typing import TYPE_CHECKING
 
 from .config import get_settings
 from .crawl.engine import crawl
 
+if TYPE_CHECKING:
+    from .crawl.results import CrawlResult
+
 log = logging.getLogger("wellisearch.crawler")
+
+# Fetch errors that are a TLS certificate problem, for an actionable hint.
+_SSL_ERR_RE = re.compile(r"(?i)certificate|\bssl\b|\btls\b")
 
 # Global crawl cap shared by the worker (queue drain + watchlist refresh)
 # AND the fetch/refresh request paths: at most CRAWL_MAX_PARALLEL concurrent
@@ -77,7 +85,35 @@ async def fit_markdown(url: str) -> tuple[str | None, str]:
     # some text); storing that as a success would poison the index, so require ok.
     if result.ok and result.md and result.md.strip():
         return result.title, result.md
-    raise CrawlError(url, "all tiers failed or empty markdown")
+    raise CrawlError(url, failure_detail(result))
+
+
+def failure_detail(result: "CrawlResult") -> str:
+    """One-line per-tier summary of a failed crawl from its engine attempts.
+
+    Example: ``http: ReadTimeout: ...; browser: botwall: turnstile (http 403);
+    gate failed [87 chars]`` — the detail lands in crawl_log / pages.last_status
+    so an operator can see WHY each tier failed instead of one generic string.
+    """
+    if not result.attempts:
+        return "all tiers failed or empty markdown"
+    parts = []
+    for a in result.attempts:
+        seg = f"{a.get('tier', '?')}: {a.get('error', 'unknown error')}"
+        status = a.get("status")
+        if isinstance(status, int):
+            seg += f" (http {status})"
+        md_chars = a.get("md_chars")
+        if isinstance(md_chars, int):
+            seg += f" [{md_chars} chars]"
+        parts.append(seg)
+    detail = "; ".join(parts)
+    if _SSL_ERR_RE.search(detail):
+        detail += (
+            " — untrusted TLS certificate; set CRAWL_IGNORE_SSL_ERRORS=1 to accept it "
+            "(the crawl tiers are read-only)"
+        )
+    return detail
 
 
 async def health() -> tuple[bool, str]:
