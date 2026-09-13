@@ -386,4 +386,68 @@ finally:
     worker_mod.crawl_url = orig_crawl_url
 print("OK worker routes ChallengeDetected to CF lane")
 
+# ---------------------------------------------------------------------------
+# 10. only the refresh trigger extends the watchlist-refresh backoff (fake db)
+# ---------------------------------------------------------------------------
+
+
+class BackoffDB:
+    def __init__(self) -> None:
+        """Initialize a fake db recording streak bumps."""
+        self.bumped = []
+
+    async def log_crawl(self, *args: object, **kwargs: object) -> None:
+        """No-op crawl-log sink."""
+
+    async def execute(
+        self,
+        sql: str,
+        params: tuple | None = None,
+    ) -> None:
+        """No-op statement sink (last_status update)."""
+
+    async def refresh_fail_bump(self, url: str) -> int | None:
+        """Record a streak bump."""
+        self.bumped.append(url)
+        return 1
+
+
+async def failing_fit_markdown(url: str) -> tuple[str | None, str]:
+    """Fake crawl that fails with a plain CrawlError (e.g. a DNS blip)."""
+    raise crawler_mod.CrawlError(url, "temporary name resolution failure")
+
+
+BACKOFF_URL = "https://example.com/backoff"
+orig_db_bk = worker_mod.db
+orig_fit_markdown = crawler_mod.fit_markdown
+
+for trigger in ("search", "manual", "fetch", "recrawl", "refresh"):
+    backoff_db = BackoffDB()
+    worker_mod.db = backoff_db
+    crawler_mod.fit_markdown = failing_fit_markdown
+    try:
+
+        async def attempt(t: str) -> None:
+            """Run one failing crawl+store and expect the CrawlError to propagate."""
+            try:
+                await worker_mod._crawl_and_store(BACKOFF_URL, t)
+                raise AssertionError("expected CrawlError to propagate")
+            except crawler_mod.CrawlError:
+                pass
+
+        asyncio.run(attempt(trigger))
+    finally:
+        worker_mod.db = orig_db_bk
+        crawler_mod.fit_markdown = orig_fit_markdown
+    if trigger == "refresh":
+        assert backoff_db.bumped == [BACKOFF_URL], (
+            f"trigger={trigger} must extend the refresh streak"
+        )
+    else:
+        assert backoff_db.bumped == [], (
+            f"trigger={trigger} must not bump the watchlist-refresh streak"
+        )
+
+print("OK only refresh-trigger failures extend the watchlist backoff")
+
 print("ALL LANE TESTS PASSED")

@@ -158,9 +158,11 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
             "UPDATE pages SET last_status = %s WHERE url = %s",
             (label, url),
         )
-        # Back the watchlist refresh off for this page: without it a dead URL is
-        # re-picked every tick until REFRESH_MIN_AGE_HOURS never stops being true.
-        await db.refresh_fail_bump(url)
+        # Back the watchlist refresh off for this page (a dead URL would otherwise be
+        # re-picked every tick) — but only on the refresh path itself; a search/manual/
+        # fetch/recrawl failure must not push out its refresh slot.
+        if trigger == "refresh":
+            await db.refresh_fail_bump(url)
         raise
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
