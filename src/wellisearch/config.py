@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     QUEUE_MAX_ATTEMPTS: int = 3
     CRAWL_TIMEOUT_S: int = 45
     CRAWL_MAX_PARALLEL: int = 8
-    LOG_RETENTION_DAYS: int = 30  # event_log / crawl_log / search_log prune age
+    LOG_RETENTION_DAYS: int = 90  # event_log / crawl_log / search_log prune age
 
     # --- native crawl engine (replaces the Crawl4AI path; design §6) ---
     # CF (challenge) lane: a dedicated low-concurrency, high-timeout lane so a

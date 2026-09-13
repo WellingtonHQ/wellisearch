@@ -229,8 +229,15 @@ Recent crawl attempts. `?limit=` (default 50, max 500).
 Returns `{ crawls: [{ ts, url, trigger, status, ms, chunks_written, detail }] }`.
 
 ### `GET /api/logs/searches`
-Recent searches. `?limit=` (default 50, max 500).
-Returns `{ searches: [{ ts, query, source, local_hits, results }] }`.
+Paginated recent searches (the dashboard's "Recent searches" view), newest first.
+
+| Param | Default | Notes |
+|---|---|---|
+| `limit` | 50 | per page, max 500 |
+| `offset` | 0 | skip the most recent rows when paging backwards |
+
+Returns `{ searches: [{ id, ts, query, source, local_hits, n_results, urls }], total }`,
+where `total` is every row currently in the table (pruned by `LOG_RETENTION_DAYS`).
 
 ### `GET /api/window`
 Windowed activity stats for the dashboard.
@@ -277,7 +284,7 @@ total, secs }` where `total` is the row count in the window (after any `q` filte
 Operational events (worker ticks, provider gateway failures/serves, admin
 actions, startup) are written to the `event_log` table by the service itself
 and appear here with `kind: "event"`. Log tables are pruned after
-`LOG_RETENTION_DAYS` (default 30).
+`LOG_RETENTION_DAYS` (default 90).
 
 ### `GET /owui/openapi.json`
 Curated OpenAPI 3.0 spec for OWUI's OpenAPI tool server: only the three

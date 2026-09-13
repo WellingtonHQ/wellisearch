@@ -149,9 +149,17 @@
 </section>
 
 <section>
-  <h2>Recent queries (last 10)</h2>
+  <div class="row" style="justify-content:space-between;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
+    <h2>Recent searches</h2>
+    <div class="row" style="gap:8px;align-items:center">
+      <button class="mini" id="sq-prev" onclick="stepSearchesPage(-1)" title="towards the newest searches">← prev</button>
+      <span class="muted" id="sq-pageinfo" style="font-size:12px"></span>
+      <button class="mini" id="sq-next" onclick="stepSearchesPage(1)" title="towards the oldest searches">next →</button>
+    </div>
+  </div>
   <div class="card"><table id="recent-queries"><thead><tr>
-    <th style="width:150px">time</th><th>query</th><th style="width:90px">source</th>
+    <th style="width:24px"></th><th style="width:150px">time</th><th>query</th>
+    <th style="width:90px">provider</th><th class="num" style="width:60px">results</th>
   </tr></thead><tbody></tbody></table></div>
 </section>
 
@@ -512,28 +520,74 @@ function renderLog(logs) {
   $("#log-table tbody").innerHTML = rows || `<tr><td colspan="3" class="muted">no activity in the last ${winLabel()}</td></tr>`;
 }
 
-function renderRecentQueries(searches) {
-  const rows = (searches || []).map(s => `<tr>
-    <td style="white-space:nowrap">${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></td>
-    <td style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(s.query)}">${esc(s.query)}</td>
-    <td>${s.source === "local" ? `<span class="pill ok">local</span>`
-      : s.source === "error" ? `<span class="pill bad">error</span>`
-      : `<span class="muted">${esc(s.source) || "—"}</span>`}</td>
-  </tr>`).join("");
+// ---------------------------------------------------------------------------
+// Recent searches (paginated, click a row to expand its result urls)
+// ---------------------------------------------------------------------------
+const SQ_PAGE_SIZE = 25;
+let sqPage = 0;
+let sqSeq = 0;      // discards search-page renders superseded by a newer refresh()
+let sqLast = [];
+let sqTotal = 0;
+const sqExpanded = new Set();
+
+function stepSearchesPage(dir) {
+  const pages = Math.max(1, Math.ceil(sqTotal / SQ_PAGE_SIZE));
+  sqPage = Math.min(pages - 1, Math.max(0, sqPage + dir));
+  refresh();
+}
+
+function toggleSearchesRow(id) {
+  const k = String(id);
+  if (sqExpanded.has(k)) sqExpanded.delete(k); else sqExpanded.add(k);
+  renderRecentQueries(sqLast, sqTotal); // local re-render only — no fetch
+}
+
+const sqSourceTag = (s) => s === "local" ? `<span class="tag local">local</span>`
+  : s === "error" ? `<span class="pill bad">error</span>`
+  : `<span class="tag provider">${esc(s)}</span>`;
+
+function renderRecentQueries(searches, total) {
+  sqTotal = total || 0;
+  const list = searches || [];
+  const pages = Math.max(1, Math.ceil(sqTotal / SQ_PAGE_SIZE));
+  if (sqPage >= pages && sqTotal > 0) { sqPage = pages - 1; refresh(); return; } // rows pruned out from under us
+  $("#sq-prev").disabled = sqPage <= 0;
+  $("#sq-next").disabled = sqPage + 1 >= pages;
+  $("#sq-pageinfo").textContent = sqTotal
+    ? `page ${sqPage + 1} / ${pages} · ${sqTotal} search${sqTotal === 1 ? "" : "es"}`
+    : "";
+  const rows = list.map(s => {
+    const urls = s.urls || [];
+    const open = sqExpanded.has(String(s.id));
+    const detail = open && urls.length
+      ? `<tr><td></td><td colspan="4" style="background:#0d1117">` +
+          urls.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(u)}" ` +
+            `style="display:block;max-width:860px;overflow:hidden;text-overflow:ellipsis">${esc(u)}</a>`).join("") +
+        `</td></tr>`
+      : "";
+    return `<tr onclick="toggleSearchesRow(${s.id})" style="cursor:pointer">
+      <td class="muted">${open ? "▾" : "▸"}</td>
+      <td style="white-space:nowrap">${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></td>
+      <td style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(s.query)}">${esc(s.query)}</td>
+      <td>${sqSourceTag(s.source)}</td>
+      <td class="num">${s.n_results ?? urls.length}</td>
+    </tr>` + detail;
+  }).join("");
   $("#recent-queries tbody").innerHTML = rows
-    || `<tr><td colspan="3" class="muted">no searches yet</td></tr>`;
+    || `<tr><td colspan="5" class="muted">no searches yet</td></tr>`;
 }
 
 // ---------------------------------------------------------------------------
 // Refresh
 // ---------------------------------------------------------------------------
 async function refresh() {
+  const mySqSeq = ++sqSeq; // a later refresh supersedes this one's search-page render
   try {
     const [st, prov, pagesF, searches, win, logsData, health] = await Promise.all([
       api("/api/stats"),
       api("/api/providers"),
       api("/api/pages?sort=fetch_count&limit=5"),
-      api("/api/logs/searches?limit=10"),
+      api(`/api/logs/searches?limit=${SQ_PAGE_SIZE}&offset=${sqPage * SQ_PAGE_SIZE}`),
       api("/api/window?secs=" + winSecs),
       api("/api/logs?secs=" + winSecs + "&limit=200&q=" + encodeURIComponent(logQ)),
       api("/health").catch(() => null),
@@ -552,7 +606,10 @@ async function refresh() {
     renderActivity(win);
     renderIndex(st, pagesF, win);
     $("#top-fetch tbody").innerHTML = pageRows(pagesF.pages);
-    renderRecentQueries(searches.searches);
+    if (mySqSeq === sqSeq) { // skip stale search pages from overlapping refresh() calls
+      sqLast = searches.searches || [];
+      renderRecentQueries(sqLast, searches.total ?? sqLast.length);
+    }
     renderLog(logsData.logs);
     const qcount = $("#log-q-count");
     if (qcount) qcount.textContent = logQ ? logsData.total + " match" + (logsData.total === 1 ? "" : "es") : "";
