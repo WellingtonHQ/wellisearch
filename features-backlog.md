@@ -5,34 +5,22 @@
 ## Engine
 
 ### Multi-crawl
-When seeding a URL, wellisearch should use crawl4ai to do a breadth/depth crawl and load adjacent URLs as well. 
+When seeding a URL, wellisearch should scan for links to do a breadth/depth crawl and load adjacent URLs as well. 
 
 ### Ability to specify a refresh for a specific page.
 - Certain pages need to be refreshed daily, or hourly, for example news sites. When seeding a site we should be able to specify this parameter.
 - When seeding a URL via the dashboard, it should also allow you to do that.
 
 
-### Replace Text-Embedding with qwen
-See if we could use a higher-quality embedding model. It could potentially take more time but it would result in better results.
-qwen3-embedding:4b
+### Replace Text-Embedding nomic embed (deffered)
+See [benchmarks/EMBEDDING_FINDINGS.md].
 
 ### Use LLM to cleanup markdown.
-qwen3:4b
+See [benchmarks/LLM_CLEANUP_FINDINGS.md].
 
 ### Optional TTL
 Pages that haven't been fetched in a specified time (let's say, 1 year) get dropped from the index.
 This is optional and is used to save space.
-
-### Crawl-failure handling
-
-Crawl4AI returns HTTP 500 for anti-bot blocks (Cloudflare, DataDome, PerimeterX, Akamai,
-403/429) and 400 for its SSRF guard. Neither is a wellisearch bug, but we should handle
-both better so we stop re-crawling URLs that can never succeed.
-
-#### 500s — anti-bot negative caching
-- Treat Crawl4AI anti-bot blocks as a distinct `blocked` status rather than `http_500`.
-- Negative-cache known anti-bot hosts (walmart, yelp, nytimes, reuters, medium, web.archive.org, ...)
-  so we stop re-attempting them. Failed URLs are currently retried up to 14× — wasted work.
 
 #### 400s — filter junk URLs before they reach the crawl queue
 Crawl4AI's SSRF guard is correctly blocking these, but the real defect is that we seed them.
