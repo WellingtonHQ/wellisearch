@@ -83,11 +83,13 @@ class Database:
         if last_err is not None:
             raise RuntimeError(f"could not reach Postgres after {STARTUP_RETRIES} attempts") from last_err
 
-        # 3. open the main pool
+        # 3. open the main pool (explicit checkout timeout: a busy pool fails fast
+        # with PoolTimeout instead of psycopg_pool's silent 30 s default)
         self._pool = AsyncConnectionPool(
             conninfo=s.conninfo(),
             min_size=s.DB_POOL_MIN_SIZE,
             max_size=s.DB_POOL_MAX_SIZE,
+            timeout=s.DB_POOL_TIMEOUT_S,
             open=False,
             kwargs={"row_factory": dict_row},
             configure=_register_vector,
@@ -553,6 +555,18 @@ class Database:
                     "WHERE url = %s AND status = 'in_flight'",
                     (error, url),
                 )
+
+    async def queue_challenge_in_flight(self, url: str) -> bool:
+        """True when a CF challenge solve is already queued or running for `url`.
+
+        The read path fast-fails on this (fetch._resolve_page): re-probing a host
+        that is about to be challenged would only burn the probe budget."""
+        row = await self.fetch_one(
+            "SELECT 1 AS in_flight FROM crawl_queue WHERE url = %s AND lane = 'cf' "
+            "AND status IN ('pending', 'in_flight')",
+            (url,),
+        )
+        return row is not None
 
     async def queue_route_to_cf(self, url: str) -> bool:
         """Move a fast-lane row (pending or in-flight) onto the CF challenge lane.

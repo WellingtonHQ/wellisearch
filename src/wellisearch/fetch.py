@@ -18,9 +18,12 @@ import logging
 import time
 from urllib.parse import urlparse
 
+from psycopg_pool import PoolTimeout
+
 from . import crawler
-from .config import get_settings
+from .config import Settings, get_settings
 from .crawl.extractors.base import title_from_markdown
+from .crawl.probe import reset_probe_budget, set_probe_budget
 from .crawl.results import ChallengeDetected
 from .db import db
 from .serialize import format_timing
@@ -147,7 +150,7 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
         page = await _resolve_page(url)
     except Exception as e:
         log.warning("fetch_page failed for %s: %s", url, e)
-        return {"ok": False, "error": str(e), "url": url, "timing": _timing()}
+        return {"ok": False, "error": _friendly_error(e), "url": url, "timing": _timing()}
 
     await db.bump_fetch_count(url)
 
@@ -279,9 +282,15 @@ def _valid_url(url: str) -> bool:
 async def _resolve_page(url: str) -> dict:
     """Content for one URL: from index when present, else crawl on demand.
 
+    The on-demand crawl runs with a reduced per-tier probe budget (fast bot-wall
+    detection), fails fast if a CF challenge is already in flight for the URL,
+    and is bounded by a hard FETCH_TIMEOUT_S deadline — past it the fetch errors
+    with a retry hint, leaves the crawl running, and enqueues a background retry.
+
     Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
     (the native-crawler round-trip + store) so callers can report the timing split.
     """
+    s = get_settings()
     t_index = time.monotonic()
     page = await db.page_get(url)
     index_ms = int((time.monotonic() - t_index) * 1000)
@@ -296,18 +305,39 @@ async def _resolve_page(url: str) -> dict:
             "crawl_ms": 0,
         }
 
-    # crawl on demand (in-flight-deduped inside crawl_url)
+    # Fast-fail: a CF challenge solve is already queued/running for this URL —
+    # re-probing would just burn the probe budget on a walled host. Tell the
+    # client when to come back instead (see _botwall_error).
+    if await db.queue_challenge_in_flight(url):
+        raise crawler.CrawlError(url, _botwall_error(s))
+
+    # crawl on demand: reduced per-tier probe budget + hard FETCH_TIMEOUT_S
+    # deadline; in-flight-deduped inside crawl_url.
     t_crawl = time.monotonic()
+    token = set_probe_budget(s.FETCH_PROBE_TIMEOUT_S)  # the task below copies this context
+    task = asyncio.create_task(_probe_crawl(url))
     try:
-        r = await crawl_url(url, trigger="fetch")
-    except ChallengeDetected:
-        # Fast-lane probe hit a bot-wall: route the URL onto the CF challenge
-        # lane so the worker's CF drain runs the full turnstile loop, then fail
-        # gracefully (the on-demand read can't wait for the challenge to solve).
-        if not await db.queue_enqueue(url, "fetch", lane="cf"):
-            await db.queue_route_to_cf(url)
-        log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
-        raise crawler.CrawlError(url, "bot-wall detected; routed to the CF challenge lane")
+        done, _pending = await asyncio.wait({task}, timeout=s.FETCH_TIMEOUT_S)
+    except BaseException:
+        # Client went away (cancel) before the deadline: let the crawl finish in
+        # the background and keep its exception retrieved — no enqueue needed.
+        _watch_background_crawl(task, url)
+        raise
+    finally:
+        reset_probe_budget(token)
+
+    if not done or task.cancelled():
+        # Deadline hit (or the client went away): leave the crawl running in the
+        # background — it stores the page when it finishes — enqueue a full-budget
+        # retry, and tell the client when to come back.
+        _watch_background_crawl(task, url)
+        try:
+            await db.queue_enqueue(url, "fetch")
+        except Exception as e:
+            log.warning("enqueue for background retry failed (%s): %s", url, e)
+        raise crawler.CrawlError(url, _timed_out_error(s))
+
+    task.result()  # re-raise the crawl's CrawlError (bot-wall / transport) to the caller
     page = await db.page_get(url)
     crawl_ms = int((time.monotonic() - t_crawl) * 1000)
     md = (page or {}).get("fit_markdown") or ""
@@ -322,6 +352,68 @@ async def _resolve_page(url: str) -> dict:
         "index_ms": index_ms,
         "crawl_ms": crawl_ms,
     }
+
+
+async def _probe_crawl(url: str) -> dict:
+    """One on-demand crawl with bot-wall CF routing — shared by the awaited and
+    backgrounded paths. Raises crawler.CrawlError; never ChallengeDetected."""
+    try:
+        return await crawl_url(url, trigger="fetch")
+    except ChallengeDetected:
+        # Fast-lane probe hit a bot-wall: route the URL onto the CF challenge
+        # lane so the worker's CF drain runs the full turnstile loop (the
+        # on-demand read can't wait for the challenge to solve).
+        if not await db.queue_enqueue(url, "fetch", lane="cf"):
+            await db.queue_route_to_cf(url)
+        log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
+        raise crawler.CrawlError(url, _botwall_error(get_settings())) from None
+
+
+def _watch_background_crawl(task: asyncio.Task[dict], url: str) -> None:
+    """Done-callback for an on-demand crawl whose client has already moved on.
+
+    Logs the outcome and retrieves any exception so a backgrounded crawl can't
+    report "Task exception was never retrieved"."""
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        return
+    if exc is not None:
+        log.warning("background fetch crawl failed for %s: %s", url, exc)
+    else:
+        log.info(
+            "background fetch crawl stored %s while its client was gone - next fetch hits the index",
+            url,
+        )
+
+
+def _botwall_error(s: Settings) -> str:
+    """Client-facing bot-wall failure (a challenge solve is queued on the CF lane).
+
+    The retry ETA covers one debounced kick plus a full challenge budget — enough
+    for a typical turnstile solve to land in the index."""
+    eta = s.KICK_DEBOUNCE_S + int(s.CRAWL_CHALLENGE_BUDGET_S)
+    return f"bot-wall detected; a challenge solve has been queued - try again in ~{eta} seconds"
+
+
+def _timed_out_error(s: Settings) -> str:
+    """Client-facing on-demand crawl timeout (the URL was re-queued for the worker).
+
+    The retry ETA covers one debounced kick plus the worst-case full-budget
+    fast-lane ladder — enough to index a page that timed out under the probe."""
+    eta = s.KICK_DEBOUNCE_S + 2 * int(s.CRAWL_TIMEOUT_S)
+    return (
+        f"on-demand crawl timed out after {int(s.FETCH_TIMEOUT_S)} seconds; "
+        f"it keeps running in the background and was re-queued - try again in ~{eta} seconds"
+    )
+
+
+def _friendly_error(e: Exception) -> str:
+    """Client-facing text for a failed fetch leg. Pool-checkout timeouts are
+    reworded as an actionable 'database busy' instead of the raw psycopg_pool string."""
+    if isinstance(e, PoolTimeout):
+        return "database is busy (no free connection); try again in a few seconds"
+    return str(e)[:ERROR_MAX_LEN]
 
 
 def _validate_urls(urls: list[str]) -> tuple[list[str], list[dict]]:
@@ -351,7 +443,7 @@ async def _resolve_all(urls: list[str]) -> tuple[list[dict], list[dict]]:
             resolved.append(await _resolve_page(u))
         except Exception as e:
             log.warning("fetch_pages: %s failed: %s", u, e)
-            failed.append({"url": u, "error": str(e)[:ERROR_MAX_LEN]})
+            failed.append({"url": u, "error": _friendly_error(e)})
 
     await asyncio.gather(*(_one(u) for u in urls))
     return resolved, failed

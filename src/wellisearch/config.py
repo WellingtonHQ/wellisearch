@@ -27,9 +27,15 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "wellisearch"
     # Admin/maintenance DB used only to self-create the app DB at startup (§11).
     POSTGRES_ADMIN_DB: str = "postgres"
-    # Connection pool sizing (db.py AsyncConnectionPool).
+    # Connection pool sizing + checkout behavior (db.py AsyncConnectionPool).
+    # The ceiling covers a worker-tick burst (up to CRAWL_MAX_PARALLEL crawl+store
+    # statements) while several client fetches hold short statement connections.
     DB_POOL_MIN_SIZE: int = 2
-    DB_POOL_MAX_SIZE: int = 12
+    DB_POOL_MAX_SIZE: int = 24
+    # Max wait for a pooled connection before failing with psycopg_pool.PoolTimeout
+    # ("database busy") instead of hanging on the library's silent 30 s default —
+    # during tick bursts, client fetches used to queue behind exhausted checkouts.
+    DB_POOL_TIMEOUT_S: float = 10.0
 
     # --- search providers (failover pool + default order; the dashboard can
     # override the order at runtime — see provider_state.sort_order) ---
@@ -78,6 +84,14 @@ class Settings(BaseSettings):
     FETCH_DEFAULT_STRATEGY: str = "smart"  # even | head | priority | smart | tail
     FETCH_MAX_CHARS: int = 40000  # default total budget when max_chars omitted
     FETCH_PER_PAGE_CHARS: int = 12000  # default per-page cap
+    # On-demand read path (fetch.py): the crawl that answers a not-yet-indexed
+    # fetch runs with a reduced per-tier probe budget so bot-walls are detected in
+    # ~FETCH_PROBE_TIMEOUT_S instead of each tier burning its full CRAWL_*_TIMEOUT.
+    FETCH_PROBE_TIMEOUT_S: float = 15.0
+    # Hard deadline for that on-demand crawl (probe budget included): past it the
+    # fetch fails fast, leaves the crawl running in the background, and enqueues a
+    # full-budget retry so the client is never held open for minutes.
+    FETCH_TIMEOUT_S: float = 45.0
 
     # --- worker / queue (async indexing) ---
     WORKER_INTERVAL_MIN: float = 30

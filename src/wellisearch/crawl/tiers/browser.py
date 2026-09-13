@@ -18,6 +18,7 @@ from ..botwall import is_botwall
 from ..lane import CF, get_lane
 from ..policy import Policy
 from ..pool import get_cf_pool, get_pool
+from ..probe import clamp
 from ..results import ChallengeDetected, Rendered
 from ..wait import NETWORK_IDLE_TIMEOUT_S, network_idle, settle
 from . import register
@@ -83,7 +84,9 @@ class BrowserTier:
         """Drive the page: goto, settle, challenge handling, walmart recovery."""
         s = get_settings()
         is_cf = get_lane() == CF
-        timeout_s = s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S
+        # clamp(): no-op on the worker (no probe budget set); caps the read-path
+        # goto so a walled host escalates to bot-wall detection within budget.
+        timeout_s = clamp(s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S)
         start = time.monotonic()
         resp = await page.goto(
             url, wait_until="domcontentloaded", timeout=timeout_s * 1000
@@ -91,7 +94,7 @@ class BrowserTier:
         status = resp.status if resp is not None else 200
         await settle(page)
         if "network_idle" in p.waits:
-            await network_idle(page)
+            await network_idle(page, clamp(NETWORK_IDLE_TIMEOUT_S))
         html = await page.content()
 
         if is_cf:
@@ -153,10 +156,11 @@ class BrowserTier:
         """
         s = get_settings()
         is_cf = get_lane() == CF
-        timeout_s = s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S
+        # Clamped the same way _crawl clamps, so the engine backstop always matches.
+        timeout_s = clamp(s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S)
         budget = timeout_s + s.CRAWL_SETTLE_S
         if "network_idle" in p.waits:
-            budget += NETWORK_IDLE_TIMEOUT_S
+            budget += clamp(NETWORK_IDLE_TIMEOUT_S)
         if is_cf:
             budget += timeout_s  # full challenge loop budget
         # Walmart soft-404 search recovery (worst case): search goto + settle +

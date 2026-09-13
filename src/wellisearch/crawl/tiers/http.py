@@ -11,6 +11,7 @@ import time
 
 from ...config import get_settings
 from ..policy import Policy
+from ..probe import clamp
 from ..results import Rendered
 from . import register
 
@@ -35,7 +36,9 @@ class HttpTier:
         async with AsyncSession(impersonate="chrome") as sess:
             # The tiers are read-only (they fetch public pages and never send data),
             # so untrusted TLS certs are accepted by default — see CRAWL_IGNORE_SSL_ERRORS.
-            r = await sess.get(url, timeout=s.CRAWL_TIMEOUT_S, verify=not s.CRAWL_IGNORE_SSL_ERRORS)
+            r = await sess.get(
+                url, timeout=clamp(s.CRAWL_TIMEOUT_S), verify=not s.CRAWL_IGNORE_SSL_ERRORS
+            )
         ms = int((time.monotonic() - start) * 1000)
         return Rendered(
             html=r.text,
@@ -46,8 +49,9 @@ class HttpTier:
         )
 
     def worst_case_s(self, p: Policy) -> float:
-        """Worst-case budget: a single impersonated GET (CRAWL_TIMEOUT_S)."""
-        return float(get_settings().CRAWL_TIMEOUT_S)
+        """Worst-case budget: a single impersonated GET (CRAWL_TIMEOUT_S, clamped
+        by the active probe budget so the engine backstop matches reality)."""
+        return clamp(get_settings().CRAWL_TIMEOUT_S)
 
 
 def _extract_title(html: str) -> str | None:
