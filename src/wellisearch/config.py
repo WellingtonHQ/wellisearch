@@ -65,7 +65,10 @@ class Settings(BaseSettings):
     # Legacy local-hit cutoff; now only for ranking (see docs/ranking.md).
     SEARCH_MIN_SCORE: float = 0.06
     STALE_HOURS: int = 72
-    MAX_CHUNK_TOKENS: int = 800
+    # Chunk token budget for chunk_markdown; must stay under MiniLM's hard
+    # 512-token input cap (chunk.py estimates tokens as len(text)//4, so the
+    # headroom absorbs over-estimates and keeps long chunks from truncating).
+    MAX_CHUNK_TOKENS: int = 500
     # Per-statement backstop for the local search SQL (SET LOCAL, search only):
     # no query may hold a pooled connection for minutes. A timeout falls back
     # to the provider gateway (search_web.py) instead of stalling the request.

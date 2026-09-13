@@ -50,7 +50,7 @@ One row per indexed URL. `url` is the natural primary key.
 
 ## chunks
 
-The ranking unit. One row per chunk (≤ `MAX_CHUNK_TOKENS` = 800 tokens), in
+The ranking unit. One row per chunk (≤ `MAX_CHUNK_TOKENS` = 500 tokens), in
 document order.
 
 | Column | Type | Notes |

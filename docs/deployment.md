@@ -99,7 +99,7 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `LOCAL_MIN_COVERAGE` | `0.75` | local-hit gate: min fraction of query words a page must cover (see ranking.md) |
 | `SEARCH_MIN_SCORE` | `0.06` | legacy; now only for ranking (see ranking.md) |
 | `STALE_HOURS` | `72` | staleness hint for stats/dashboard |
-| `MAX_CHUNK_TOKENS` | `800` | chunk budget (~4 chars/token) |
+| `MAX_CHUNK_TOKENS` | `500` | chunk token budget; must stay under MiniLM's 512-token input window (est. ~4 chars/token) |
 
 ### Fetch truncation
 | Var | Default | Notes |
