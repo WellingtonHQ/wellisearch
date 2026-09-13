@@ -33,7 +33,9 @@ class HttpTier:
         s = get_settings()
         start = time.monotonic()
         async with AsyncSession(impersonate="chrome") as sess:
-            r = await sess.get(url, timeout=s.CRAWL_TIMEOUT_S)
+            # The tiers are read-only (they fetch public pages and never send data),
+            # so untrusted TLS certs are accepted by default — see CRAWL_IGNORE_SSL_ERRORS.
+            r = await sess.get(url, timeout=s.CRAWL_TIMEOUT_S, verify=not s.CRAWL_IGNORE_SSL_ERRORS)
         ms = int((time.monotonic() - start) * 1000)
         return Rendered(
             html=r.text,

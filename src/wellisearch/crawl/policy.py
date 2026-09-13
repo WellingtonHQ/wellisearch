@@ -29,6 +29,10 @@ POLICY: dict[str, Policy] = {
         "bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
     ),
     "boardgamegeek.com": Policy("bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated"),
+    # SvelteKit SERP: client-rendered results need a browser + network_idle wait; the raw HTML is empty.
+    "search.brave.com": Policy(
+        "brave", ("browser",), ("settle", "network_idle"), (), "shared",
+    ),
     "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "target.com": Policy(

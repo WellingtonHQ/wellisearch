@@ -54,6 +54,7 @@ from . import (  # noqa: E402,F401
     amazon,
     ap,
     bestbuy,
+    brave,
     greenhouse,
     guardian,
     nytimes,
