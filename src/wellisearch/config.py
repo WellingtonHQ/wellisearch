@@ -115,10 +115,7 @@ class Settings(BaseSettings):
     CRAWL_SETTLE_S: float = 2.0
     CRAWL_STEALTH_TIER: bool = True
     CRAWL_STEALTH_TIMEOUT_S: int = 120
-    # The crawl tiers only fetch public read-only pages (they never send data),
-    # so untrusted TLS certs (self-signed, expired, name-mismatch) are accepted
-    # by default and the content is indexed as-is; set to False for strict
-    # certificate verification. Applies to all three transport tiers.
+    # Crawl tiers only fetch read-only pages, so untrusted TLS certs are accepted by default.
     CRAWL_IGNORE_SSL_ERRORS: bool = True
 
     # --- server ---
