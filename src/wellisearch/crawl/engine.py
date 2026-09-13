@@ -52,7 +52,7 @@ async def crawl(url: str) -> CrawlResult:
             continue
         marker = botwall.is_botwall(r.html, r.status)
         if marker is not None:
-            attempts.append({"tier": name, "error": f"botwall: {marker}"})
+            attempts.append({"tier": name, "error": f"botwall: {marker}", "status": r.status})
             i += 1
             continue
         try:
@@ -74,7 +74,9 @@ async def crawl(url: str) -> CrawlResult:
                 flags=f.flags,
             )
         best = f
-        attempts.append({"tier": name, "error": "gate failed", "md_chars": len(f.md)})
+        attempts.append(
+            {"tier": name, "error": "gate failed", "status": r.status, "md_chars": len(f.md)}
+        )
         i += 1
     ms = int((time.monotonic() - start) * 1000)
     log.info("crawl %s failed (tier=none ms=%d)", url, ms)

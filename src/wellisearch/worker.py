@@ -5,8 +5,9 @@ Two jobs per tick:
       CRAWL_MAX_PARALLEL at a time → native crawler → store_page → done/failed
      (transient errors re-enqueued up to QUEUE_MAX_ATTEMPTS).
   2. refresh watchlist — only pages crawled > REFRESH_MIN_AGE_HOURS ago
-     (or never), ORDER BY fetch_count DESC, last_crawled ASC
-     LIMIT WORKER_BUDGET_PER_RUN → crawl → unchanged? skip re-embed.
+     (or never) and not in an active failure backoff, ORDER BY fetch_count
+     DESC, last_crawled ASC LIMIT WORKER_BUDGET_PER_RUN → crawl; a failed crawl
+     pushes the page into exponential refresh backoff (db.refresh_fail_bump).
 
 Paused (app_state.indexing_paused, dashboard toggle): a paused tick drains only
 manually enqueued rows and skips the watchlist refresh; on-demand paths that call
@@ -157,6 +158,9 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
             "UPDATE pages SET last_status = %s WHERE url = %s",
             (label, url),
         )
+        # Back the watchlist refresh off for this page: without it a dead URL is
+        # re-picked every tick until REFRESH_MIN_AGE_HOURS never stops being true.
+        await db.refresh_fail_bump(url)
         raise
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
@@ -179,6 +183,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
 
     ms = int((time.monotonic() - t0) * 1000)
     await db.log_crawl(url, trigger, status, ms, chunks_written=chunks_written)
+    await db.refresh_success_reset(url)
     log.info("crawl %s: %s (%d ms, %d chunks)", url, status, ms, chunks_written)
     return {"url": url, "status": status, "ms": ms, "chunks": chunks_written}
 
@@ -297,12 +302,17 @@ async def _drain_cf_queue(deadline: float, manual_only: bool = False) -> dict:
 
 
 async def _refresh_watchlist(deadline: float) -> dict:
-    """Refresh stale watchlist pages (by fetch_count), up to the per-tick budget."""
+    """Refresh stale watchlist pages (by fetch_count), up to the per-tick budget.
+
+    Pages in an active refresh-failure backoff (refresh_backoff_until, set by
+    db.refresh_fail_bump) are skipped so a dead URL is retried at most once per
+    backoff window instead of on every tick."""
     s = get_settings()
     min_age = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=s.REFRESH_MIN_AGE_HOURS)
     rows = await db.fetch_all(
         "SELECT url, fetch_count FROM pages WHERE disabled = false "
         "AND (last_crawled IS NULL OR last_crawled < %s) "
+        "AND (refresh_backoff_until IS NULL OR refresh_backoff_until <= now()) "
         "ORDER BY fetch_count DESC, last_crawled ASC LIMIT %s",
         (min_age, s.WORKER_BUDGET_PER_RUN),
     )
