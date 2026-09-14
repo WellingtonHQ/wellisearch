@@ -1,7 +1,5 @@
 """Regression tests: fetch._resolve_page deadline + cancel semantics (pure logic).
 
-The backgrounded-crawl watcher must be a done-callback — task.exception() on a
-pending task raises InvalidStateError, which used to mask the timeout error.
 Fakes only: no network, no Postgres."""
 from __future__ import annotations
 
@@ -32,7 +30,6 @@ class FakeDB:
         return True
 
 
-# Grab real settings once, before swapping get_settings.
 _REAL_SETTINGS = fetch_mod.get_settings()
 _DEADLINE_S = type(_REAL_SETTINGS)(FETCH_TIMEOUT_S=0.3, FETCH_PROBE_TIMEOUT_S=0.1)
 _CANCEL_S = type(_REAL_SETTINGS)(FETCH_TIMEOUT_S=5.0, FETCH_PROBE_TIMEOUT_S=0.1)

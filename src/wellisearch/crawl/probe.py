@@ -1,9 +1,4 @@
-"""On-demand probe budget for the read path (fetch_page/fetch_pages).
-
-While a fetch is in flight, an active budget clamps every tier's timeout so a
-walled host surfaces within ~FETCH_PROBE_TIMEOUT_S. A contextvar keeps it from
-leaking across tasks; the background worker never sets one and runs uncapped.
-"""
+"""On-demand probe budget for the read path (fetch_page/fetch_pages)."""
 from __future__ import annotations
 
 import contextvars

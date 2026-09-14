@@ -280,10 +280,7 @@ def _valid_url(url: str) -> bool:
 
 
 async def _resolve_page(url: str) -> dict:
-    """Content for one URL: from index when present, else crawl on demand (bounded by FETCH_TIMEOUT_S).
-
-    Carries `index_ms` and, when crawled, `crawl_ms` so callers can report the timing split.
-    """
+    """Content for one URL: from index when present, else crawl on demand."""
     s = get_settings()
     t_index = time.monotonic()
     page = await db.page_get(url)
@@ -299,7 +296,6 @@ async def _resolve_page(url: str) -> dict:
             "crawl_ms": 0,
         }
 
-    # Fast-fail if a CF challenge solve is already running for this URL (see _botwall_error).
     if await db.queue_challenge_in_flight(url):
         raise crawler.CrawlError(url, _botwall_error(s))
 
@@ -309,16 +305,14 @@ async def _resolve_page(url: str) -> dict:
     try:
         done, _pending = await asyncio.wait({task}, timeout=s.FETCH_TIMEOUT_S)
     except BaseException:
-        # Cancel before the deadline: watch the crawl via a done-callback (task.exception()
-        # only works once the task completes) and re-raise. No enqueue — the client is gone.
+        # Client is gone; keep watching the orphaned crawl, no re-enqueue.
         task.add_done_callback(lambda t: _watch_background_crawl(t, url))
         raise
     finally:
         reset_probe_budget(token)
 
     if not done or task.cancelled():
-        # Deadline hit: let the crawl finish in the background (it stores the page),
-        # watch it via a done-callback, and re-queue with full budget.
+        # Deadline hit: let the crawl finish in background, re-queue it.
         task.add_done_callback(lambda t: _watch_background_crawl(t, url))
         try:
             await db.queue_enqueue(url, "fetch")
@@ -344,12 +338,10 @@ async def _resolve_page(url: str) -> dict:
 
 
 async def _probe_crawl(url: str) -> dict:
-    """One on-demand crawl with bot-wall CF routing — shared by the awaited and
-    backgrounded paths. Raises crawler.CrawlError; never ChallengeDetected."""
+    """One on-demand crawl with bot-wall CF routing; raises CrawlError, never ChallengeDetected."""
     try:
         return await crawl_url(url, trigger="fetch")
     except ChallengeDetected:
-        # Bot-wall: route onto the CF challenge lane; the on-demand read can't wait for the solve.
         if not await db.queue_enqueue(url, "fetch", lane="cf"):
             await db.queue_route_to_cf(url)
         log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
@@ -357,8 +349,7 @@ async def _probe_crawl(url: str) -> dict:
 
 
 def _watch_background_crawl(task: asyncio.Task[dict], url: str) -> None:
-    """Done-callback for an abandoned on-demand crawl; runs only against a completed task,
-    so .exception() always succeeds and no 'never retrieved' warnings fire."""
+    """Done-callback that logs the outcome of an abandoned on-demand crawl."""
     try:
         exc = task.exception()
     except asyncio.CancelledError:

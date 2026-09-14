@@ -27,8 +27,6 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "wellisearch"
     # Admin/maintenance DB used only to self-create the app DB at startup (§11).
     POSTGRES_ADMIN_DB: str = "postgres"
-    # Connection pool sizing (db.py AsyncConnectionPool); the ceiling must cover a
-    # worker-tick burst plus concurrent client fetches.
     DB_POOL_MIN_SIZE: int = 2
     DB_POOL_MAX_SIZE: int = 24
     # Fail checkout with PoolTimeout ("database busy") instead of hanging on the default 30 s.
