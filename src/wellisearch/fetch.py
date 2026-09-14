@@ -320,17 +320,21 @@ async def _resolve_page(url: str) -> dict:
         done, _pending = await asyncio.wait({task}, timeout=s.FETCH_TIMEOUT_S)
     except BaseException:
         # Client went away (cancel) before the deadline: let the crawl finish in
-        # the background and keep its exception retrieved — no enqueue needed.
-        _watch_background_crawl(task, url)
+        # the background, watch it from a done-callback (.exception() is only
+        # valid once the task completes — calling it eagerly would raise
+        # InvalidStateError), and re-raise the original cancellation. No enqueue
+        # needed: the client is gone.
+        task.add_done_callback(lambda t: _watch_background_crawl(t, url))
         raise
     finally:
         reset_probe_budget(token)
 
     if not done or task.cancelled():
         # Deadline hit (or the client went away): leave the crawl running in the
-        # background — it stores the page when it finishes — enqueue a full-budget
-        # retry, and tell the client when to come back.
-        _watch_background_crawl(task, url)
+        # background — it stores the page when it finishes — watch it from a
+        # done-callback, enqueue a full-budget retry, and tell the client when to
+        # come back.
+        task.add_done_callback(lambda t: _watch_background_crawl(t, url))
         try:
             await db.queue_enqueue(url, "fetch")
         except Exception as e:
@@ -372,8 +376,9 @@ async def _probe_crawl(url: str) -> dict:
 def _watch_background_crawl(task: asyncio.Task[dict], url: str) -> None:
     """Done-callback for an on-demand crawl whose client has already moved on.
 
-    Logs the outcome and retrieves any exception so a backgrounded crawl can't
-    report "Task exception was never retrieved"."""
+    Registered via task.add_done_callback at the abandonment point (deadline or
+    cancel), so .exception() always runs against a completed task and retrieves
+    its exception — no "Task exception was never retrieved" warnings."""
     try:
         exc = task.exception()
     except asyncio.CancelledError:
