@@ -110,7 +110,8 @@ requires `python -m wellisearch.reindex` (see deployment.md).
 
 `chunk_markdown(markdown, MAX_CHUNK_TOKENS)` (`chunk.py`):
 
-- Budget ≈ `MAX_CHUNK_TOKENS` (800) tokens, estimated at **4 chars/token**.
+- Budget ≈ `MAX_CHUNK_TOKENS` (500) tokens, estimated at **4 chars/token**
+  (kept under MiniLM's hard 512-token input cap so no chunk tail is truncated on embed).
 - Splits on **heading boundaries** so each chunk starts at (or under) a
   heading (a chunk carries its own section context).
 - **Never splits inside a fenced code block** (a fence may overflow the

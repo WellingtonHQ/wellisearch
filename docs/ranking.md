@@ -25,7 +25,7 @@ chunks.
 - The query is parsed with `plainto_tsquery('english', query)`, which yields
   an **AND** of all lexemes.
 - **OR fallback**: if *no* chunk contains every lexeme (normal for
-  multi-word queries — the words rarely co-occur in one 800-token chunk),
+  multi-word queries — the words rarely co-occur in one 500-token chunk),
   the *same lexemes* are re-parsed with `&`→`|` and matched with OR. The
   fallback only runs when the AND leg returns zero rows
   (`NOT EXISTS (SELECT 1 FROM fts_and)`), so a strong exact-phrase page is

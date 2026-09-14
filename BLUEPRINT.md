@@ -56,7 +56,7 @@ The MCP server and the REST API share the same pipeline code; MCP is the LLM-fac
 | Fallback/discovery | Provider gateway (§1) — **SearXNG container no longer a required dependency**; wellisearch calls it only if `searxng` is in `SEARCH_PROVIDERS` and it's running. | Removes a container from the critical path; keeps keyless insurance if Wellington leaves SearXNG up. |
 | Indexing model | **Async.** Search path never blocks on a crawl. Enqueue → background worker drains (enqueue kicks a debounced immediate tick). `fetch_page`/`fetch_pages` crawl on demand as the authoritative read path. | Zero crawl latency in the response; read path is the true priority signal; crawl work shares one bounded parallelism budget. |
 | Deploy | **2 containers** in the wellisearch stack: `wellisearch` (app + worker) + shared `postgres`. Crawl4AI is the one external service dependency. No separate worker container, no host cron. Cross-project ordering via **app-side DB retry** (compose `depends_on` doesn't work across projects). | Low RAM (shared 64 GB host). Worker runs as an asyncio task in the app (crawl/embed is I/O-bound). `--once` mode available for manual runs. |
-| Searched content | Fit-markdown per page, chunked (~800 tokens), stored per-chunk with embeddings | Hybrid search: GIN FTS + GIN pg_trgm + HNSW cosine, fused in SQL. |
+| Searched content | Fit-markdown per page, chunked (~500 tokens), stored per-chunk with embeddings | Hybrid search: GIN FTS + GIN pg_trgm + HNSW cosine, fused in SQL. |
 
 **Rejected alternatives (research done):** Onyx (MIT, does it all natively but ~10 GB RAM / 7 services — too heavy), Karakeep (great MCP archive but no scheduled refresh, AGPL), Qdrant (good hybrid but 2nd DB for no gain at our scale), AnythingLLM/Khoj/Perplexica (wrong shape), SearXNG-as-primary (unreliable server-side scraping). Postgres wins on RAM, single-store, and Wellington's preference.
 
@@ -105,7 +105,7 @@ wellisearch/                   # THE APP REPO (opencode builds this)
     ├── config.py              # pydantic-settings from env (all knobs below)
     ├── db.py                  # pool, DDL apply, fn_search_local call, upsert helpers, startup retry, self-create DB
     ├── embed.py               # fastembed singleton, EMBED_MODEL constant, embed(texts)
-    ├── chunk.py               # markdown chunker (~800 tokens, respect headings)
+    ├── chunk.py               # markdown chunker (~500 tokens, respect headings)
     ├── crawler.py             # Crawl4AI REST client: fit_markdown(url), timeout, API key
     ├── providers/
     │   ├── __init__.py        # GATEWAY: ordered try, failover, quota ledger, normalization
@@ -373,7 +373,7 @@ SEARCH_K=5
 SEARCH_MAX_CRAWL=5
 SEARCH_MIN_SCORE=0.02
 STALE_HOURS=72
-MAX_CHUNK_TOKENS=800
+MAX_CHUNK_TOKENS=500
 # fetch_pages truncation (swappable strategies)
 FETCH_DEFAULT_STRATEGY=smart       # smart | head | tail | even | priority
 FETCH_MAX_CHARS=40000              # default total budget when max_chars omitted (null/0 = unlimited)

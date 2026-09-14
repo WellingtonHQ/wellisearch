@@ -9,6 +9,7 @@ Run: .venv/Scripts/python.exe tests/e2e_test.py
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import os
 from pathlib import Path
@@ -377,6 +378,109 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Worker pause / resume
+# ---------------------------------------------------------------------------
+
+async def test_worker_pause(c: httpx.AsyncClient) -> None:
+    """PATCH /api/worker roundtrip, state on both /api/stats surfaces, and the
+    carve-out: while paused, on-demand refresh (inline crawl) and manual seeds
+    (queue drain of source='manual' rows) keep working. Restores the prior
+    pause state afterwards (the target is a shared live instance)."""
+    inline_probe = DEFAULT_URL  # real page for the inline-while-paused refresh
+    seed_probe = "https://example.com"
+
+    r0 = await c.get("/api/stats")
+    prior_paused = bool(
+        ((r0.json().get("runtime") or {}).get("worker") or {}).get("paused")
+    ) if r0.status_code == 200 else False
+    try:
+        # normalize to running before the roundtrip
+        r = await c.patch("/api/worker", json={"paused": False})
+        check(
+            "pause API: resume shape (ok, paused=false, queue_pending int)",
+            r.status_code == 200 and r.json().get("ok") is True
+            and r.json().get("paused") is False
+            and isinstance(r.json().get("queue_pending"), int),
+            r.text[:160],
+        )
+
+        # pause -> state must be visible immediately on both stats surfaces
+        r = await c.patch("/api/worker", json={"paused": True})
+        check(
+            "pause API: pause shape (ok, paused=true)",
+            r.status_code == 200 and r.json().get("ok") is True and r.json().get("paused") is True,
+            r.text[:160],
+        )
+        r = await c.get("/api/stats")
+        w = ((r.json().get("runtime") or {}).get("worker") or {})
+        top = r.json().get("worker") or {}
+        check(
+            "paused: /api/stats shows it on runtime.worker AND top-level worker",
+            r.status_code == 200 and w.get("paused") is True and top.get("paused") is True,
+            f"runtime={json.dumps(w)[:100]} top={json.dumps(top)}",
+        )
+
+        # carve-out 1: on-demand refresh is an inline crawl — unaffected by pause
+        r = await c.post("/api/refresh", json={"url": inline_probe})
+        j = r.json() if r.status_code == 200 else {}
+        check(
+            "paused: /api/refresh still crawls (inline on-demand path)",
+            r.status_code == 200 and j.get("ok") is True and bool(j.get("ms")),
+            r.text[:160],
+        )
+
+        # carve-out 2: manual seeds keep draining while paused — record the
+        # seed time, then wait for a fresh last_crawled on the probe afterwards
+        seeded_at = dt.datetime.now(dt.timezone.utc)
+        r = await c.post("/api/seed", json={"url": seed_probe})
+        check(
+            "paused: /api/seed still accepts + queues (manual source)",
+            r.status_code == 200 and r.json().get("ok") is True,
+            r.text[:160],
+        )
+
+        # resume -> state clears on both surfaces; the kick drains what's queued
+        r = await c.patch("/api/worker", json={"paused": False})
+        check(
+            "pause API: resume after pause (ok, paused=false)",
+            r.status_code == 200 and r.json().get("ok") is True and r.json().get("paused") is False,
+            r.text[:160],
+        )
+        r = await c.get("/api/stats")
+        w = ((r.json().get("runtime") or {}).get("worker") or {})
+        top = r.json().get("worker") or {}
+        check(
+            "resumed: /api/stats back to running on both surfaces",
+            w.get("paused") is False and top.get("paused") is False,
+            f"runtime={json.dumps(w)[:100]} top={json.dumps(top)}",
+        )
+
+        # the seeded row was crawled (drained by a paused or resumed tick):
+        # poll until its last_crawled is at/after seed time (kick debounce ~5s)
+        drained = False
+        for _ in range(30):
+            rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
+            rows = rr.json().get("pages", []) if rr.status_code == 200 else []
+            hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
+            if hit:
+                ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=dt.timezone.utc)
+                drained = ts >= seeded_at - dt.timedelta(seconds=5)
+                if drained:
+                    break
+            await asyncio.sleep(2)
+        check(
+            "manual seed while paused got crawled (carve-out end-to-end)",
+            drained,
+            f"seed_probe={seed_probe} not freshly crawled within 60s",
+        )
+    finally:
+        # leave the shared instance exactly as found
+        await c.patch("/api/worker", json={"paused": prior_paused})
+
+
+# ---------------------------------------------------------------------------
 # Stats + Logs
 # ---------------------------------------------------------------------------
 
@@ -589,6 +693,7 @@ async def main() -> None:
         await test_fetch_bulk(c)
         await test_provider_failover(c)
         await test_provider_order(c)
+        await test_worker_pause(c)
         await test_stats_logs(c, url)
         await test_window_logs(c)
         await test_dashboard(c)

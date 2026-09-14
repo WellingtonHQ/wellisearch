@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import AsyncIterator
 import contextlib
 import datetime as dt
+import json
 import logging
 import pathlib
 import sys
@@ -37,10 +38,13 @@ SCHEMA_FILE = pathlib.Path(__file__).resolve().parent / "schema.sql"
 STARTUP_RETRIES = 10
 STARTUP_RETRY_S = 3.0
 
+# app_state keys (see schema.sql — general-purpose runtime flags)
+INDEXING_PAUSED_KEY = "indexing_paused"
+
 
 class Database:
     """Postgres access: pool, startup (self-create app DB + DDL), and helpers
-    for pages, quotas, provider state, logs, and the crawl queue."""
+    for pages, quotas, provider state, app-state flags, logs, and the crawl queue."""
 
     def __init__(self) -> None:
         """Starts with no pool; call startup() before use."""
@@ -84,6 +88,7 @@ class Database:
             conninfo=s.conninfo(),
             min_size=s.DB_POOL_MIN_SIZE,
             max_size=s.DB_POOL_MAX_SIZE,
+            timeout=s.DB_POOL_TIMEOUT_S,
             open=False,
             kwargs={"row_factory": dict_row},
             configure=_register_vector,
@@ -225,6 +230,36 @@ class Database:
             (urls,),
         )
 
+    async def refresh_fail_bump(self, url: str) -> int | None:
+        """Record a failed crawl of `url` against its watchlist-refresh streak.
+
+        The page is then excluded from the refresh pool until
+        now() + Settings.refresh_backoff_hours(new_streak). Returns the new
+        streak; None when the URL is not (yet) indexed — nothing to back off.
+        """
+        row = await self.fetch_one(
+            "SELECT refresh_fail_streak FROM pages WHERE url = %s",
+            (url,),
+        )
+        if row is None:
+            return None
+        streak = int(row["refresh_fail_streak"]) + 1
+        delay_h = get_settings().refresh_backoff_hours(streak)
+        await self.execute(
+            "UPDATE pages SET refresh_fail_streak = %s, "
+            "refresh_backoff_until = now() + (%s * interval '1 hour') WHERE url = %s",
+            (streak, delay_h, url),
+        )
+        return streak
+
+    async def refresh_success_reset(self, url: str) -> None:
+        """Clear a page's refresh-failure backoff after a successful crawl."""
+        await self.execute(
+            "UPDATE pages SET refresh_fail_streak = 0, "
+            "refresh_backoff_until = NULL WHERE url = %s",
+            (url,),
+        )
+
     # ---------------------------------------------------------------------------
     # Quota
     # ---------------------------------------------------------------------------
@@ -351,6 +386,35 @@ class Database:
                 """,
                 (name, i),
             )
+
+    # ---------------------------------------------------------------------------
+    # App State (runtime flags)
+    # ---------------------------------------------------------------------------
+
+    async def get_app_value(self, key: str) -> Any | None:
+        """The runtime value stored under `key` in app_state, or None when the
+        key is unset."""
+        row = await self.fetch_one("SELECT value FROM app_state WHERE key = %s", (key,))
+        return row["value"] if row else None
+
+    async def set_app_value(self, key: str, value: Any) -> None:
+        """Upsert the runtime value stored under `key` in app_state."""
+        await self.execute(
+            """
+            INSERT INTO app_state (key, value) VALUES (%s, %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+            """,
+            (key, json.dumps(value)),
+        )
+
+    async def worker_paused(self) -> bool:
+        """Whether the background worker is paused. An absent key means not
+        paused."""
+        return (await self.get_app_value(INDEXING_PAUSED_KEY)) is True
+
+    async def set_worker_paused(self, paused: bool) -> None:
+        """Pause or resume the background worker (persists across restarts)."""
+        await self.set_app_value(INDEXING_PAUSED_KEY, bool(paused))
 
     # ---------------------------------------------------------------------------
     # Logs
@@ -490,6 +554,15 @@ class Database:
                     "WHERE url = %s AND status = 'in_flight'",
                     (error, url),
                 )
+
+    async def queue_challenge_in_flight(self, url: str) -> bool:
+        """True when a CF challenge solve is already queued or running for `url`."""
+        row = await self.fetch_one(
+            "SELECT 1 AS in_flight FROM crawl_queue WHERE url = %s AND lane = 'cf' "
+            "AND status IN ('pending', 'in_flight')",
+            (url,),
+        )
+        return row is not None
 
     async def queue_route_to_cf(self, url: str) -> bool:
         """Move a fast-lane row (pending or in-flight) onto the CF challenge lane.

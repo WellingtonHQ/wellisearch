@@ -49,7 +49,7 @@
   <text x="765" y="234" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e3a8a">store_page (1 transaction)</text>
   <text x="765" y="256" text-anchor="middle" font-size="11" fill="#1d4ed8">sha256(markdown) unchanged</text>
   <text x="765" y="272" text-anchor="middle" font-size="10.5" fill="#64748b">+ same model → skip re-embed, bump crawl_count</text>
-  <text x="765" y="294" text-anchor="middle" font-size="11" fill="#1d4ed8">chunk_markdown ≤800 tokens</text>
+  <text x="765" y="294" text-anchor="middle" font-size="11" fill="#1d4ed8">chunk_markdown ≤500 tokens</text>
   <text x="765" y="310" text-anchor="middle" font-size="10.5" fill="#64748b">fence/heading-safe boundaries</text>
   <text x="765" y="330" text-anchor="middle" font-size="11" fill="#1d4ed8">fastembed → 384-d vectors</text>
   <text x="765" y="350" text-anchor="middle" font-size="11" fill="#1d4ed8">upsert pages · replace chunks</text>

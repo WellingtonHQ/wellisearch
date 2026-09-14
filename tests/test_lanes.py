@@ -17,6 +17,7 @@ import wellisearch.crawl.pool as pool_mod
 from wellisearch.crawl.results import ChallengeDetected, Rendered
 import wellisearch.crawl.tiers.browser as browser_tier
 import wellisearch.crawler as crawler_mod
+import wellisearch.fetch as fetch_mod
 import wellisearch.queue as queue_mod
 import wellisearch.worker as worker_mod
 
@@ -385,5 +386,208 @@ finally:
     worker_mod.db = orig_db
     worker_mod.crawl_url = orig_crawl_url
 print("OK worker routes ChallengeDetected to CF lane")
+
+# ---------------------------------------------------------------------------
+# 10. only the refresh trigger extends the watchlist-refresh backoff (fake db)
+# ---------------------------------------------------------------------------
+
+
+class BackoffDB:
+    def __init__(self) -> None:
+        """Initialize a fake db recording streak bumps."""
+        self.bumped = []
+
+    async def log_crawl(self, *args: object, **kwargs: object) -> None:
+        """No-op crawl-log sink."""
+
+    async def execute(
+        self,
+        sql: str,
+        params: tuple | None = None,
+    ) -> None:
+        """No-op statement sink (last_status update)."""
+
+    async def refresh_fail_bump(self, url: str) -> int | None:
+        """Record a streak bump."""
+        self.bumped.append(url)
+        return 1
+
+
+async def failing_fit_markdown(url: str) -> tuple[str | None, str]:
+    """Fake crawl that fails with a plain CrawlError (e.g. a DNS blip)."""
+    raise crawler_mod.CrawlError(url, "temporary name resolution failure")
+
+
+BACKOFF_URL = "https://example.com/backoff"
+orig_db_bk = worker_mod.db
+orig_fit_markdown = crawler_mod.fit_markdown
+
+for trigger in ("search", "manual", "fetch", "recrawl", "refresh"):
+    backoff_db = BackoffDB()
+    worker_mod.db = backoff_db
+    crawler_mod.fit_markdown = failing_fit_markdown
+    try:
+
+        async def attempt(t: str) -> None:
+            """Run one failing crawl+store and expect the CrawlError to propagate."""
+            try:
+                await worker_mod._crawl_and_store(BACKOFF_URL, t)
+                raise AssertionError("expected CrawlError to propagate")
+            except crawler_mod.CrawlError:
+                pass
+
+        asyncio.run(attempt(trigger))
+    finally:
+        worker_mod.db = orig_db_bk
+        crawler_mod.fit_markdown = orig_fit_markdown
+    if trigger == "refresh":
+        assert backoff_db.bumped == [BACKOFF_URL], (
+            f"trigger={trigger} must extend the refresh streak"
+        )
+    else:
+        assert backoff_db.bumped == [], (
+            f"trigger={trigger} must not bump the watchlist-refresh streak"
+        )
+
+print("OK only refresh-trigger failures extend the watchlist backoff")
+
+# ---------------------------------------------------------------------------
+# 11. read-path enqueues kick via queue.enqueue — and only on fresh inserts
+# ---------------------------------------------------------------------------
+
+
+class KickDB:
+    def __init__(self, insert_ok: bool) -> None:
+        """Initialize a fake db that records enqueue/route calls."""
+        self.inserted = []
+        self.routed = []
+        self.ok = insert_ok
+
+    async def queue_enqueue(
+        self,
+        url: str,
+        source: str,
+        lane: str = "fast",
+    ) -> bool:
+        """Record the enqueue and report whether a row was inserted."""
+        self.inserted.append((url, source, lane))
+        return self.ok
+
+    async def queue_route_to_cf(self, url: str) -> bool:
+        """Record CF routing of an already-pending URL."""
+        self.routed.append(url)
+        return True
+
+
+kicks = []
+orig_kick_worker = queue_mod.kick_worker
+orig_queue_db = queue_mod.db
+
+
+def record_kick() -> None:
+    """Count a kick instead of scheduling the debounced worker tick."""
+    kicks.append(1)
+
+
+queue_mod.kick_worker = record_kick
+try:
+    # a fresh insert kicks once; a rejected duplicate does not; lane passes through
+    queue_mod.db = KickDB(insert_ok=True)
+    assert (asyncio.run(queue_mod.enqueue("https://example.com/a", source="fetch"))) is True
+    assert len(kicks) == 1, "a fresh insert must kick the worker"
+
+    kicks.clear()
+    dup_db = KickDB(insert_ok=False)
+    queue_mod.db = dup_db
+    assert (asyncio.run(queue_mod.enqueue("https://example.com/a", source="fetch"))) is False
+    assert kicks == [], "a rejected (duplicate) enqueue must not kick the worker"
+
+    kicks.clear()
+    cf_db = KickDB(insert_ok=True)
+    queue_mod.db = cf_db
+    assert (asyncio.run(queue_mod.enqueue("https://example.com/a", source="fetch", lane="cf"))) is True
+    assert cf_db.inserted == [("https://example.com/a", "fetch", "cf")]
+    assert len(kicks) == 1, "a fresh CF-lane enqueue must kick the worker"
+
+    # fetch's bot-wall path enqueues onto the CF lane through queue.enqueue — a
+    # fresh insert kicks; a rejected one routes and stays quiet
+    kicks.clear()
+
+    async def wall_crawl_url(url: str, trigger: str) -> dict:
+        """Fake crawl that hits a bot-wall."""
+        raise ChallengeDetected(url)
+
+    orig_fetch_crawl, orig_fetch_db = fetch_mod.crawl_url, fetch_mod.db
+    fetch_mod.crawl_url = wall_crawl_url
+    try:
+        wall_db = KickDB(insert_ok=True)
+        queue_mod.db = fetch_mod.db = wall_db
+        try:
+            asyncio.run(fetch_mod._probe_crawl("https://example.com/walled"))
+            raise AssertionError("expected the bot-wall CrawlError to propagate")
+        except crawler_mod.CrawlError:
+            pass
+        assert wall_db.inserted == [("https://example.com/walled", "fetch", "cf")]
+        assert len(kicks) == 1, "a fresh CF-lane enqueue from fetch must kick the worker"
+
+        kicks.clear()
+        reroute_db = KickDB(insert_ok=False)
+        queue_mod.db = fetch_mod.db = reroute_db
+        try:
+            asyncio.run(fetch_mod._probe_crawl("https://example.com/walled"))
+            raise AssertionError("expected the bot-wall CrawlError to propagate")
+        except crawler_mod.CrawlError:
+            pass
+        assert reroute_db.routed == ["https://example.com/walled"]
+        assert kicks == [], "a rejected enqueue must not kick the worker"
+    finally:
+        fetch_mod.crawl_url, fetch_mod.db = orig_fetch_crawl, orig_fetch_db
+finally:
+    queue_mod.kick_worker = orig_kick_worker
+    queue_mod.db = orig_queue_db
+print("OK read-path enqueues kick via queue.enqueue on fresh inserts only")
+
+# ---------------------------------------------------------------------------
+# 12. grace-cancel of a deduped owner settles its shared future: joiners unblock
+#     with a CrawlError instead of hanging on shield(fut) forever
+# ---------------------------------------------------------------------------
+
+
+ORPHAN_URL = "https://example.com/dedup-orphan"
+
+
+async def _orphan_release() -> str:
+    """Cancel the crawl_deduped owner mid-crawl (what _adopt_orphan's timer does); report what a joiner sees."""
+    started = asyncio.Event()
+
+    async def owner_fn():
+        started.set()
+        await asyncio.sleep(30.0)  # hangs until its task is cancelled
+
+    async def unused_fn():
+        return None  # joiners never run fn — they dedup onto the in-flight future
+
+    owner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "fetch", owner_fn))
+    await started.wait()
+    joiner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "search", unused_fn))
+    await asyncio.sleep(0.1)  # let the joiner park on shield(fut)
+    owner.cancel()
+    try:
+        await asyncio.wait_for(asyncio.shield(joiner), timeout=3.0)
+    except crawler_mod.CrawlError as e:
+        released = str(e)
+    else:
+        raise AssertionError("joiner must receive a CrawlError when its owner is cancelled")
+    try:
+        await owner
+    except asyncio.CancelledError:
+        pass  # expected: the owner probe was grace-cancelled, not completed
+    return released
+
+
+released = asyncio.run(_orphan_release())
+assert ORPHAN_URL in released and "aborted" in released, f"joiner release must name the URL + reason: {released!r}"
+assert ORPHAN_URL not in queue_mod.INFLIGHT.urls(), f"dedup entry survived owner cancellation: {queue_mod.INFLIGHT.urls()}"
+print("OK grace-cancel of a deduped owner releases its joiners with CrawlError")
 
 print("ALL LANE TESTS PASSED")

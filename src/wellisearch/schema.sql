@@ -20,9 +20,15 @@ CREATE TABLE IF NOT EXISTS pages (
   crawl_count INT NOT NULL DEFAULT 0,
   fetch_count INT NOT NULL DEFAULT 0, -- the priority/prominence counter
   search_hit_count INT NOT NULL DEFAULT 0,
-  disabled BOOLEAN NOT NULL DEFAULT false
+  disabled BOOLEAN NOT NULL DEFAULT false,
+  refresh_fail_streak INT NOT NULL DEFAULT 0, -- consecutive failed crawls (refresh backoff)
+  refresh_backoff_until TIMESTAMPTZ -- excluded from the watchlist refresh until this time
 );
 CREATE INDEX IF NOT EXISTS pages_domain_idx ON pages (domain);
+-- existing databases: created before these columns existed — add them on first
+-- startup after this change (idempotent, like the crawl_queue.lane add)
+ALTER TABLE pages ADD COLUMN IF NOT EXISTS refresh_fail_streak INT NOT NULL DEFAULT 0;
+ALTER TABLE pages ADD COLUMN IF NOT EXISTS refresh_backoff_until TIMESTAMPTZ;
 
 -- ---------------------------------------------------------------------------
 -- chunks: per-chunk content + tsv (FTS) + embedding (vector)
@@ -131,6 +137,20 @@ CREATE TABLE IF NOT EXISTS provider_state (
 -- existing databases: created before the column existed — add it on first
 -- startup after this change (idempotent, like the CREATEs above)
 ALTER TABLE provider_state ADD COLUMN IF NOT EXISTS sort_order INT;
+
+-- ---------------------------------------------------------------------------
+-- app_state: general-purpose runtime flags (key → JSONB value). The home for
+-- dashboard toggles that must persist across restarts without a table of
+-- their own — e.g. indexing_paused, which pauses the background worker
+-- (queue drain + watchlist refresh) while on-demand paths keep running.
+-- Env supplies no defaults here; an absent key means the unset default
+-- (see db.worker_paused).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- ===========================================================================
 -- fn_search_local(query, qvec, k) — the hybrid ranking core: FTS + trigram +

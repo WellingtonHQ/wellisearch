@@ -227,6 +227,59 @@ assert garbage_reason("https://example.com/blog/post") is None
 print("OK url_filter")
 
 # ---------------------------------------------------------------------------
+# Refresh Backoff Formula
+# ---------------------------------------------------------------------------
+
+from wellisearch.config import Settings  # noqa: E402
+
+s = Settings(REFRESH_MIN_AGE_HOURS=72, REFRESH_BACKOFF_BASE_HOURS=6)
+assert s.refresh_backoff_hours(0) == 0, "a never-failed page has no backoff"
+assert [s.refresh_backoff_hours(k) for k in (1, 2, 3, 4)] == [6, 12, 24, 48]
+assert s.refresh_backoff_hours(5) == 72, "backoff caps at the min-age horizon"
+assert s.refresh_backoff_hours(99) == 72
+small = Settings(REFRESH_MIN_AGE_HOURS=10, REFRESH_BACKOFF_BASE_HOURS=6)
+assert small.refresh_backoff_hours(2) == 10, "cap applies even for a small min-age"
+print("OK refresh backoff formula")
+
+# ---------------------------------------------------------------------------
+# Failure Detail
+# ---------------------------------------------------------------------------
+
+from wellisearch.crawl.results import CrawlResult  # noqa: E402
+from wellisearch.crawler import failure_detail  # noqa: E402
+
+
+def _result(attempts):
+    return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
+
+
+d = failure_detail(
+    _result(
+        [
+            {"tier": "http", "error": "ssl.SSLCertVerificationError: certificate has expired"},
+            {"tier": "browser", "error": "botwall: turnstile-challenge", "status": 403},
+        ]
+    )
+)
+assert d.startswith("http: ssl.SSLCertVerificationError"), d
+assert "(http 403)" in d, d
+assert "CRAWL_IGNORE_SSL_ERRORS" in d, "cert error must carry the actionable hint"
+
+d = failure_detail(
+    _result([{"tier": "browser", "error": "gate failed", "status": 200, "md_chars": 87}])
+)
+assert "(http 200)" in d and "[87 chars]" in d, d
+assert "CRAWL_IGNORE_SSL_ERRORS" not in d, "non-TLS failures must not get the hint"
+
+d = failure_detail(
+    _result([{"tier": "stealth", "error": "httpx.ReadTimeout: request timed out"}])
+)
+assert "ReadTimeout" in d and "CRAWL_IGNORE_SSL_ERRORS" not in d, d
+
+assert failure_detail(_result([])) == "all tiers failed or empty markdown"
+print("OK failure detail")
+
+# ---------------------------------------------------------------------------
 # Version Single-Source-Of-Truth
 # ---------------------------------------------------------------------------
 
