@@ -8,6 +8,7 @@ import logging
 
 from wellisearch import crawler
 import wellisearch.fetch as fetch_mod
+import wellisearch.queue as queue_mod
 
 
 class FakeDB:
@@ -24,9 +25,9 @@ class FakeDB:
         return self.challenge_in_flight
 
     async def queue_enqueue(
-        self, url: str, trigger: str = "fetch", lane: str | None = None
+        self, url: str, source: str = "fetch", lane: str | None = None
     ) -> bool:
-        self.enqueued.append((url, trigger, lane))
+        self.enqueued.append((url, source, lane))
         return True
 
 
@@ -41,6 +42,18 @@ URL = "https://example.com/slow"
 _real_db = fetch_mod.db
 _real_crawl_url = fetch_mod.crawl_url
 _real_get_settings = fetch_mod.get_settings
+_real_queue_db = queue_mod.db
+_real_kick_worker = queue_mod.kick_worker
+
+kicks: list[bool] = []
+
+
+def _count_kick() -> None:
+    kicks.append(True)
+
+
+queue_mod.kick_worker = _count_kick
+
 fetch_log = logging.getLogger("wellisearch.fetch")
 _records: list[str] = []
 
@@ -65,6 +78,7 @@ async def failing_slow_crawl(url: str, trigger: str = "fetch") -> dict:
 
 db1 = FakeDB()
 fetch_mod.db = db1
+queue_mod.db = db1  # read-path enqueues go through queue.enqueue, not fetch's db
 fetch_mod.crawl_url = failing_slow_crawl
 fetch_mod.get_settings = lambda: _DEADLINE_S
 
@@ -84,12 +98,13 @@ assert isinstance(err, crawler.CrawlError), f"expected CrawlError, got {type(err
 msg = str(err)
 assert "The exception is not set." not in msg, f"InvalidStateError leaked to the client: {msg!r}"
 assert "timed out" in msg and "try again in ~" in msg, f"timeout hint missing: {msg!r}"
-assert db1.enqueued == [(URL, "fetch", None)], f"background retry was not enqueued: {db1.enqueued}"
+assert db1.enqueued == [(URL, "fetch", "fast")], f"background retry was not enqueued: {db1.enqueued}"
+assert kicks == [True], f"background retry must kick the worker debouncedly: {kicks}"
 assert any(
     r.startswith("background fetch crawl failed for") and "simulated tier failure" in r
     for r in _records
 ), f"done-callback never ran against the completed task; records={_records}"
-print("OK deadline path (hint + re-enqueue + background watch)")
+print("OK deadline path (hint + re-enqueue + kick + background watch)")
 
 # ---------------------------------------------------------------------------
 # Cancel path: client disconnect must propagate as CancelledError, not replaced
@@ -103,6 +118,7 @@ async def slow_crawl(url: str, trigger: str = "fetch") -> dict:
 
 db2 = FakeDB()
 fetch_mod.db = db2
+queue_mod.db = db2
 fetch_mod.crawl_url = slow_crawl
 fetch_mod.get_settings = lambda: _CANCEL_S  # long deadline: cancel must win, not the clock
 
@@ -127,6 +143,8 @@ print("OK cancel path (CancelledError preserved)")
 
 # ---------------------------------------------------------------------------
 fetch_mod.db = _real_db
+queue_mod.db = _real_queue_db
+queue_mod.kick_worker = _real_kick_worker
 fetch_mod.crawl_url = _real_crawl_url
 fetch_mod.get_settings = _real_get_settings
 print("ALL FETCH DEADLINE TESTS PASSED")
