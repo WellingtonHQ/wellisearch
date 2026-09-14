@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 from psycopg_pool import PoolTimeout
 
-from . import crawler
+from . import crawler, queue
 from .config import Settings, get_settings
 from .crawl.extractors.base import title_from_markdown
 from .crawl.probe import reset_probe_budget, set_probe_budget
@@ -315,7 +315,7 @@ async def _resolve_page(url: str) -> dict:
         # Deadline hit: let the crawl finish in background, re-queue it.
         task.add_done_callback(lambda t: _watch_background_crawl(t, url))
         try:
-            await db.queue_enqueue(url, "fetch")
+            await queue.enqueue(url, source="fetch")
         except Exception as e:
             log.warning("enqueue for background retry failed (%s): %s", url, e)
         raise crawler.CrawlError(url, _timed_out_error(s))
@@ -342,7 +342,7 @@ async def _probe_crawl(url: str) -> dict:
     try:
         return await crawl_url(url, trigger="fetch")
     except ChallengeDetected:
-        if not await db.queue_enqueue(url, "fetch", lane="cf"):
+        if not await queue.enqueue(url, source="fetch", lane="cf"):
             await db.queue_route_to_cf(url)
         log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
         raise crawler.CrawlError(url, _botwall_error(get_settings())) from None

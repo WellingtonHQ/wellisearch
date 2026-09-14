@@ -104,9 +104,10 @@ async def enqueue(
     url: str,
     source: str = "search",
     kick: bool = True,
+    lane: str = "fast",
 ) -> bool:
     """Enqueue a URL for background crawling. Returns True if newly inserted."""
-    inserted = await db.queue_enqueue(url, source)
+    inserted = await db.queue_enqueue(url, source, lane=lane)
     if inserted:
         log.info("queued %s (source=%s)", url, source)
         if kick:
