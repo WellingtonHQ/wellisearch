@@ -1,12 +1,8 @@
 """Regression tests: fetch._resolve_page deadline + cancel semantics (pure logic).
 
-The watcher for a backgrounded crawl must be a real done-callback — calling
-task.exception() eagerly on a pending task raises InvalidStateError, which used
-to (a) turn the timeout error into "The exception is not set." and skip the
-background re-enqueue, and (b) replace CancelledError on client disconnects.
-
-Fakes only: no network, no Postgres (db / crawl_url / get_settings are patched
-on the fetch module)."""
+The backgrounded-crawl watcher must be a done-callback — task.exception() on a
+pending task raises InvalidStateError, which used to mask the timeout error.
+Fakes only: no network, no Postgres."""
 from __future__ import annotations
 
 import asyncio
@@ -36,8 +32,7 @@ class FakeDB:
         return True
 
 
-# Build patched settings ONCE before swapping get_settings (calling the module's
-# own getter after patching it would recurse forever).
+# Grab real settings once, before swapping get_settings.
 _REAL_SETTINGS = fetch_mod.get_settings()
 _DEADLINE_S = type(_REAL_SETTINGS)(FETCH_TIMEOUT_S=0.3, FETCH_PROBE_TIMEOUT_S=0.1)
 _CANCEL_S = type(_REAL_SETTINGS)(FETCH_TIMEOUT_S=5.0, FETCH_PROBE_TIMEOUT_S=0.1)

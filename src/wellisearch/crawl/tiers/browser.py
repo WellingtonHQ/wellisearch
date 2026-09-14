@@ -84,8 +84,6 @@ class BrowserTier:
         """Drive the page: goto, settle, challenge handling, walmart recovery."""
         s = get_settings()
         is_cf = get_lane() == CF
-        # clamp(): no-op on the worker (no probe budget set); caps the read-path
-        # goto so a walled host escalates to bot-wall detection within budget.
         timeout_s = clamp(s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S)
         start = time.monotonic()
         resp = await page.goto(
@@ -156,7 +154,6 @@ class BrowserTier:
         """
         s = get_settings()
         is_cf = get_lane() == CF
-        # Clamped the same way _crawl clamps, so the engine backstop always matches.
         timeout_s = clamp(s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S)
         budget = timeout_s + s.CRAWL_SETTLE_S
         if "network_idle" in p.waits:

@@ -321,12 +321,7 @@ async def _refresh_watchlist(deadline: float) -> dict:
     if not rows:
         return {"refreshed": 0}
     log.info("tick: refresh watchlist (%d pages)", len(rows))
-    # Concurrency is bounded process-wide by the CRAWL_MAX_PARALLEL semaphore
-    # inside crawl_deduped (crawl_url): every worker path shares that cap, so a
-    # tick's burst of up to WORKER_BUDGET_PER_RUN refreshes can't exceed it and
-    # starve on-demand fetch crawls for slots. No per-pass semaphore here — one
-    # held locally would be a redundant second cap (it was previously created but
-    # never acquired).
+    # No per-pass semaphore here — crawl_deduped bounds concurrency process-wide.
     results = []
 
     async def refresh(row: dict) -> None:

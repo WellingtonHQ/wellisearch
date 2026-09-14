@@ -156,16 +156,13 @@ try:
     assert probe.clamp(90.0) == 15            # capped to the budget
     assert probe.clamp(5.0) == 5              # values already below stay
 
-    # Tier worst_case (what drives the engine's wait_for backstop) honors it too.
+    # Tier worst_case_s honors it too — that value drives the engine's backstop.
     http_cap = min(float(s.CRAWL_TIMEOUT_S), 15)
     stealth_cap = min(float(s.CRAWL_STEALTH_TIMEOUT_S), 15)
-    msg_http = "http worst_case must honor the probe budget"
-    assert http_tier.HttpTier().worst_case_s(p_default) == http_cap, msg_http
-    msg_stealth = "stealth worst_case must honor the probe budget"
-    assert stealth_tier.StealthTier().worst_case_s(p_default) == stealth_cap, msg_stealth
+    assert http_tier.HttpTier().worst_case_s(p_default) == http_cap
+    assert stealth_tier.StealthTier().worst_case_s(p_default) == stealth_cap
 
-    # Context isolation: a child task inherits the active budget (what _resolve_page's
-    # create_task relies on); a budget set inside one task never leaks to its sibling.
+    # A child task inherits the active budget; siblings never see each other's.
     async def with_budget() -> float:
         t2 = probe.set_probe_budget(7)
         try:
@@ -184,7 +181,7 @@ try:
 finally:
     probe.reset_probe_budget(tok)
 
-assert probe.get_probe_s() is None            # reset restores the worker no-cap path
+assert probe.get_probe_s() is None            # reset clears the budget
 assert http_tier.HttpTier().worst_case_s(p_default) == float(s.CRAWL_TIMEOUT_S)
 print("OK probe budget")
 

@@ -30,9 +30,6 @@ class StealthTier:
         p: Policy,
     ) -> Rendered:
         """Run the sync StealthySession in a worker thread."""
-        # Resolve the probe budget here (on this task's context) before hopping
-        # threads — _fetch_sync runs on a worker thread and must not rely on
-        # contextvar visibility across to_thread.
         timeout_s = clamp(get_settings().CRAWL_STEALTH_TIMEOUT_S)
         return await asyncio.to_thread(self._fetch_sync, url, timeout_s)
 

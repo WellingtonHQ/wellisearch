@@ -49,8 +49,7 @@ class HttpTier:
         )
 
     def worst_case_s(self, p: Policy) -> float:
-        """Worst-case budget: a single impersonated GET (CRAWL_TIMEOUT_S, clamped
-        by the active probe budget so the engine backstop matches reality)."""
+        """Worst-case budget: a single impersonated GET (probe-clamped CRAWL_TIMEOUT_S)."""
         return clamp(get_settings().CRAWL_TIMEOUT_S)
 
 

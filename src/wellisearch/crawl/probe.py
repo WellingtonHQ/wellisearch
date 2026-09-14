@@ -1,12 +1,8 @@
 """On-demand probe budget for the read path (fetch_page/fetch_pages).
 
-The read path crawls to answer quickly — or to fail fast and let the background
-worker retry with full budgets. While a fetch is in flight, an active probe
-budget clamps every tier's timeout so a throttled/blocked host surfaces a
-bot-wall detection within ~FETCH_PROBE_TIMEOUT_S instead of each tier burning its
-full CRAWL_*_TIMEOUT first. A contextvar (like lane.py) keeps concurrent tasks in
-the same loop from leaking each other's budget: the background worker path never
-sets one, so it always runs uncapped.
+While a fetch is in flight, an active budget clamps every tier's timeout so a
+walled host surfaces within ~FETCH_PROBE_TIMEOUT_S. A contextvar keeps it from
+leaking across tasks; the background worker never sets one and runs uncapped.
 """
 from __future__ import annotations
 
