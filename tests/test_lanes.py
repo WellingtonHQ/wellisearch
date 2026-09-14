@@ -547,4 +547,47 @@ finally:
     queue_mod.db = orig_queue_db
 print("OK read-path enqueues kick via queue.enqueue on fresh inserts only")
 
+# ---------------------------------------------------------------------------
+# 12. grace-cancel of a deduped owner settles its shared future: joiners unblock
+#     with a CrawlError instead of hanging on shield(fut) forever
+# ---------------------------------------------------------------------------
+
+
+ORPHAN_URL = "https://example.com/dedup-orphan"
+
+
+async def _orphan_release() -> str:
+    """Cancel the crawl_deduped owner mid-crawl (what _adopt_orphan's timer does); report what a joiner sees."""
+    started = asyncio.Event()
+
+    async def owner_fn():
+        started.set()
+        await asyncio.sleep(30.0)  # hangs until its task is cancelled
+
+    async def unused_fn():
+        return None  # joiners never run fn — they dedup onto the in-flight future
+
+    owner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "fetch", owner_fn))
+    await started.wait()
+    joiner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "search", unused_fn))
+    await asyncio.sleep(0.1)  # let the joiner park on shield(fut)
+    owner.cancel()
+    try:
+        await asyncio.wait_for(asyncio.shield(joiner), timeout=3.0)
+    except crawler_mod.CrawlError as e:
+        released = str(e)
+    else:
+        raise AssertionError("joiner must receive a CrawlError when its owner is cancelled")
+    try:
+        await owner
+    except asyncio.CancelledError:
+        pass  # expected: the owner probe was grace-cancelled, not completed
+    return released
+
+
+released = asyncio.run(_orphan_release())
+assert ORPHAN_URL in released and "aborted" in released, f"joiner release must name the URL + reason: {released!r}"
+assert ORPHAN_URL not in queue_mod.INFLIGHT.urls(), f"dedup entry survived owner cancellation: {queue_mod.INFLIGHT.urls()}"
+print("OK grace-cancel of a deduped owner releases its joiners with CrawlError")
+
 print("ALL LANE TESTS PASSED")

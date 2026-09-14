@@ -18,7 +18,7 @@ import logging
 from . import worker
 from .config import get_settings
 from .crawl.lane import CF, get_lane
-from .crawler import crawl_semaphore, cf_crawl_semaphore
+from .crawler import CrawlError, crawl_semaphore, cf_crawl_semaphore
 from .db import db
 
 log = logging.getLogger("wellisearch.queue")
@@ -87,6 +87,14 @@ async def crawl_deduped(
         if not fut.done():
             fut.set_result(result)
         return result
+    except asyncio.CancelledError:
+        # Owner was cancelled (its client left and the grace window expired): without
+        # settling, a dedup waiter would hang on shield(fut) forever.
+        if not fut.done():
+            fut.set_exception(CrawlError(url, "crawl aborted while its client was gone"))
+            # Mark retrieved: with no joined waiter, asyncio would log "never retrieved".
+            fut.exception()
+        raise
     except Exception as e:
         if not fut.done():
             fut.set_exception(e)

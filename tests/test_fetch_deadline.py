@@ -65,6 +65,7 @@ class _Capture(logging.Handler):
 
 _capture = _Capture()
 fetch_log.addHandler(_capture)
+fetch_log.setLevel(logging.INFO)  # capture INFO records too (grace expiry, stored-while-gone)
 
 # ---------------------------------------------------------------------------
 # Deadline path: crawl slower than FETCH_TIMEOUT_S -> timeout hint + re-enqueue
@@ -140,6 +141,71 @@ async def scenario_cancel():
 result = asyncio.run(scenario_cancel())
 assert result == "cancelled", f"cancellation was swallowed/replaced: {result!r}"
 print("OK cancel path (CancelledError preserved)")
+
+# ---------------------------------------------------------------------------
+# Grace window: an orphan is stopped after FETCH_ORPHAN_GRACE_S, freeing slot + dedup;
+# a probe that finishes inside its grace window stores normally (no cancel)
+# ---------------------------------------------------------------------------
+
+
+URL_G1 = "https://example.com/hang"      # never finishes -> the grace timer must stop it
+URL_G2 = "https://example.com/finishes"  # past the deadline but inside grace -> let it store
+hang_cancelled: list[bool] = []
+
+
+async def grace_crawl(url: str, trigger: str = "fetch") -> dict:
+    if url == URL_G2:
+        await asyncio.sleep(0.5)  # past the 0.3 s deadline but inside the 1.0 s grace
+        return {"url": url}
+    try:
+        await asyncio.sleep(30.0)
+    except asyncio.CancelledError:
+        hang_cancelled.append(True)
+        raise
+
+
+_GRACE_S = type(_REAL_SETTINGS)(
+    FETCH_TIMEOUT_S=0.3, FETCH_PROBE_TIMEOUT_S=0.1, FETCH_ORPHAN_GRACE_S=1.0
+)
+
+db3 = FakeDB()
+fetch_mod.db = db3
+queue_mod.db = db3
+fetch_mod.crawl_url = grace_crawl
+fetch_mod.get_settings = lambda: _GRACE_S
+
+
+async def scenario_grace(url: str):
+    err: Exception | None = None
+    try:
+        await fetch_mod._resolve_page(url)
+    except Exception as e:  # noqa: BLE001 - asserting on the exact error type
+        err = e
+    await asyncio.sleep(1.6)  # grace elapses (or crawl finishes); callback fires in-loop
+    return err
+
+
+err_g1 = asyncio.run(scenario_grace(URL_G1))
+assert isinstance(err_g1, crawler.CrawlError), f"expected CrawlError for {URL_G1}: {type(err_g1)}: {err_g1}"
+assert "timed out" in str(err_g1), f"timeout hint missing: {str(err_g1)!r}"
+assert hang_cancelled == [True], "grace window did not cancel the hanging orphan probe"
+assert any(
+    r.startswith("orphan grace expired") and URL_G1 in r for r in _records
+), f"no grace-expiry log; records={_records[-4:]}"
+assert queue_mod.INFLIGHT.urls() == [], f"dedup entry survived its grace expiry: {queue_mod.INFLIGHT.urls()}"
+
+err_g2 = asyncio.run(scenario_grace(URL_G2))
+assert isinstance(err_g2, crawler.CrawlError), f"deadline must still raise for {URL_G2}: {type(err_g2)}: {err_g2}"
+assert "timed out" in str(err_g2), f"timeout hint missing: {str(err_g2)!r}"
+assert hang_cancelled == [True], "grace timer cancelled a probe that finished inside its window"
+assert any(
+    r.startswith("background fetch crawl stored") and URL_G2 in r for r in _records
+), f"no stored log for {URL_G2}; records={_records[-4:]}"
+assert not any(URL_G2 in r for r in _records if r.startswith("orphan grace expired")), (
+    "grace expiry logged for a probe that finished inside its window"
+)
+assert db3.enqueued == [(URL_G1, "fetch", "fast"), (URL_G2, "fetch", "fast")], f"both deadlines must re-queue: {db3.enqueued}"
+print("OK grace window (orphan stopped + dedup freed; in-window finish untouched)")
 
 # ---------------------------------------------------------------------------
 fetch_mod.db = _real_db

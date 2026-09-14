@@ -112,7 +112,8 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `FETCH_MAX_CHARS` | `40000` | total budget when `max_chars` omitted (`0` = unlimited) |
 | `FETCH_PER_PAGE_CHARS` | `12000` | per-page cap |
 | `FETCH_PROBE_TIMEOUT_S` | `15` | per-tier timeout cap while a fetch crawls on demand — bot-walls surface within one probe instead of each tier burning its full crawl timeout; the background worker is always uncapped |
-| `FETCH_TIMEOUT_S` | `45` | hard deadline for one on-demand crawl (incl. waiting for a free crawl slot); past it the fetch fails fast with a retry hint, the crawl keeps running in the background, and the URL is re-queued for the worker |
+| `FETCH_TIMEOUT_S` | `45` | hard deadline for one on-demand crawl (incl. waiting for a free crawl slot); past it the fetch fails fast with a retry hint and the URL is re-queued for the worker; the abandoned probe then runs under the grace window below |
+| `FETCH_ORPHAN_GRACE_S` | `15` | grace after a client abandons an on-demand probe (deadline or disconnect): its in-flight tier attempt gets this long to finish and store before we stop it — default = one per-tier budget, so only further failover attempts are cut off and the slot + dedup entry can't be held indefinitely |
 
 ### Worker / queue
 | Var | Default | Notes |

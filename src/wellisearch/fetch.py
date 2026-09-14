@@ -305,15 +305,15 @@ async def _resolve_page(url: str) -> dict:
     try:
         done, _pending = await asyncio.wait({task}, timeout=s.FETCH_TIMEOUT_S)
     except BaseException:
-        # Client is gone; keep watching the orphaned crawl, no re-enqueue.
-        task.add_done_callback(lambda t: _watch_background_crawl(t, url))
+        # Client is gone; adopt the orphan probe (grace-bounded), no re-enqueue.
+        _adopt_orphan(task, url)
         raise
     finally:
         reset_probe_budget(token)
 
     if not done or task.cancelled():
-        # Deadline hit: let the crawl finish in background, re-queue it.
-        task.add_done_callback(lambda t: _watch_background_crawl(t, url))
+        # Deadline hit: adopt the orphan probe and re-queue the URL.
+        _adopt_orphan(task, url)
         try:
             await queue.enqueue(url, source="fetch")
         except Exception as e:
@@ -348,19 +348,34 @@ async def _probe_crawl(url: str) -> dict:
         raise crawler.CrawlError(url, _botwall_error(get_settings())) from None
 
 
-def _watch_background_crawl(task: asyncio.Task[dict], url: str) -> None:
-    """Done-callback that logs the outcome of an abandoned on-demand crawl."""
-    try:
-        exc = task.exception()
-    except asyncio.CancelledError:
-        return
-    if exc is not None:
-        log.warning("background fetch crawl failed for %s: %s", url, exc)
-    else:
-        log.info(
-            "background fetch crawl stored %s while its client was gone - next fetch hits the index",
-            url,
-        )
+def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
+    """Take over a probe whose client left first. An in-flight tier attempt gets one grace
+    window (default = its full per-tier budget, see config) to finish and store; then we stop
+    the orphan so it stops holding its crawl slot + dedup entry. Logs the outcome either way."""
+    grace = get_settings().FETCH_ORPHAN_GRACE_S
+
+    def _expire() -> None:
+        if not task.done():
+            log.info("orphan grace expired; stopping abandoned fetch crawl for %s", url)
+            task.cancel()
+
+    timer = asyncio.get_running_loop().call_later(grace, _expire)
+
+    def _watched(t: asyncio.Task[dict]) -> None:
+        timer.cancel()
+        try:
+            exc = t.exception()
+        except asyncio.CancelledError:
+            return
+        if exc is not None:
+            log.warning("background fetch crawl failed for %s: %s", url, exc)
+        else:
+            log.info(
+                "background fetch crawl stored %s while its client was gone - next fetch hits the index",
+                url,
+            )
+
+    task.add_done_callback(_watched)
 
 
 def _botwall_error(s: Settings) -> str:
