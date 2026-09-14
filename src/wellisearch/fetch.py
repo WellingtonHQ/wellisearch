@@ -18,9 +18,12 @@ import logging
 import time
 from urllib.parse import urlparse
 
-from . import crawler
-from .config import get_settings
+from psycopg_pool import PoolTimeout
+
+from . import crawler, queue
+from .config import Settings, get_settings
 from .crawl.extractors.base import title_from_markdown
+from .crawl.probe import reset_probe_budget, set_probe_budget
 from .crawl.results import ChallengeDetected
 from .db import db
 from .serialize import format_timing
@@ -147,7 +150,7 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
         page = await _resolve_page(url)
     except Exception as e:
         log.warning("fetch_page failed for %s: %s", url, e)
-        return {"ok": False, "error": str(e), "url": url, "timing": _timing()}
+        return {"ok": False, "error": _friendly_error(e), "url": url, "timing": _timing()}
 
     await db.bump_fetch_count(url)
 
@@ -277,11 +280,8 @@ def _valid_url(url: str) -> bool:
 
 
 async def _resolve_page(url: str) -> dict:
-    """Content for one URL: from index when present, else crawl on demand.
-
-    Carries `index_ms` (the Postgres lookup) and, when crawled, `crawl_ms`
-    (the native-crawler round-trip + store) so callers can report the timing split.
-    """
+    """Content for one URL: from index when present, else crawl on demand."""
+    s = get_settings()
     t_index = time.monotonic()
     page = await db.page_get(url)
     index_ms = int((time.monotonic() - t_index) * 1000)
@@ -296,18 +296,31 @@ async def _resolve_page(url: str) -> dict:
             "crawl_ms": 0,
         }
 
-    # crawl on demand (in-flight-deduped inside crawl_url)
+    if await db.queue_challenge_in_flight(url):
+        raise crawler.CrawlError(url, _botwall_error(s))
+
     t_crawl = time.monotonic()
+    token = set_probe_budget(s.FETCH_PROBE_TIMEOUT_S)  # inherited by the crawl task below
+    task = asyncio.create_task(_probe_crawl(url))
     try:
-        r = await crawl_url(url, trigger="fetch")
-    except ChallengeDetected:
-        # Fast-lane probe hit a bot-wall: route the URL onto the CF challenge
-        # lane so the worker's CF drain runs the full turnstile loop, then fail
-        # gracefully (the on-demand read can't wait for the challenge to solve).
-        if not await db.queue_enqueue(url, "fetch", lane="cf"):
-            await db.queue_route_to_cf(url)
-        log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
-        raise crawler.CrawlError(url, "bot-wall detected; routed to the CF challenge lane")
+        done, _pending = await asyncio.wait({task}, timeout=s.FETCH_TIMEOUT_S)
+    except BaseException:
+        # Client is gone; adopt the orphan probe (grace-bounded), no re-enqueue.
+        _adopt_orphan(task, url)
+        raise
+    finally:
+        reset_probe_budget(token)
+
+    if not done or task.cancelled():
+        # Deadline hit: adopt the orphan probe and re-queue the URL.
+        _adopt_orphan(task, url)
+        try:
+            await queue.enqueue(url, source="fetch")
+        except Exception as e:
+            log.warning("enqueue for background retry failed (%s): %s", url, e)
+        raise crawler.CrawlError(url, _timed_out_error(s))
+
+    task.result()  # re-raises the crawl's CrawlError if any
     page = await db.page_get(url)
     crawl_ms = int((time.monotonic() - t_crawl) * 1000)
     md = (page or {}).get("fit_markdown") or ""
@@ -322,6 +335,69 @@ async def _resolve_page(url: str) -> dict:
         "index_ms": index_ms,
         "crawl_ms": crawl_ms,
     }
+
+
+async def _probe_crawl(url: str) -> dict:
+    """One on-demand crawl with bot-wall CF routing; raises CrawlError, never ChallengeDetected."""
+    try:
+        return await crawl_url(url, trigger="fetch")
+    except ChallengeDetected:
+        if not await queue.enqueue(url, source="fetch", lane="cf"):
+            await db.queue_route_to_cf(url)
+        log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
+        raise crawler.CrawlError(url, _botwall_error(get_settings())) from None
+
+
+def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
+    """Take over a probe whose client left first. An in-flight tier attempt gets one grace
+    window (default = its full per-tier budget, see config) to finish and store; then we stop
+    the orphan so it stops holding its crawl slot + dedup entry. Logs the outcome either way."""
+    grace = get_settings().FETCH_ORPHAN_GRACE_S
+
+    def _expire() -> None:
+        if not task.done():
+            log.info("orphan grace expired; stopping abandoned fetch crawl for %s", url)
+            task.cancel()
+
+    timer = asyncio.get_running_loop().call_later(grace, _expire)
+
+    def _watched(t: asyncio.Task[dict]) -> None:
+        timer.cancel()
+        try:
+            exc = t.exception()
+        except asyncio.CancelledError:
+            return
+        if exc is not None:
+            log.warning("background fetch crawl failed for %s: %s", url, exc)
+        else:
+            log.info(
+                "background fetch crawl stored %s while its client was gone - next fetch hits the index",
+                url,
+            )
+
+    task.add_done_callback(_watched)
+
+
+def _botwall_error(s: Settings) -> str:
+    """Client-facing bot-wall failure; retry ETA covers one kick plus a full challenge budget."""
+    eta = s.KICK_DEBOUNCE_S + int(s.CRAWL_CHALLENGE_BUDGET_S)
+    return f"bot-wall detected; a challenge solve has been queued - try again in ~{eta} seconds"
+
+
+def _timed_out_error(s: Settings) -> str:
+    """Client-facing on-demand crawl timeout (the URL was re-queued); retry ETA covers the fast-lane ladder."""
+    eta = s.KICK_DEBOUNCE_S + 2 * int(s.CRAWL_TIMEOUT_S)
+    return (
+        f"on-demand crawl timed out after {int(s.FETCH_TIMEOUT_S)} seconds; "
+        f"it keeps running in the background and was re-queued - try again in ~{eta} seconds"
+    )
+
+
+def _friendly_error(e: Exception) -> str:
+    """Client-facing text for a failed fetch leg; PoolTimeout becomes an actionable 'database busy'."""
+    if isinstance(e, PoolTimeout):
+        return "database is busy (no free connection); try again in a few seconds"
+    return str(e)[:ERROR_MAX_LEN]
 
 
 def _validate_urls(urls: list[str]) -> tuple[list[str], list[dict]]:
@@ -351,7 +427,7 @@ async def _resolve_all(urls: list[str]) -> tuple[list[dict], list[dict]]:
             resolved.append(await _resolve_page(u))
         except Exception as e:
             log.warning("fetch_pages: %s failed: %s", u, e)
-            failed.append({"url": u, "error": str(e)[:ERROR_MAX_LEN]})
+            failed.append({"url": u, "error": _friendly_error(e)})
 
     await asyncio.gather(*(_one(u) for u in urls))
     return resolved, failed

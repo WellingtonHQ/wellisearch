@@ -321,7 +321,7 @@ async def _refresh_watchlist(deadline: float) -> dict:
     if not rows:
         return {"refreshed": 0}
     log.info("tick: refresh watchlist (%d pages)", len(rows))
-    sem = asyncio.Semaphore(s.CRAWL_MAX_PARALLEL)
+    # No per-pass semaphore here — crawl_deduped bounds concurrency process-wide.
     results = []
 
     async def refresh(row: dict) -> None:

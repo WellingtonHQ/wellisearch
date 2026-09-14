@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "wellisearch"
     # Admin/maintenance DB used only to self-create the app DB at startup (§11).
     POSTGRES_ADMIN_DB: str = "postgres"
-    # Connection pool sizing (db.py AsyncConnectionPool).
     DB_POOL_MIN_SIZE: int = 2
-    DB_POOL_MAX_SIZE: int = 12
+    DB_POOL_MAX_SIZE: int = 24
+    # Fail checkout with PoolTimeout ("database busy") instead of hanging on the default 30 s.
+    DB_POOL_TIMEOUT_S: float = 10.0
 
     # --- search providers (failover pool + default order; the dashboard can
     # override the order at runtime — see provider_state.sort_order) ---
@@ -78,6 +79,13 @@ class Settings(BaseSettings):
     FETCH_DEFAULT_STRATEGY: str = "smart"  # even | head | priority | smart | tail
     FETCH_MAX_CHARS: int = 40000  # default total budget when max_chars omitted
     FETCH_PER_PAGE_CHARS: int = 12000  # default per-page cap
+    FETCH_PROBE_TIMEOUT_S: float = 15.0  # per-tier timeout cap while a fetch crawls on demand
+    FETCH_TIMEOUT_S: float = 45.0  # hard deadline for one on-demand crawl; past it the URL is re-queued
+    # Grace after an on-demand probe's client leaves (cancel / deadline): its in-flight tier
+    # attempt gets this long to finish and store, then we stop the orphan so it stops holding
+    # its crawl slot + dedup entry. Default = one per-tier budget, so only *further* failover
+    # attempts are cut off. Worker crawls have no grace — nothing left waiting on them.
+    FETCH_ORPHAN_GRACE_S: float = 15.0
 
     # --- worker / queue (async indexing) ---
     WORKER_INTERVAL_MIN: float = 30

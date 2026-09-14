@@ -1,14 +1,17 @@
-"""Unit tests: native crawl core (policy, botwall, signals, extractor, engine loop)."""
+"""Unit tests: native crawl core (policy, botwall, signals, extractor, engine loop, probe budget)."""
 from __future__ import annotations
 
 import asyncio
 
-from wellisearch.crawl import engine, tiers
+from wellisearch.config import get_settings
+from wellisearch.crawl import engine, probe, tiers
 from wellisearch.crawl.botwall import is_botwall
 from wellisearch.crawl.extractors.base import GenericExtractor
 from wellisearch.crawl.policy import Policy, match
 from wellisearch.crawl.results import Rendered
 from wellisearch.crawl.signals import find_price, find_stock
+import wellisearch.crawl.tiers.http as http_tier
+import wellisearch.crawl.tiers.stealth as stealth_tier
 
 # ---------------------------------------------------------------------------
 # Policy
@@ -137,4 +140,50 @@ assert res.ok is False
 assert any("botwall" in a.get("error", "") for a in res.attempts), res.attempts
 print("OK engine loop")
 
+# ---------------------------------------------------------------------------
+# Probe Budget (read-path fast detection)
+# ---------------------------------------------------------------------------
+
+s = get_settings()
+p_default = match("https://example.com/x")
+
+assert probe.get_probe_s() is None            # no budget set by default (worker path)
+assert probe.clamp(45.0) == 45.0              # ...so clamping is a no-op there
+
+tok = probe.set_probe_budget(15)
+try:
+    assert probe.get_probe_s() == 15
+    assert probe.clamp(90.0) == 15            # capped to the budget
+    assert probe.clamp(5.0) == 5              # values already below stay
+
+    # Tier worst_case_s honors it too — that value drives the engine's backstop.
+    http_cap = min(float(s.CRAWL_TIMEOUT_S), 15)
+    stealth_cap = min(float(s.CRAWL_STEALTH_TIMEOUT_S), 15)
+    assert http_tier.HttpTier().worst_case_s(p_default) == http_cap
+    assert stealth_tier.StealthTier().worst_case_s(p_default) == stealth_cap
+
+    # A child task inherits the active budget; siblings never see each other's.
+    async def with_budget() -> float:
+        t2 = probe.set_probe_budget(7)
+        try:
+            return await asyncio.sleep(0, result=probe.clamp(90.0))
+        finally:
+            probe.reset_probe_budget(t2)
+
+    async def sibling() -> float:
+        return await asyncio.sleep(0, result=probe.clamp(90.0))
+
+    async def iso() -> list[float]:
+        return await asyncio.gather(sibling(), with_budget())
+
+    got = asyncio.run(iso())
+    assert got == [15.0, 7.0], f"task-context isolation broken: {got}"
+finally:
+    probe.reset_probe_budget(tok)
+
+assert probe.get_probe_s() is None            # reset clears the budget
+assert http_tier.HttpTier().worst_case_s(p_default) == float(s.CRAWL_TIMEOUT_S)
+print("OK probe budget")
+
+# ---------------------------------------------------------------------------
 print("ALL CRAWL CORE TESTS PASSED")

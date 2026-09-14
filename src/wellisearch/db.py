@@ -88,6 +88,7 @@ class Database:
             conninfo=s.conninfo(),
             min_size=s.DB_POOL_MIN_SIZE,
             max_size=s.DB_POOL_MAX_SIZE,
+            timeout=s.DB_POOL_TIMEOUT_S,
             open=False,
             kwargs={"row_factory": dict_row},
             configure=_register_vector,
@@ -553,6 +554,15 @@ class Database:
                     "WHERE url = %s AND status = 'in_flight'",
                     (error, url),
                 )
+
+    async def queue_challenge_in_flight(self, url: str) -> bool:
+        """True when a CF challenge solve is already queued or running for `url`."""
+        row = await self.fetch_one(
+            "SELECT 1 AS in_flight FROM crawl_queue WHERE url = %s AND lane = 'cf' "
+            "AND status IN ('pending', 'in_flight')",
+            (url,),
+        )
+        return row is not None
 
     async def queue_route_to_cf(self, url: str) -> bool:
         """Move a fast-lane row (pending or in-flight) onto the CF challenge lane.
