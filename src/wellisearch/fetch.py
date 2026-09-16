@@ -296,12 +296,17 @@ async def _resolve_page(url: str) -> dict:
             "crawl_ms": 0,
         }
 
+    # While the worker is paused, fetch-sourced queue rows (bot-wall challenges,
+    # timeout re-queues) won't run until resume — error text must say so instead
+    # of quoting a seconds-based retry ETA that would never come true.
+    paused = await db.worker_paused()
+
     if await db.queue_challenge_in_flight(url):
-        raise crawler.CrawlError(url, _botwall_error(s))
+        raise crawler.CrawlError(url, _botwall_error(s, paused))
 
     t_crawl = time.monotonic()
     token = set_probe_budget(s.FETCH_PROBE_TIMEOUT_S)  # inherited by the crawl task below
-    task = asyncio.create_task(_probe_crawl(url))
+    task = asyncio.create_task(_probe_crawl(url, paused))
     try:
         done, _pending = await asyncio.wait({task}, timeout=s.FETCH_TIMEOUT_S)
     except BaseException:
@@ -318,7 +323,7 @@ async def _resolve_page(url: str) -> dict:
             await queue.enqueue(url, source="fetch")
         except Exception as e:
             log.warning("enqueue for background retry failed (%s): %s", url, e)
-        raise crawler.CrawlError(url, _timed_out_error(s))
+        raise crawler.CrawlError(url, _timed_out_error(s, paused))
 
     task.result()  # re-raises the crawl's CrawlError if any
     page = await db.page_get(url)
@@ -337,7 +342,7 @@ async def _resolve_page(url: str) -> dict:
     }
 
 
-async def _probe_crawl(url: str) -> dict:
+async def _probe_crawl(url: str, paused: bool = False) -> dict:
     """One on-demand crawl with bot-wall CF routing; raises CrawlError, never ChallengeDetected."""
     try:
         return await crawl_url(url, trigger="fetch")
@@ -345,7 +350,7 @@ async def _probe_crawl(url: str) -> dict:
         if not await queue.enqueue(url, source="fetch", lane="cf"):
             await db.queue_route_to_cf(url)
         log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
-        raise crawler.CrawlError(url, _botwall_error(get_settings())) from None
+        raise crawler.CrawlError(url, _botwall_error(get_settings(), paused)) from None
 
 
 def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
@@ -378,14 +383,28 @@ def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
     task.add_done_callback(_watched)
 
 
-def _botwall_error(s: Settings) -> str:
-    """Client-facing bot-wall failure; retry ETA covers one kick plus a full challenge budget."""
+def _botwall_error(s: Settings, paused: bool = False) -> str:
+    """Client-facing bot-wall failure; retry ETA covers one kick plus a full challenge budget.
+    While the worker is paused the queued challenge won't run until resume, so no
+    seconds-based ETA is quoted (it would send callers into futile tight retry loops)."""
+    if paused:
+        return (
+            "bot-wall detected; a challenge solve has been re-queued - "
+            "it will run once background indexing resumes"
+        )
     eta = s.KICK_DEBOUNCE_S + int(s.CRAWL_CHALLENGE_BUDGET_S)
     return f"bot-wall detected; a challenge solve has been queued - try again in ~{eta} seconds"
 
 
-def _timed_out_error(s: Settings) -> str:
-    """Client-facing on-demand crawl timeout (the URL was re-queued); retry ETA covers the fast-lane ladder."""
+def _timed_out_error(s: Settings, paused: bool = False) -> str:
+    """Client-facing on-demand crawl timeout (the URL was re-queued); retry ETA covers the
+    fast-lane ladder unless indexing is paused, in which case no ETA is quoted."""
+    if paused:
+        return (
+            f"on-demand crawl timed out after {int(s.FETCH_TIMEOUT_S)} seconds; "
+            "it keeps running in the background and was re-queued - "
+            "it will run once background indexing resumes"
+        )
     eta = s.KICK_DEBOUNCE_S + 2 * int(s.CRAWL_TIMEOUT_S)
     return (
         f"on-demand crawl timed out after {int(s.FETCH_TIMEOUT_S)} seconds; "

@@ -7,6 +7,7 @@ import asyncio
 import logging
 
 from wellisearch import crawler
+from wellisearch.crawl.results import ChallengeDetected
 import wellisearch.fetch as fetch_mod
 import wellisearch.queue as queue_mod
 
@@ -17,9 +18,13 @@ class FakeDB:
     def __init__(self):
         self.enqueued = []
         self.challenge_in_flight = False
+        self.paused = False
 
     async def page_get(self, url: str) -> dict | None:
         return None  # not indexed yet: force the on-demand crawl path
+
+    async def worker_paused(self) -> bool:
+        return self.paused
 
     async def queue_challenge_in_flight(self, url: str) -> bool:
         return self.challenge_in_flight
@@ -206,6 +211,109 @@ assert not any(URL_G2 in r for r in _records if r.startswith("orphan grace expir
 )
 assert db3.enqueued == [(URL_G1, "fetch", "fast"), (URL_G2, "fetch", "fast")], f"both deadlines must re-queue: {db3.enqueued}"
 print("OK grace window (orphan stopped + dedup freed; in-window finish untouched)")
+
+# ---------------------------------------------------------------------------
+# Paused worker: fetch-sourced queue rows won't run until resume, so error
+# text must not quote a seconds-based retry ETA (callers would tight-loop)
+# ---------------------------------------------------------------------------
+
+
+URL_P = "https://example.com/paused"
+URL_CF = "https://example.com/challenge-paused"
+
+db4 = FakeDB()
+db4.paused = True
+fetch_mod.db = db4
+queue_mod.db = db4
+fetch_mod.crawl_url = failing_slow_crawl  # slower than the 0.3 s deadline
+fetch_mod.get_settings = lambda: _DEADLINE_S
+
+
+async def scenario_paused_timeout():
+    err: Exception | None = None
+    try:
+        await fetch_mod._resolve_page(URL_P)
+    except Exception as e:  # noqa: BLE001 - asserting on the exact error type
+        err = e
+    await asyncio.sleep(0.8)  # background crawl fails; its done-callback fires in-loop
+    return err
+
+
+kicks_before = len(kicks)
+err_p1 = asyncio.run(scenario_paused_timeout())
+assert isinstance(err_p1, crawler.CrawlError), f"expected CrawlError: {type(err_p1)}: {err_p1}"
+msg_p1 = str(err_p1)
+assert "timed out" in msg_p1 and "re-queued" in msg_p1, f"pause-aware timeout hint missing: {msg_p1!r}"
+assert "resumes" in msg_p1, f"resume note missing from paused timeout error: {msg_p1!r}"
+assert "try again in ~" not in msg_p1, f"seconds-based ETA quoted while indexing is paused: {msg_p1!r}"
+assert db4.enqueued == [(URL_P, "fetch", "fast")], f"background retry was not enqueued: {db4.enqueued}"
+assert len(kicks) == kicks_before + 1, f"re-queue must still kick the worker: {kicks}"
+print("OK paused timeout (no seconds ETA; re-queued until resume)")
+
+# --- fast-fail on a pending CF row while paused -----------------------------
+
+
+called_crawls: list[str] = []
+
+
+async def no_crawl(url: str, trigger: str = "fetch") -> dict:
+    called_crawls.append(url)
+    return {"url": url}
+
+
+db5 = FakeDB()
+db5.paused = True
+db5.challenge_in_flight = True
+fetch_mod.db = db5
+queue_mod.db = db5
+fetch_mod.crawl_url = no_crawl
+fetch_mod.get_settings = lambda: _DEADLINE_S
+
+
+async def scenario_paused_fastfail():
+    err: Exception | None = None
+    try:
+        await fetch_mod._resolve_page(URL_CF)
+    except Exception as e:  # noqa: BLE001 - asserting on the exact error type
+        err = e
+    return err
+
+
+err_p2 = asyncio.run(scenario_paused_fastfail())
+assert isinstance(err_p2, crawler.CrawlError), f"expected CrawlError: {type(err_p2)}: {err_p2}"
+msg_p2 = str(err_p2)
+assert (
+    "bot-wall detected" in msg_p2 and "re-queued" in msg_p2
+), f"pause-aware bot-wall hint missing: {msg_p2!r}"
+assert "resumes" in msg_p2, f"resume note missing from paused bot-wall error: {msg_p2!r}"
+assert "try again in ~" not in msg_p2, f"seconds-based ETA quoted while indexing is paused: {msg_p2!r}"
+assert called_crawls == [], f"fast-fail must not start a crawl: {called_crawls}"
+print("OK paused fast-fail (pending CF row; no seconds ETA)")
+
+# --- probe hits a bot-wall while paused -------------------------------------
+
+
+async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
+    raise ChallengeDetected(url)
+
+
+db6 = FakeDB()
+db6.paused = True
+fetch_mod.db = db6
+queue_mod.db = db6
+fetch_mod.crawl_url = challenge_crawl
+fetch_mod.get_settings = lambda: _DEADLINE_S
+
+err_p3 = asyncio.run(scenario_paused_fastfail())  # same wrapper; db6 has no pending CF row, so the probe runs
+assert isinstance(err_p3, crawler.CrawlError), f"expected CrawlError: {type(err_p3)}: {err_p3}"
+msg_p3 = str(err_p3)
+assert (
+    "bot-wall detected" in msg_p3 and "re-queued" in msg_p3
+), f"pause-aware bot-wall hint missing: {msg_p3!r}"
+assert "resumes" in msg_p3, f"resume note missing from paused probe bot-wall error: {msg_p3!r}"
+assert "try again in ~" not in msg_p3, f"seconds-based ETA quoted while indexing is paused: {msg_p3!r}"
+assert db6.enqueued == [(URL_CF, "fetch", "cf")], f"challenge was not routed to the CF lane: {db6.enqueued}"
+print("OK paused probe bot-wall (CF-routed; no seconds ETA)")
 
 # ---------------------------------------------------------------------------
 fetch_mod.db = _real_db
