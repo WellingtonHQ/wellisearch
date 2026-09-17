@@ -12,6 +12,7 @@ import time
 
 from ...config import get_settings
 from ..policy import Policy
+from ..probe import clamp
 from ..results import Rendered
 from . import register
 
@@ -29,16 +30,26 @@ class StealthTier:
         p: Policy,
     ) -> Rendered:
         """Run the sync StealthySession in a worker thread."""
-        return await asyncio.to_thread(self._fetch_sync, url)
+        timeout_s = clamp(get_settings().CRAWL_STEALTH_TIMEOUT_S)
+        return await asyncio.to_thread(self._fetch_sync, url, timeout_s)
 
-    def _fetch_sync(self, url: str) -> Rendered:
+    def _fetch_sync(
+        self,
+        url: str,
+        timeout_s: float,
+    ) -> Rendered:
         """Run one sync StealthySession fetch and return the rendered page."""
         from scrapling.fetchers import StealthySession
 
         s = get_settings()
         start = time.monotonic()
-        with StealthySession(headless=s.CRAWL_HEADLESS) as session:
-            page = session.fetch(url, network_idle=True, timeout=s.CRAWL_STEALTH_TIMEOUT_S * 1000)
+        with StealthySession(
+            headless=s.CRAWL_HEADLESS,
+            # extra_args are merged into the Playwright browser context options;
+            # the tiers are read-only (see CRAWL_IGNORE_SSL_ERRORS).
+            additional_args={"ignore_https_errors": bool(s.CRAWL_IGNORE_SSL_ERRORS)},
+        ) as session:
+            page = session.fetch(url, network_idle=True, timeout=int(timeout_s * 1000))
         ms = int((time.monotonic() - start) * 1000)
         return Rendered(
             html=page.html_content,
@@ -49,8 +60,8 @@ class StealthTier:
         )
 
     def worst_case_s(self, p: Policy) -> float:
-        """Worst-case budget: a single StealthySession fetch (CRAWL_STEALTH_TIMEOUT_S)."""
-        return float(get_settings().CRAWL_STEALTH_TIMEOUT_S)
+        """Worst-case budget: a single StealthySession fetch (clamped CRAWL_STEALTH_TIMEOUT_S)."""
+        return clamp(get_settings().CRAWL_STEALTH_TIMEOUT_S)
 
 
 def _extract_title(page: object) -> str | None:

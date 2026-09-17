@@ -4,8 +4,17 @@ from __future__ import annotations
 from wellisearch.crawl.extractors import for_url
 from wellisearch.crawl.extractors.amazon import AmazonExtractor
 from wellisearch.crawl.extractors.ap import APExtractor
-from wellisearch.crawl.extractors.base import TITLE_MAX_LEN, generic_md, title_from_markdown
+from wellisearch.crawl.extractors.base import (
+    MIN_MD_CHARS,
+    TITLE_MAX_LEN,
+    generic_md,
+    title_from_markdown,
+)
 from wellisearch.crawl.extractors.bestbuy import BestBuyExtractor
+from wellisearch.crawl.extractors.brave import (
+    BraveExtractor,
+    _visible_text_markdown,
+)
 from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
 from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
@@ -165,6 +174,64 @@ fitted = ex.fit(rendered(BESTBUY_HTML))
 assert fitted.signals["price"] == "899.99", fitted.signals  # JSON-LD fallback (no visible $)
 assert ex.accept(fitted)
 print("OK bestbuy")
+
+# ---------------------------------------------------------------------------
+# Brave
+# ---------------------------------------------------------------------------
+
+BRAVE_SERP_HTML = (
+    '<html><head><title>openwebui - Brave Search</title></head>'
+    '<body class="svelte-abc"><div id="__sveltekit_x">'
+    '<script type="module">var q=1;</script>'
+    '<nav><a href="/">Home</a><span class="tab">Ask</span><span class="tab">Ask</span></nav>'
+    '<ol>'
+    '<li class="snippet svelte-xyz"><h3 class="stitle">'
+    '<a href="https://openwebui.com/x" data-sveltekit-reload>Open WebUI: Self-Hosted AI Platform</a></h3>'
+    "<p>Prompts, models, tools, functions, discussions, and reviews, all created by the "
+    "community and available to everyone. Browse, install, or self-host today.</p></li>"
+    '<li class="snippet svelte-xyz"><h3 class="stitle">'
+    '<a href="https://github.com/open-webui/open-webui">Open WebUI on GitHub</a></h3>'
+    "<p>Self-hostable AI interface with support for multiple model providers, including "
+    "local ones. The repository describes setup, features, and community extensions.</p></li>"
+    "</ol>"
+    '<footer>Privacy | Feedback | Terms | About Brave Search</footer>'
+    "</div></body></html>"
+)
+ex = BraveExtractor()
+fitted = ex.fit(rendered(BRAVE_SERP_HTML))
+# note: trafilatura keeps the result snippets but not the h3 titles in this
+# list markup — assert on what the generic path actually preserves.
+assert "self-host today" in fitted.md, fitted.md[:200]  # snippet body survives
+assert "community extensions" in fitted.md, fitted.md[:200]  # second result too
+assert fitted.flags.get("extractor") == "brave", fitted.flags
+assert "spa_fallback" not in fitted.flags, fitted.flags  # generic path won
+assert ex.accept(fitted)
+
+# trafilatura-blind DOM (e.g. a future Svelte build): the visible-text fallback
+# must rescue it and flag itself so the failure mode stays diagnosable.
+import wellisearch.crawl.extractors.brave as _brave_mod
+_orig_generic = _brave_mod.generic_md
+_brave_mod.generic_md = lambda html: ""
+try:
+    fb = ex.fit(rendered(BRAVE_SERP_HTML))
+finally:
+    _brave_mod.generic_md = _orig_generic
+assert "Self-Hosted AI Platform" in fb.md, fb.md[:200]
+assert fb.flags.get("spa_fallback") is True, fb.flags
+assert ex.accept(fb)
+
+# repeated labels dedupe; scripts never leak into the fallback output
+vt = _visible_text_markdown(BRAVE_SERP_HTML)
+assert vt.count("Ask") == 1, vt[:200]
+assert "var q=1" not in vt
+assert len(vt.strip()) >= MIN_MD_CHARS
+# a DOM with no visible text degrades to '' (never raises)
+assert _visible_text_markdown("<html><body></body></html>") == ""
+
+# nothing but an empty shell -> below the gate, reject rather than store junk
+shell = ex.fit(rendered('<html><head><title>x</title></head><body></body></html>'))
+assert not ex.accept(shell)
+print("OK brave")
 
 # ---------------------------------------------------------------------------
 # Greenhouse
@@ -361,6 +428,7 @@ assert for_url("https://boards.greenhouse.io/acme/1234567").name == "greenhouse"
 assert for_url(
     "https://careers.ascensus.com/jobs/principal-software-engineer?source=linkedin_posting"
 ).name == "greenhouse"
+assert for_url("https://search.brave.com/search?q=openwebui").name == "brave"
 assert for_url("https://www.nytimes.com/2026/x.html").name == "nytimes"
 assert for_url("https://example.com/x").name == "generic"
 print("OK registry")

@@ -5,10 +5,17 @@ Two jobs per tick:
       CRAWL_MAX_PARALLEL at a time → native crawler → store_page → done/failed
      (transient errors re-enqueued up to QUEUE_MAX_ATTEMPTS).
   2. refresh watchlist — only pages crawled > REFRESH_MIN_AGE_HOURS ago
-     (or never) and not already in crawl_queue, ORDER BY fetch_count DESC,
-     last_crawled ASC LIMIT WORKER_BUDGET_PER_RUN → crawl → unchanged? skip
-     re-embed. A bot-walled probe routes the page onto the CF lane so it is
-     challenge-solved in the background (not re-probed every tick).
+     (or never), not in an active failure backoff, and not already in
+     crawl_queue, ORDER BY fetch_count DESC, last_crawled ASC LIMIT
+     WORKER_BUDGET_PER_RUN → crawl; a failed crawl pushes the page into
+     exponential refresh backoff (db.refresh_fail_bump) and a bot-walled probe
+     routes the page onto the CF lane so it is challenge-solved in the
+     background (not re-probed every tick).
+
+Paused (app_state.indexing_paused, dashboard toggle): a paused tick drains only
+manually enqueued rows and skips the watchlist refresh; on-demand paths that call
+crawl_url directly are unaffected. Resuming picks up where it left off — queued
+work is durable and re-claimed on the next kick/interval.
 
 Tick triggers:
   - every WORKER_INTERVAL_MIN unconditionally
@@ -58,7 +65,9 @@ async def crawl_url(url: str, trigger: str) -> dict:
 
 async def tick() -> dict:
     """One worker tick: drain queue + budgeted refresh, wall-clock bounded.
-    Skipped (not queued) if a tick is already running."""
+    Skipped (not queued) if a tick is already running. When the worker is
+    paused, only manually enqueued rows are drained and the watchlist refresh
+    is skipped."""
     if _tick_lock.locked():
         log.info("tick skipped (previous tick still running)")
         return {"skipped": "tick already running"}
@@ -66,12 +75,17 @@ async def tick() -> dict:
         s = get_settings()
         t0 = time.monotonic()
         deadline = t0 + s.WORKER_TICK_BUDGET_MIN * 60
-        log.info("tick start (budget %ss)", int(deadline - t0))
+        paused = await db.worker_paused()
+        log.info(
+            "tick start (budget %ss%s)",
+            int(deadline - t0),
+            " — paused, manual queue only" if paused else "",
+        )
 
         stats = {
-            "queue": await _drain_queue(deadline),
-            "cf_queue": await _drain_cf_queue(deadline),
-            "refresh": await _refresh_watchlist(deadline),
+            "queue": await _drain_queue(deadline, manual_only=paused),
+            "cf_queue": await _drain_cf_queue(deadline, manual_only=paused),
+            "refresh": {"skipped_paused": True} if paused else await _refresh_watchlist(deadline),
             "ms": int((time.monotonic() - t0) * 1000),
         }
         STATE["last_tick_at"] = dt.datetime.now(dt.timezone.utc)
@@ -147,6 +161,11 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
             "UPDATE pages SET last_status = %s WHERE url = %s",
             (label, url),
         )
+        # Back the watchlist refresh off for this page (a dead URL would otherwise be
+        # re-picked every tick) — but only on the refresh path itself; a search/manual/
+        # fetch/recrawl failure must not push out its refresh slot.
+        if trigger == "refresh":
+            await db.refresh_fail_bump(url)
         raise
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
@@ -169,27 +188,37 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
 
     ms = int((time.monotonic() - t0) * 1000)
     await db.log_crawl(url, trigger, status, ms, chunks_written=chunks_written)
+    await db.refresh_success_reset(url)
     log.info("crawl %s: %s (%d ms, %d chunks)", url, status, ms, chunks_written)
     return {"url": url, "status": status, "ms": ms, "chunks": chunks_written}
 
 
-async def _drain_queue(deadline: float) -> dict:
+async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
     """Claim and crawl pending FAST-lane queue rows, up to the per-tick budget.
 
-    A fast-lane crawl that hits a bot-wall raises ChallengeDetected; we route
-    that row to the CF lane (db.queue_route_to_cf) instead of marking it done,
-    so the CF drain can run it with the full challenge loop.
+    With manual_only (worker paused), only source='manual' rows are claimed;
+    search-enqueued backfill waits for resume. A fast-lane crawl that hits a
+    bot-wall raises ChallengeDetected; we route that row to the CF lane
+    (db.queue_route_to_cf) instead of marking it done, so the CF drain can run
+    it with the full challenge loop.
     """
     s = get_settings()
     processed = 0
     sem = asyncio.Semaphore(s.CRAWL_MAX_PARALLEL)
 
+    src_filter = "\n          AND source = 'manual'" if manual_only else ""
     rows = await db.fetch_all(
-        "SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'fast' "
-        "ORDER BY enqueued_at LIMIT %s",
+        f"""
+        SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'fast'
+          {src_filter} ORDER BY enqueued_at LIMIT %s
+        """,
         (s.WORKER_BUDGET_PER_RUN * 2,),
     )
-    log.info("tick: draining fast lane (%d pending in budget window)", len(rows))
+    log.info(
+        "tick: draining fast lane (%d pending in budget window)%s",
+        len(rows),
+        " — manual only" if manual_only else "",
+    )
 
     async def process(url: str) -> None:
         """Claim one fast-lane row and crawl it (bounded by the parallelism cap)."""
@@ -219,9 +248,10 @@ async def _drain_queue(deadline: float) -> dict:
     return {"processed": processed}
 
 
-async def _drain_cf_queue(deadline: float) -> dict:
+async def _drain_cf_queue(deadline: float, manual_only: bool = False) -> dict:
     """Claim and crawl pending CF-lane rows (challenges routed from the fast
-    lane), bounded by the low CF concurrency cap.
+    lane), bounded by the low CF concurrency cap. With manual_only (worker
+    paused), only source='manual' rows are claimed.
 
     These run in the CF lane: the browser tier runs the full turnstile loop
     with the high budget, on the CF pool. A failure here re-enqueues (pending)
@@ -231,14 +261,21 @@ async def _drain_cf_queue(deadline: float) -> dict:
     s = get_settings()
     processed = 0
 
+    src_filter = "\n          AND source = 'manual'" if manual_only else ""
     rows = await db.fetch_all(
-        "SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'cf' "
-        "ORDER BY enqueued_at LIMIT %s",
+        f"""
+        SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'cf'
+          {src_filter} ORDER BY enqueued_at LIMIT %s
+        """,
         (s.CRAWL_CHALLENGE_PARALLEL * 2,),
     )
     if not rows:
         return {"processed": 0}
-    log.info("tick: draining CF lane (%d pending challenges)", len(rows))
+    log.info(
+        "tick: draining CF lane (%d pending challenges)%s",
+        len(rows),
+        " — manual only" if manual_only else "",
+    )
 
     async def process(url: str) -> None:
         """Claim one CF-lane row and crawl it.
@@ -272,13 +309,16 @@ async def _drain_cf_queue(deadline: float) -> dict:
 async def _refresh_watchlist(deadline: float) -> dict:
     """Refresh stale watchlist pages (by fetch_count), up to the per-tick budget.
 
-    Pages with a pending/in-flight crawl_queue row are skipped — the queue owns
-    that work, including CF-lane challenges routed here from bot-walled probes.
-    A fast-lane probe that hits a bot-wall routes the page onto the CF lane and
-    records it as 'challenge'; while that row is pending the watchlist query no
-    longer re-picks the page every tick (backoff), so walled pages can't starve
-    the refresh budget.
-    """
+    Pages in an active refresh-failure backoff (refresh_backoff_until, set by
+    db.refresh_fail_bump) are skipped so a dead URL is retried at most once per
+    backoff window instead of on every tick. Pages with a pending/in-flight
+    crawl_queue row are also skipped — the queue owns that work, including
+    CF-lane challenges routed here from bot-walled probes. A fast-lane probe
+    that hits a bot-wall routes the page onto the CF lane and backs it off;
+    while the challenge is worked (or the backoff active) the watchlist query
+    no longer re-picks the page every tick, so walled pages can't starve the
+    refresh budget. A solved challenge resets the backoff via
+    db.refresh_success_reset."""
     s = get_settings()
     min_age = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=s.REFRESH_MIN_AGE_HOURS)
     rows = await db.fetch_all(
@@ -286,13 +326,14 @@ async def _refresh_watchlist(deadline: float) -> dict:
         "AND (last_crawled IS NULL OR last_crawled < %s) "
         "AND NOT EXISTS (SELECT 1 FROM crawl_queue q "
         "WHERE q.url = pages.url AND q.status IN ('pending', 'in_flight')) "
+        "AND (refresh_backoff_until IS NULL OR refresh_backoff_until <= now()) "
         "ORDER BY fetch_count DESC, last_crawled ASC LIMIT %s",
         (min_age, s.WORKER_BUDGET_PER_RUN),
     )
     if not rows:
         return {"refreshed": 0}
     log.info("tick: refresh watchlist (%d pages)", len(rows))
-    sem = asyncio.Semaphore(s.CRAWL_MAX_PARALLEL)
+    # No per-pass semaphore here — crawl_deduped bounds concurrency process-wide.
     results = []
 
     async def refresh(row: dict) -> None:
@@ -307,9 +348,12 @@ async def _refresh_watchlist(deadline: float) -> dict:
             # Fast-lane probe hit a bot-wall: route the page onto the CF lane so
             # the CF drain runs the full challenge loop in the background (same
             # pattern as fetch._resolve_page). While that row is pending, the
-            # watchlist query skips this page — no more re-probe every tick.
+            # watchlist query skips this page — no more re-probe every tick. The
+            # backoff bump spaces out re-probes if the challenge keeps failing;
+            # a solved challenge resets it via refresh_success_reset.
             if not await db.queue_enqueue(url, "refresh", lane=CF):
                 await db.queue_route_to_cf(url)
+            await db.refresh_fail_bump(url)
             log.info("refresh: %s hit a bot-wall; routed to the CF challenge lane", url)
             results.append({"url": url, "status": "challenge"})
         except Exception as e:

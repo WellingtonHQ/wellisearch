@@ -45,8 +45,9 @@ docker compose -f compose.yml logs -f wellisearch
    — up to `STARTUP_RETRIES` (10) × `STARTUP_RETRY_S` (3 s).
 2. **Idempotently `CREATE DATABASE`** the app DB (`POSTGRES_DB`, default
    `wellisearch`) if it doesn't exist. The identifier is quote-escaped.
-3. **Open the connection pool** (min 2 / max 12) against the app DB,
-   registering the pgvector type adapter on every connection.
+3. **Open the connection pool** (`DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE`, with an
+   explicit `DB_POOL_TIMEOUT_S` checkout timeout) against the app DB, registering
+   the pgvector type adapter on every connection.
 4. **Apply `schema.sql`** (idempotent DDL + `fn_search_local`).
 
 Then `app.py:_startup` resets stuck `in_flight` queue rows and starts the
@@ -67,6 +68,9 @@ All knobs are environment variables read by `config.py` (pydantic-settings).
 | `POSTGRES_PASSWORD` | `change-me` | **set this** |
 | `POSTGRES_DB` | `wellisearch` | app DB (self-created) |
 | `POSTGRES_ADMIN_DB` | `postgres` | maintenance DB used only to self-create the app DB |
+| `DB_POOL_MIN_SIZE` | `2` | pool floor kept warm for the search path |
+| `DB_POOL_MAX_SIZE` | `24` | pool ceiling; covers worker-tick bursts (crawl+store statements) plus concurrent client fetches |
+| `DB_POOL_TIMEOUT_S` | `10` | max wait for a pooled connection before failing with "database busy" (psycopg_pool's default is a silent 30 s hang) |
 
 ### Crawler
 The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars). Its knobs are the `CRAWL_*` variables in the worker/queue section below.
@@ -99,14 +103,17 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `LOCAL_MIN_COVERAGE` | `0.75` | local-hit gate: min fraction of query words a page must cover (see ranking.md) |
 | `SEARCH_MIN_SCORE` | `0.06` | legacy; now only for ranking (see ranking.md) |
 | `STALE_HOURS` | `72` | staleness hint for stats/dashboard |
-| `MAX_CHUNK_TOKENS` | `800` | chunk budget (~4 chars/token) |
+| `MAX_CHUNK_TOKENS` | `500` | chunk token budget; must stay under MiniLM's 512-token input window (est. ~4 chars/token) |
 
-### Fetch truncation
+### Fetch (read path)
 | Var | Default | Notes |
 |---|---|---|
 | `FETCH_DEFAULT_STRATEGY` | `smart` | `smart\|head\|tail\|even\|priority` |
 | `FETCH_MAX_CHARS` | `40000` | total budget when `max_chars` omitted (`0` = unlimited) |
 | `FETCH_PER_PAGE_CHARS` | `12000` | per-page cap |
+| `FETCH_PROBE_TIMEOUT_S` | `15` | per-tier timeout cap while a fetch crawls on demand — bot-walls surface within one probe instead of each tier burning its full crawl timeout; the background worker is always uncapped |
+| `FETCH_TIMEOUT_S` | `45` | hard deadline for one on-demand crawl (incl. waiting for a free crawl slot); past it the fetch fails fast with a retry hint and the URL is re-queued for the worker; the abandoned probe then runs under the grace window below |
+| `FETCH_ORPHAN_GRACE_S` | `15` | grace after a client abandons an on-demand probe (deadline or disconnect): its in-flight tier attempt gets this long to finish and store before we stop it — default = one per-tier budget, so only further failover attempts are cut off and the slot + dedup entry can't be held indefinitely |
 
 ### Worker / queue
 | Var | Default | Notes |
@@ -116,8 +123,11 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `WORKER_TICK_BUDGET_MIN` | `15` | wall-clock budget per tick |
 | `KICK_DEBOUNCE_S` | `5` | coalesce burst enqueues into one tick |
 | `QUEUE_MAX_ATTEMPTS` | `3` | retries before a queue row is `failed` |
+| `REFRESH_MIN_AGE_HOURS` | `72` | watchlist page is eligible for refresh after this age |
+| `REFRESH_BACKOFF_BASE_HOURS` | `6` | consecutive failed refreshes back off `base × 2^(streak−1)`, capped at `REFRESH_MIN_AGE_HOURS`; a successful crawl resets the streak |
 | `CRAWL_TIMEOUT_S` | `45` | per-URL crawl timeout |
 | `CRAWL_MAX_PARALLEL` | `3` | concurrent crawls |
+| `CRAWL_IGNORE_SSL_ERRORS` | `true` | the tiers are read-only (fetch public pages, never send data), so untrusted TLS certs are accepted; set `false` to enforce strict verification |
 | `CRAWL_LAUNCH_RETRY_AFTER_S` | `30` | relaunch backoff after a failed browser launch; keep equal to the entrypoint.sh Xvfb self-heal poll interval |
 
 ### Server

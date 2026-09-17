@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "wellisearch"
     # Admin/maintenance DB used only to self-create the app DB at startup (§11).
     POSTGRES_ADMIN_DB: str = "postgres"
-    # Connection pool sizing (db.py AsyncConnectionPool).
     DB_POOL_MIN_SIZE: int = 2
-    DB_POOL_MAX_SIZE: int = 12
+    DB_POOL_MAX_SIZE: int = 24
+    # Fail checkout with PoolTimeout ("database busy") instead of hanging on the default 30 s.
+    DB_POOL_TIMEOUT_S: float = 10.0
 
     # --- search providers (failover pool + default order; the dashboard can
     # override the order at runtime — see provider_state.sort_order) ---
@@ -65,7 +66,10 @@ class Settings(BaseSettings):
     # Legacy local-hit cutoff; now only for ranking (see docs/ranking.md).
     SEARCH_MIN_SCORE: float = 0.06
     STALE_HOURS: int = 72
-    MAX_CHUNK_TOKENS: int = 800
+    # Chunk token budget for chunk_markdown; must stay under MiniLM's hard
+    # 512-token input cap (chunk.py estimates tokens as len(text)//4, so the
+    # headroom absorbs over-estimates and keeps long chunks from truncating).
+    MAX_CHUNK_TOKENS: int = 500
     # Per-statement backstop for the local search SQL (SET LOCAL, search only):
     # no query may hold a pooled connection for minutes. A timeout falls back
     # to the provider gateway (search_web.py) instead of stalling the request.
@@ -75,17 +79,29 @@ class Settings(BaseSettings):
     FETCH_DEFAULT_STRATEGY: str = "smart"  # even | head | priority | smart | tail
     FETCH_MAX_CHARS: int = 40000  # default total budget when max_chars omitted
     FETCH_PER_PAGE_CHARS: int = 12000  # default per-page cap
+    FETCH_PROBE_TIMEOUT_S: float = 15.0  # per-tier timeout cap while a fetch crawls on demand
+    FETCH_TIMEOUT_S: float = 45.0  # hard deadline for one on-demand crawl; past it the URL is re-queued
+    # Grace after an on-demand probe's client leaves (cancel / deadline): its in-flight tier
+    # attempt gets this long to finish and store, then we stop the orphan so it stops holding
+    # its crawl slot + dedup entry. Default = one per-tier budget, so only *further* failover
+    # attempts are cut off. Worker crawls have no grace — nothing left waiting on them.
+    FETCH_ORPHAN_GRACE_S: float = 15.0
 
     # --- worker / queue (async indexing) ---
     WORKER_INTERVAL_MIN: float = 30
     WORKER_BUDGET_PER_RUN: int = 25
-    REFRESH_MIN_AGE_HOURS: int = 72  # refresh pass skips pages crawled less than this long ago
+    REFRESH_MIN_AGE_HOURS: int = 72  # refresh pass skips pages whose last crawl is younger than this
+    # Base delay for the watchlist-refresh failure backoff: after N consecutive
+    # failed crawls a page waits base * 2^(N-1) hours (capped at one full refresh
+    # cycle, see Settings.refresh_backoff_hours). Without it, dead pages are
+    # retried on every worker tick (the 2026-09-13 refresh retry loop).
+    REFRESH_BACKOFF_BASE_HOURS: float = 6.0
     WORKER_TICK_BUDGET_MIN: int = 15
     KICK_DEBOUNCE_S: int = 5
     QUEUE_MAX_ATTEMPTS: int = 3
     CRAWL_TIMEOUT_S: int = 45
     CRAWL_MAX_PARALLEL: int = 8
-    LOG_RETENTION_DAYS: int = 30  # event_log / crawl_log / search_log prune age
+    LOG_RETENTION_DAYS: int = 90  # event_log / crawl_log / search_log prune age
 
     # --- native crawl engine (replaces the Crawl4AI path; design §6) ---
     # CF (challenge) lane: a dedicated low-concurrency, high-timeout lane so a
@@ -107,6 +123,8 @@ class Settings(BaseSettings):
     CRAWL_SETTLE_S: float = 2.0
     CRAWL_STEALTH_TIER: bool = True
     CRAWL_STEALTH_TIMEOUT_S: int = 120
+    # Crawl tiers only fetch read-only pages, so untrusted TLS certs are accepted by default.
+    CRAWL_IGNORE_SSL_ERRORS: bool = True
 
     # --- server ---
     BIND_PORT: int = 8780
@@ -133,6 +151,18 @@ class Settings(BaseSettings):
         if raw is None or raw <= 0:
             return None
         return int(raw)
+
+    def refresh_backoff_hours(self, streak: int) -> float:
+        """Refresh delay in hours after `streak` consecutive failed crawls.
+
+        Doubles from REFRESH_BACKOFF_BASE_HOURS (6h → 12h → 24h → ...) up to one
+        full refresh cycle (REFRESH_MIN_AGE_HOURS), so a dead page is retried at
+        most once per cycle instead of on every worker tick.
+        """
+        if streak <= 0:
+            return 0.0
+        delay = self.REFRESH_BACKOFF_BASE_HOURS * (2 ** (streak - 1))
+        return min(delay, float(self.REFRESH_MIN_AGE_HOURS))
 
     def conninfo(self, dbname: str | None = None) -> str:
         """psycopg connection string for ``dbname`` (default: POSTGRES_DB)."""

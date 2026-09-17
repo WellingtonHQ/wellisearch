@@ -62,8 +62,10 @@ LIMIT WORKER_BUDGET_PER_RUN
 — most-fetched, oldest-crawled first. This is what keeps high-traffic pages
 fresh (and therefore above the ranking freshness decay). Pages that already
 have a pending/in-flight `crawl_queue` row are skipped (the queue owns that
-work); a probe that hits a bot-wall routes the page onto the CF challenge
-lane instead of re-probing it every tick.
+work), and pages in an active refresh-failure backoff (`refresh_backoff_until`,
+set exponentially after failed refreshes) are skipped too. A probe that hits a
+bot-wall routes the page onto the CF challenge lane — where it is solved in
+the background — and backs it off, instead of re-probing it every tick.
 
 **Tick scheduling** (`worker.run_forever`):
 
@@ -113,7 +115,8 @@ requires `python -m wellisearch.reindex` (see deployment.md).
 
 `chunk_markdown(markdown, MAX_CHUNK_TOKENS)` (`chunk.py`):
 
-- Budget ≈ `MAX_CHUNK_TOKENS` (800) tokens, estimated at **4 chars/token**.
+- Budget ≈ `MAX_CHUNK_TOKENS` (500) tokens, estimated at **4 chars/token**
+  (kept under MiniLM's hard 512-token input cap so no chunk tail is truncated on embed).
 - Splits on **heading boundaries** so each chunk starts at (or under) a
   heading (a chunk carries its own section context).
 - **Never splits inside a fenced code block** (a fence may overflow the

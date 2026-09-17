@@ -82,6 +82,11 @@ class PagePatch(BaseModel):
     disabled: bool = Field(default=False)
 
 
+class WorkerPause(BaseModel):
+    """Request body for PATCH /api/worker: pause or resume background indexing."""
+    paused: bool
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """App lifespan: the streamable-HTTP session manager's task group must be
@@ -218,6 +223,8 @@ async def api_stats() -> Any:
             "last_tick_at": last_tick,
             "last_tick_stats": WORKER_STATE.get("last_tick_stats"),
             "tick_age_s": round((now - last_tick).total_seconds(), 1) if last_tick else None,
+            # same flag _index_stats_data() already reads for the MCP surface
+            "paused": bool((data.get("worker") or {}).get("paused")),
         },
         "in_flight_crawls": sorted(queue.INFLIGHT.urls()),
     }
@@ -335,6 +342,23 @@ async def api_refresh(body: RefreshBody) -> Any:
     }
 
 
+@app.patch("/api/worker")
+async def api_worker_pause(body: WorkerPause) -> Any:
+    """Pause or resume background indexing/crawling (queue drain, the CF
+    challenge lane, and the watchlist refresh). Manual seeds, on-demand fetches,
+    and manual refreshes keep working while paused; queued work resumes where it
+    left off — a resume kicks a tick so nothing waits for the interval."""
+    await db.set_worker_paused(body.paused)
+    if not body.paused:
+        queue.kick_worker()
+    row = await db.fetch_one(
+        "SELECT count(*) AS n FROM crawl_queue WHERE status = 'pending'"
+    )
+    pending = row["n"] if row else 0
+    await _ev(f"indexing {'paused' if body.paused else 'resumed'}", {"queue_pending": pending})
+    return {"ok": True, "paused": body.paused, "queue_pending": pending}
+
+
 # {url:path} — the URL is percent-encoded in the path, and uvicorn decodes
 # scope["path"] before Starlette matches, so the param must span slashes
 @app.patch("/api/pages/{url:path}")
@@ -415,14 +439,35 @@ async def api_logs_crawls(limit: int = API_LOGS_DEFAULT_LIMIT) -> Any:
 
 
 @app.get("/api/logs/searches")
-async def api_logs_searches(limit: int = API_LOGS_DEFAULT_LIMIT) -> Any:
-    """Recent search log entries, newest first (limit capped at 500)."""
+async def api_logs_searches(limit: int = API_LOGS_DEFAULT_LIMIT, offset: int = 0) -> Any:
+    """Paginated search log entries, newest first.
+
+    limit caps the page size (max 500); offset skips the most recent rows for
+    paging backwards. total counts every row currently in the table (pruned by
+    LOG_RETENTION_DAYS). Each stored results JSONB is reduced to n_results +
+    urls so the dashboard gets a slimmer payload than raw snippets.
+    """
+    limit = max(1, min(int(limit), API_LOGS_MAX_LIMIT))
+    offset = max(0, int(offset))
     rows = await db.fetch_all(
-        "SELECT ts, query, source, local_hits, results FROM search_log "
-        "ORDER BY id DESC LIMIT %s",
-        (min(limit, API_LOGS_MAX_LIMIT),),
+        "SELECT id, ts, query, source, local_hits, results FROM search_log "
+        "ORDER BY id DESC LIMIT %s OFFSET %s",
+        (limit, offset),
     )
-    return {"searches": rows}
+    total_row = await db.fetch_one("SELECT count(*) AS n FROM search_log")
+    searches = []
+    for r in rows:
+        results = r["results"] or []
+        searches.append({
+            "id": r["id"],
+            "ts": r["ts"],
+            "query": r["query"],
+            "source": r["source"],
+            "local_hits": r["local_hits"],
+            "n_results": len(results),
+            "urls": [x["url"] for x in results if isinstance(x, dict) and x.get("url")],
+        })
+    return {"searches": searches, "total": total_row["n"]}
 
 
 @app.get("/api/window")
