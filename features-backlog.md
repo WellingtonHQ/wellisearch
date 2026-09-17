@@ -118,6 +118,13 @@ Rather than having the user manually select the tiers, the system itself
 will track results from the providers and score the relevancy of the results to the query.
 It will periodically reorder the providers to put the highest quality one at the top.
 
+### Search UI
+A new UI served on something like /search (if it's not already used) or `/search-ui` or `/app` or something like that.
+The UI is themed similar to the dashboard and has a simple search bar where you can type in a search query.
+You can select the mode: auto, provider, or local for the search.
+Search results show clickable links that open the link in browser, but you can also click "View Content" to see the markdown that is fetched by wellisearch for this URL.
+It should of course show a waiting animation and a status if the fetch operation is waiting or got hit with a bot-wall.
+
 ---
 
 ## Dashboard
