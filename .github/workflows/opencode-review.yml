@@ -68,9 +68,12 @@ jobs:
             <1-3 sentence summary>
 
             ### Findings (highest priority first)
-            1. **[Critical]** `file:line` - what is wrong, and a concrete suggested fix
-            2. **[Warning]** `file:line` - ...
-            3. **[Nit]** `file:line` - ...
+            1. **[Critical]** `file:line` — <one-sentence headline of what is wrong>
+                - **Why it matters:** the consequence in plain terms, stated before the mechanism.
+                - **Where:** every relevant `file:line`, listed here and kept out of the prose above.
+                - **Fix:** a concrete suggested change.
+            2. **[Warning]** `file:line` — <headline> (same four parts)
+            3. **[Nit]** `file:line` — <headline> (same four parts)
 
             ### Previous review issues
             | Status | Issue | Location |
@@ -84,6 +87,12 @@ jobs:
             - Verify each previous issue against the current code before marking it; do not trust the table from the previous review.
             - If there was no earlier review on this PR, omit the "Previous review issues" table.
             - If you find no issues, say so in one line instead of the findings list.
+
+            Writing style: write for a busy principal engineer who is not deep in every detail; readable over dense.
+            - One idea per finding. Keep sentences short (~20-25 words); never nest run-on clauses or parentheses inside each other.
+            - Give every finding these parts, in this order: What (one line), then Why it matters (plain consequence before the mechanism), then Where (`file:line` list), then Fix. Lead with impact, then explain how it happens.
+            - Keep `file:line` citations in the "Where" list; use at most one reference inline per sentence so the prose reads clean.
+            - Define any domain term on first use ("dedup owner = ..."); prefer active voice and concrete verbs over jargon.
         run: |
           set -euo pipefail
           opencode run "$PROMPT"

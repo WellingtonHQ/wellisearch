@@ -60,7 +60,12 @@ LIMIT WORKER_BUDGET_PER_RUN
 ```
 
 — most-fetched, oldest-crawled first. This is what keeps high-traffic pages
-fresh (and therefore above the ranking freshness decay).
+fresh (and therefore above the ranking freshness decay). Pages that already
+have a pending/in-flight `crawl_queue` row are skipped (the queue owns that
+work), and pages in an active refresh-failure backoff (`refresh_backoff_until`,
+set exponentially after failed refreshes) are skipped too. A probe that hits a
+bot-wall routes the page onto the CF challenge lane — where it is solved in
+the background — and backs it off, instead of re-probing it every tick.
 
 **Tick scheduling** (`worker.run_forever`):
 

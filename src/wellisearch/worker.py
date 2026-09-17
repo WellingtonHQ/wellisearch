@@ -5,9 +5,12 @@ Two jobs per tick:
       CRAWL_MAX_PARALLEL at a time → native crawler → store_page → done/failed
      (transient errors re-enqueued up to QUEUE_MAX_ATTEMPTS).
   2. refresh watchlist — only pages crawled > REFRESH_MIN_AGE_HOURS ago
-     (or never) and not in an active failure backoff, ORDER BY fetch_count
-     DESC, last_crawled ASC LIMIT WORKER_BUDGET_PER_RUN → crawl; a failed crawl
-     pushes the page into exponential refresh backoff (db.refresh_fail_bump).
+     (or never), not in an active failure backoff, and not already in
+     crawl_queue, ORDER BY fetch_count DESC, last_crawled ASC LIMIT
+     WORKER_BUDGET_PER_RUN → crawl; a failed crawl pushes the page into
+     exponential refresh backoff (db.refresh_fail_bump) and a bot-walled probe
+     routes the page onto the CF lane so it is challenge-solved in the
+     background (not re-probed every tick).
 
 Paused (app_state.indexing_paused, dashboard toggle): a paused tick drains only
 manually enqueued rows and skips the watchlist refresh; on-demand paths that call
@@ -308,12 +311,21 @@ async def _refresh_watchlist(deadline: float) -> dict:
 
     Pages in an active refresh-failure backoff (refresh_backoff_until, set by
     db.refresh_fail_bump) are skipped so a dead URL is retried at most once per
-    backoff window instead of on every tick."""
+    backoff window instead of on every tick. Pages with a pending/in-flight
+    crawl_queue row are also skipped — the queue owns that work, including
+    CF-lane challenges routed here from bot-walled probes. A fast-lane probe
+    that hits a bot-wall routes the page onto the CF lane and backs it off;
+    while the challenge is worked (or the backoff active) the watchlist query
+    no longer re-picks the page every tick, so walled pages can't starve the
+    refresh budget. A solved challenge resets the backoff via
+    db.refresh_success_reset."""
     s = get_settings()
     min_age = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=s.REFRESH_MIN_AGE_HOURS)
     rows = await db.fetch_all(
         "SELECT url, fetch_count FROM pages WHERE disabled = false "
         "AND (last_crawled IS NULL OR last_crawled < %s) "
+        "AND NOT EXISTS (SELECT 1 FROM crawl_queue q "
+        "WHERE q.url = pages.url AND q.status IN ('pending', 'in_flight')) "
         "AND (refresh_backoff_until IS NULL OR refresh_backoff_until <= now()) "
         "ORDER BY fetch_count DESC, last_crawled ASC LIMIT %s",
         (min_age, s.WORKER_BUDGET_PER_RUN),
@@ -332,6 +344,18 @@ async def _refresh_watchlist(deadline: float) -> dict:
         try:
             r = await crawl_url(url, "refresh")
             results.append(r)
+        except ChallengeDetected:
+            # Fast-lane probe hit a bot-wall: route the page onto the CF lane so
+            # the CF drain runs the full challenge loop in the background (same
+            # pattern as fetch._resolve_page). While that row is pending, the
+            # watchlist query skips this page — no more re-probe every tick. The
+            # backoff bump spaces out re-probes if the challenge keeps failing;
+            # a solved challenge resets it via refresh_success_reset.
+            if not await db.queue_enqueue(url, "refresh", lane=CF):
+                await db.queue_route_to_cf(url)
+            await db.refresh_fail_bump(url)
+            log.info("refresh: %s hit a bot-wall; routed to the CF challenge lane", url)
+            results.append({"url": url, "status": "challenge"})
         except Exception as e:
             log.warning("refresh failed for %s: %s", url, e)
             results.append(
@@ -340,7 +364,8 @@ async def _refresh_watchlist(deadline: float) -> dict:
 
     await asyncio.gather(*(refresh(r) for r in rows))
     unchanged = sum(1 for r in results if r.get("status") == "unchanged")
-    return {"refreshed": len(results), "unchanged": unchanged}
+    challenged = sum(1 for r in results if r.get("status") == "challenge")
+    return {"refreshed": len(results), "unchanged": unchanged, "challenged": challenged}
 
 
 async def _log_event(message: str, info: dict | None = None) -> None:

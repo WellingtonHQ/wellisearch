@@ -452,7 +452,94 @@ for trigger in ("search", "manual", "fetch", "recrawl", "refresh"):
 print("OK only refresh-trigger failures extend the watchlist backoff")
 
 # ---------------------------------------------------------------------------
-# 11. read-path enqueues kick via queue.enqueue — and only on fresh inserts
+# 11. worker refresh: bot-walled probe → CF lane + queued pages skipped (fake db)
+# ---------------------------------------------------------------------------
+
+WALLED = "https://example.com/walled"
+
+
+class FakeRefreshDB:
+    def __init__(self, enqueue_ok: bool = True) -> None:
+        """Initialize a fake db for the watchlist refresh path."""
+        self.enqueue_ok = enqueue_ok
+        self.enqueued = []
+        self.routed = []
+        self.bumped = []
+        self.sqls = []
+
+    async def fetch_all(
+        self,
+        sql: str,
+        params: tuple | None = None,
+        timeout_ms: int | None = None,
+    ) -> list[dict]:
+        """Return one stale watchlist page; record the SQL for assertions."""
+        self.sqls.append(sql)
+        return [{"url": WALLED, "fetch_count": 5}]
+
+    async def queue_enqueue(
+        self,
+        url: str,
+        source: str,
+        lane: str = "fast",
+    ) -> bool:
+        """Record the enqueue; report whether a row was inserted."""
+        self.enqueued.append((url, source, lane))
+        return self.enqueue_ok
+
+    async def queue_route_to_cf(self, url: str) -> bool:
+        """Record the CF routing."""
+        self.routed.append(url)
+        return True
+
+    async def refresh_fail_bump(self, url: str) -> int | None:
+        """Record a streak bump (bot-walled pages back off)."""
+        self.bumped.append(url)
+        return 1
+
+
+async def walled_crawl_url(url: str, trigger: str) -> dict:
+    """Fake crawl whose fast-lane probe hits a bot-wall."""
+    raise ChallengeDetected(url)
+
+
+# 11a. no pending queue row → enqueued straight onto the CF lane + backed off
+fake_db = FakeRefreshDB(enqueue_ok=True)
+orig_db = worker_mod.db
+orig_crawl_url = worker_mod.crawl_url
+worker_mod.db = fake_db
+worker_mod.crawl_url = walled_crawl_url
+try:
+    stats = asyncio.run(worker_mod._refresh_watchlist(deadline=time.monotonic() + 60))
+finally:
+    worker_mod.db = orig_db
+    worker_mod.crawl_url = orig_crawl_url
+assert fake_db.enqueued == [(WALLED, "refresh", CF)], fake_db.enqueued
+assert fake_db.routed == [], "no existing row — must not route"
+assert fake_db.bumped == [WALLED], "a bot-walled page must be backed off"
+assert stats["challenged"] == 1 and stats["refreshed"] == 1, stats
+assert any("NOT EXISTS" in sql for sql in fake_db.sqls), \
+    "watchlist query must skip pages already queued (backoff)"
+assert any("refresh_backoff_until" in sql for sql in fake_db.sqls), \
+    "watchlist query must skip pages in an active refresh backoff"
+print("OK refresh routes ChallengeDetected to CF lane")
+
+# 11b. a pending queue row exists → the existing row is routed, not re-enqueued
+fake_db = FakeRefreshDB(enqueue_ok=False)
+worker_mod.db = fake_db
+worker_mod.crawl_url = walled_crawl_url
+try:
+    stats = asyncio.run(worker_mod._refresh_watchlist(deadline=time.monotonic() + 60))
+finally:
+    worker_mod.db = orig_db
+    worker_mod.crawl_url = orig_crawl_url
+assert fake_db.enqueued == [(WALLED, "refresh", CF)], fake_db.enqueued
+assert fake_db.routed == [WALLED], fake_db.routed
+assert stats["challenged"] == 1 and stats["unchanged"] == 0, stats
+print("OK refresh routes the existing queue row to CF lane")
+
+# ---------------------------------------------------------------------------
+# 12. read-path enqueues kick via queue.enqueue — and only on fresh inserts
 # ---------------------------------------------------------------------------
 
 
@@ -548,7 +635,7 @@ finally:
 print("OK read-path enqueues kick via queue.enqueue on fresh inserts only")
 
 # ---------------------------------------------------------------------------
-# 12. grace-cancel of a deduped owner settles its shared future: joiners unblock
+# 13. grace-cancel of a deduped owner settles its shared future: joiners unblock
 #     with a CrawlError instead of hanging on shield(fut) forever
 # ---------------------------------------------------------------------------
 
