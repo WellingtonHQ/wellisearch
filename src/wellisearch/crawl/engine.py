@@ -50,7 +50,7 @@ async def crawl(url: str) -> CrawlResult:
             attempts.append({"tier": name, "error": f"{type(e).__name__}: {e}"})
             i += 1
             continue
-        marker = botwall.is_botwall(r.html, r.status)
+        marker = botwall.is_botwall(r.html, r.status, r.content_type)
         if marker is not None:
             attempts.append({"tier": name, "error": f"botwall: {marker}", "status": r.status})
             i += 1

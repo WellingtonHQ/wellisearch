@@ -42,6 +42,16 @@ js_wall = (
     "This requires JavaScript. Enable JavaScript and then reload the page.</body></html>"
 )
 assert is_botwall(js_wall, 200) is not None  # JS-disabled bot-wall must escalate, not store
+# non-HTML content types skip the marker scan (code files contain marker-like strings)
+raw_py = 'def check(body):\n    if "access denied" in body:\n        raise Blocked("request blocked")\n'
+assert is_botwall(raw_py, 200, "text/plain; charset=utf-8") is None
+assert is_botwall('{"error": "unusual traffic"}', 200, "application/json") is None
+# absent/unknown content type still gets scanned (safe default)
+assert is_botwall("access denied", 200) is not None
+assert is_botwall("access denied", 200, None) is not None
+assert is_botwall("access denied", 200, "text/html; charset=utf-8") is not None
+# status >= 400 wins even for non-HTML bodies
+assert is_botwall("", 403, "application/json") == "http_403"
 print("OK botwall")
 
 # ---------------------------------------------------------------------------

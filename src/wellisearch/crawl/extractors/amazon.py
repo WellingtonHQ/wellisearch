@@ -1,11 +1,13 @@
 """AmazonExtractor: element-anchored extraction (design §3.2).
 
 Anchors on known Amazon structure rather than generic content extraction:
-  - title   → #productTitle (fallback <h1>)
-  - price   → buy-box .a-price .a-offscreen (first real value)
-  - stock   → #availability
-  - bullets → #feature-bullets ("About this item")
-  - details → product-details table (tech-spec / detail-bullets)
+  - title    → #productTitle (fallback <h1>)
+  - price    → buy-box .a-price .a-offscreen (first real value)
+  - stock    → #availability
+  - rating   → #acrPopover title attr + #acrCustomerReviewText count
+  - seller   → #sellerProfileTriggerId (buy-box "Sold by")
+  - bullets  → #feature-bullets ("About this item")
+  - details  → product-details table (tech-spec / detail-bullets)
 
 The gate requires title + price + at least one feature bullet, which is a
 stronger, site-specific signal than a raw char count: it accepts a real
@@ -32,6 +34,9 @@ class AmazonExtractor:
         title = _title(soup)
         price = _price(soup)
         stock = _stock(soup)
+        rating = _rating(soup)
+        review_count = _review_count(soup)
+        seller = _seller(soup)
         bullets = _feature_bullets(soup)
         details = _product_details(soup)
 
@@ -43,6 +48,11 @@ class AmazonExtractor:
             if stock:
                 line += f" — {stock}"
             parts.append(line)
+        if rating or review_count:
+            bits = [b for b in (rating, review_count) if b]
+            parts.append(f"**Rating:** {' '.join(bits)}")
+        if seller:
+            parts.append(f"**Sold by:** {seller}")
         if bullets:
             parts.append("## About this item")
             parts.extend(f"- {b}" for b in bullets)
@@ -54,7 +64,13 @@ class AmazonExtractor:
         return Fitted(
             md=md,
             title=title or r.title,
-            signals={"price": price, "stock": stock, "bullets": len(bullets)},
+            signals={
+                "price": price,
+                "stock": stock,
+                "rating": rating,
+                "seller": seller,
+                "bullets": len(bullets),
+            },
             flags={"extractor": "amazon"},
         )
 
@@ -147,6 +163,41 @@ def _product_details(soup: BeautifulSoup) -> str | None:
             t = el.get_text(" ", strip=True)
             if t:
                 return t
+    return None
+
+
+def _rating(soup: BeautifulSoup) -> str | None:
+    """Star rating from #acrPopover's title attr, else the .a-icon-alt span."""
+    el = soup.find(id="acrPopover")
+    if el is not None and el.get("title"):
+        t = el["title"].strip()
+        if t:
+            return t
+    icon = soup.select_one("#averageCustomerReviews .a-icon-alt")
+    if icon is not None:
+        t = icon.get_text(strip=True)
+        if t:
+            return t
+    return None
+
+
+def _review_count(soup: BeautifulSoup) -> str | None:
+    """Review/rating count text from #acrCustomerReviewText."""
+    el = soup.find(id="acrCustomerReviewText")
+    if el is not None:
+        t = el.get_text(strip=True)
+        if t:
+            return t
+    return None
+
+
+def _seller(soup: BeautifulSoup) -> str | None:
+    """Buy-box "Sold by" seller from #sellerProfileTriggerId."""
+    el = soup.find(id="sellerProfileTriggerId")
+    if el is not None:
+        t = el.get_text(strip=True)
+        if t:
+            return t
     return None
 
 

@@ -57,11 +57,20 @@ class StealthTier:
             status=getattr(page, "status", 200),
             ms=ms,
             engine="stealth",
+            content_type=_response_content_type(page),
         )
 
     def worst_case_s(self, p: Policy) -> float:
         """Worst-case budget: a single StealthySession fetch (clamped CRAWL_STEALTH_TIMEOUT_S)."""
         return clamp(get_settings().CRAWL_STEALTH_TIMEOUT_S)
+
+
+def _response_content_type(page: object) -> str | None:
+    """The response's Content-Type header, or None when unavailable."""
+    headers = getattr(page, "headers", None)
+    if isinstance(headers, dict):
+        return headers.get("Content-Type") or headers.get("content-type")
+    return None
 
 
 def _extract_title(page: object) -> str | None:

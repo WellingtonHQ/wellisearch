@@ -40,6 +40,13 @@ AMAZON_HTML = (
     "<div data-asin=\"B08WM3LJQB\"><span class=\"a-price\">"
     "<span class=\"a-offscreen\">$129.99</span></span></div>"
     "<div id=\"availability\">In Stock</div>"
+    "<span id=\"acrPopover\" title=\"4.6 out of 5 stars\">"
+    "<i class=\"a-icon a-icon-star\"><span class=\"a-icon-alt\">4.6 out of 5 stars</span></i>"
+    "</span>"
+    "<span id=\"acrCustomerReviewText\">12,345 ratings</span>"
+    "<div id=\"tabular-buybox\"><table><tr><td>Sold by</td>"
+    "<td><a id=\"sellerProfileTriggerId\" href=\"/sp?ie=UTF8&amp;seller=ATVPDKIKX0DER\">"
+    "Amazon.com</a></td></tr></table></div>"
     "<ul id=\"feature-bullets\">"
     "<li>Kindle (10th generation) is the perfect device for reading, with a crisp 300 ppi "
     "display, 16 GB of storage, and weeks of battery life on a single charge.</li>"
@@ -64,6 +71,10 @@ assert "Frequently bought together" not in fitted.md, fitted.md[:200]  # decoy e
 assert "screen protector" not in fitted.md, fitted.md[:200]
 assert fitted.signals["price"] == "$129.99", fitted.signals
 assert fitted.signals["stock"] == "In Stock", fitted.signals
+assert "**Rating:** 4.6 out of 5 stars 12,345 ratings" in fitted.md, fitted.md[:300]
+assert "**Sold by:** Amazon.com" in fitted.md, fitted.md[:300]
+assert fitted.signals["rating"] == "4.6 out of 5 stars", fitted.signals
+assert fitted.signals["seller"] == "Amazon.com", fitted.signals
 assert fitted.title == "Kindle (10th generation)", fitted.title
 assert ex.accept(fitted)
 # no price element -> gate fails
@@ -418,6 +429,52 @@ assert "Most Popular" not in fitted.md, fitted.md[:200]
 assert "real article body for the test" in fitted.md, fitted.md[:200]
 assert ex.accept(fitted)
 print("OK ap")
+
+# ---------------------------------------------------------------------------
+# Generic (loading-stub escalation)
+# ---------------------------------------------------------------------------
+
+from wellisearch.crawl.extractors.base import (
+    LOADING_STUB_MAX_CHARS,
+    GenericExtractor,
+    _is_loading_stub,
+)
+
+assert _is_loading_stub(
+    "Intro text about the page.", "<html><body>Loading...</div></body></html>"
+) is True
+assert _is_loading_stub(
+    ("x" * 1600), "<html><body>Loading...</body></html>"
+) is False  # long body: not a stub
+# 'loading...' inside <script> (JS bundle spinner template) must not count
+assert _is_loading_stub(
+    "Short real content.", '<html><body><p>x</p><script>var t = "Loading...";</script></body></html>'
+) is False
+gen = GenericExtractor()
+stub_html = (
+    "<html><head><title>Used NVIDIA GeForce RTX 3090 Ti for Sale</title></head><body>"
+    "<h1>Used NVIDIA GeForce RTX 3090 Ti for Sale</h1>"
+    "<p>The cheapest listing right now is $1,633. Listings are refreshed every "
+    "30 minutes and prices are live asking prices from eBay and Amazon.</p>"
+    "<div>Loading...</div>"
+    "</body></html>"
+)
+try:
+    gen.fit(rendered(stub_html))
+    raise AssertionError("expected Escalate for a loading stub")
+except Escalate as e:
+    assert e.tier == "browser", e.tier
+# a long body that merely mentions 'loading...' is real content -> no escalation
+long_body = (
+    "<html><head><title>Long Page</title></head><body>"
+    "<p>" + "This filler paragraph exists only to push the extracted markdown well past "
+    "the loading-stub length threshold, so the extractor treats the page as real content. " * 12 + "</p>"
+    "<div>Loading...</div>"
+    "</body></html>"
+)
+fitted = gen.fit(rendered(long_body))
+assert len(fitted.md.strip()) > LOADING_STUB_MAX_CHARS, len(fitted.md)
+print("OK generic loading stub")
 
 # ---------------------------------------------------------------------------
 # Registry
