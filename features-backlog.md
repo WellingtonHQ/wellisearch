@@ -112,9 +112,7 @@ The way it works is as follows.
 This will help rotate search engines to prevent burning one API limit, and then moving to burn the next one.
 
 ### Add new providers:
-1. ~~Exa~~ (done)
-2. ddgs (duck duck go custom crawler)
-3. ~~you.com~~
+- ddgs (duck duck go custom crawler)
 
 ### Provider auto-ranking
 Rather than having the user manually select the tiers, the system itself
@@ -132,14 +130,6 @@ It should of course show a waiting animation and a status if the fetch operation
 
 ## Dashboard
 
-- ~~Drop the "Top pages by search_hit_count"~~ → replaced with a "Recent queries (last 10)" panel listing the 10 most recent searches from `search_log` (time, query, source) via `GET /api/logs/searches?limit=10`.
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.
-
----
-
-## Indexing
-
-### ~~Pause indexing operations~~ (done)
-- ~~Add ability to pause indexing so worker ticks won't launch re-indexes and will be skipped altogether. Should be a button/toggle on the dashboard.~~ → `PATCH /api/worker` + "pause background indexing" toggle in the dashboard Actions card; while paused, watchlist re-indexes are skipped and only manual seeds/fetches run (on-demand paths unaffected); state persists across restarts in `app_state`.
   
