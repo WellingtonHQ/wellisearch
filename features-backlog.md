@@ -32,6 +32,9 @@ Filter at URL-extraction time:
 ### Record Metrics
 Publish API response times P50, P95, P99s.
 
+### BrowserOS neo crawl tier (persistent-profile browser)
+A fourth transport tier that loads pages in a real desktop browser with a persistent profile (BrowserOS neo over MCP), for the sites where both `http` and headless `browser` fail — DataDome/Cloudflare managed challenges, login-walled boards. A human can solve a stubborn captcha once in the cockpit; the persistent profile then whitelists that site for all future crawls. No LLM in the loop: wellisearch calls neo's MCP server directly with fixed scripts. See [docs/browseros-tier.md] for the full design (verified protocol facts, tier/lane integration, config knobs).
+
 ---
 # Fetching
 
