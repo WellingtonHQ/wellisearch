@@ -70,6 +70,56 @@ reddit_wall = (
     "<body><form action=\"/r/programming/\" method=\"post\"><input type=\"submit\" value=\"Continue\"></form></body></html>"
 )
 assert is_botwall(reddit_wall, 200) == "prove your humanity"
+# marker phrases in code samples are content, not walls (security articles show
+# 403 examples); the same phrase as a short page's visible text still escalates
+article_code = (
+    '<html><head><title>Fix Privilege Escalation Vulnerabilities</title></head>'
+    "<body><h1>Privilege escalation</h1>" + "<p>Article text. " * 200 + "</p>"
+    "<pre><code>if (!req.user.isAdmin) { return res.status(403).json({ error: 'Access denied' }); }</code></pre>"
+    "</body></html>"
+)
+assert is_botwall(article_code, 200) is None
+denied_wall = (
+    '<html><head><title>Access Denied</title></head>'
+    "<body><h1>Access Denied</h1><p>You do not have permission to view this page.</p></body></html>"
+)
+assert is_botwall(denied_wall, 200) == "access denied"
+# marker phrases in <script> data blobs (nav JSON etc.) are not walls
+page_script_blob = (
+    '<html><head><title>Vultr Docs</title></head>'
+    "<body>" + "<p>Documentation content. " * 200 + "</p>"
+    '<script>window.__NAV__={"label":"Fix MySQL Access Denied Errors","href":"/x"};</script>'
+    "</body></html>"
+)
+assert is_botwall(page_script_blob, 200) is None
+# embedded CF assets on a content-rich page are not walls (Turnstile form
+# widgets, jsd bootstrap scripts); structural markers only count on
+# interstitial-sized pages
+clean_cf_assets = (
+    '<html><head><title>Website Design | Computer Scene</title></head>'
+    "<body>" + "<p>Real content. " * 200 + "</p>"
+    '<div class="cf7-cf-turnstile"><div id="cf-turnstile-cf7-1" class="cf-turnstile"'
+    ' data-sitekey="0x4AAAAA"></div></div>'
+    "<script>var a=document.createElement('script');"
+    "a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';</script>"
+    "</body></html>"
+)
+assert is_botwall(clean_cf_assets, 200) is None
+# a real CF interstitial (short visible text + structural assets) still escalates
+cf_interstitial = (
+    '<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title></head>'
+    "<body><div id=\"content\"><h1>Just a moment...</h1>"
+    "Checking your browser before accessing example.com</div>"
+    "<script src=\"/cdn-cgi/challenge-platform/scripts/jsd/main.js\"></script></body></html>"
+)
+assert is_botwall(cf_interstitial, 200) == "just a moment"
+# structural markers alone still catch an interstitial with no recognizable copy
+cf_bare = (
+    '<html><head><title>Checking...</title></head>'
+    "<body><div class=\"cf-turnstile\" data-sitekey=\"0x4AAAAA\"></div>"
+    "<script src=\"/cdn-cgi/challenge-platform/scripts/jsd/main.js\"></script></body></html>"
+)
+assert is_botwall(cf_bare, 200) == "challenge-platform"
 print("OK botwall")
 
 # ---------------------------------------------------------------------------
