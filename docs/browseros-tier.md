@@ -343,6 +343,71 @@ neo; its value is for WAFs that defeat headless patchright and for
 login-walled / human-solved challenges. The `is_botwall()` fixes benefit all
 tiers and are worth merging independently of the neo tier.
 
+### Second experiment: real production failures (2026-09-18)
+
+Harness: `benchmarks/failed_crawls_neo_test.py` — 12 URLs pulled from the last
+3 days of `crawl_log` wall-type failures (~36 distinct URLs available), each
+forced through a full `http → browser → neo` ladder regardless of policy, with
+per-tier timing + diagnostics (title/status/html_head).
+
+**Run 1 finding: a third detector bug class.** 9/12 failed on *all* tiers —
+but the diagnostic titles showed real content was being served to every tier
+(status 200, correct page titles) and `is_botwall()` was rejecting it. The
+markers were matching strings embedded in clean pages:
+
+- `"challenge-platform"` / `"cf-turnstile"` appear in CF asset URLs inside
+  `<script>` tags (jsd bootstrap scripts) and in Turnstile form-widget markup
+  (`class="cf7-cf-turnstile"`) on ordinary content pages.
+- `"access denied"` appears in script JSON blobs (nav labels like "Fix MySQL
+  Access Denied Errors") and in code samples inside `<pre>`/`<code>`.
+
+**Fix (same file, `crawl/botwall.py`):** split the marker list into two:
+
+- `PHRASE_MARKERS` — human-readable wall copy ("just a moment", "access
+  denied", …) — scanned against **visible text only**: `<script>`, `<style>`,
+  `<noscript>`, `<pre>`/`<code>` blocks, HTML comments, and attribute values
+  are stripped first (`_visible_text()`).
+- `STRUCTURAL_MARKERS` — CF asset fingerprints ("cf-challenge",
+  "challenge-platform", "cf-turnstile") — scanned against raw HTML but only on
+  **interstitial-sized pages** (visible text ≤ 1000 chars), since real content
+  pages embed those assets while walls are tiny.
+
+Regression tests cover: CF assets embedded in a long page → clean; marker
+phrase inside code sample / script blob → clean; genuine short "Access Denied"
+page → wall; bare structural interstitial with no recognizable copy → wall.
+
+**Run 2 results (fixed detector, same 12 URLs):**
+
+| URL | Resolved at | ms | md chars |
+|---|---|---|---|
+| saveonphone.com/compare/… | http | 453 | 604 |
+| en.ittrip.xyz/category/windows | http | 106 | 2192 |
+| ox.security/blog/rce-in-react-server-components | http | 151 | 7256 |
+| shahjerry33.medium.com/… (article) | http | 140 | 9110 |
+| scamadviser.com/check-website/leakshaven.com | http | 2752 | 2669 |
+| csnet.co.uk/ | http | 3398 | 3191 |
+| f95zone.to/threads/miohonda-onlyfans.184700 | http | 603 | 540 |
+| s2f.kytta.dev/?text=… | http | 621 | 250 |
+| docs.vultr.com/support/platform/billing/… | http | 818 | 532 |
+| oneuptime.com/blog/post/…-fix-privilege-escalation… | http | 354 | 11822 |
+| costco.com/p/-/polymaker-pla-4x1kg-… | http | 801 | 3166 |
+| device.report/manual/15897138 | **none** (http_403 ×3) | — | — |
+
+- **11/12 resolve at the http tier in <3.4s.** All three detector bug classes
+  fixed, every production wall-type failure in this sample is a plain HTTP win.
+- device.report is a genuine WAF wall: 403 "Security check" on all three tiers
+  — its protection keys off datacenter IP reputation, which no client-side
+  trick (including neo's real browser) changes from our egress address.
+
+**Neo verdict.** Across both experiments (synthetic walls + real production
+failures), **zero URLs required the neo tier**: every resolvable URL resolved
+at http or headless-browser tier once the detector was fixed, and the one
+unresolvable wall defeats all tiers equally. Neo's remaining value is for WAFs
+that specifically fingerprint headless browsers, login-walled content (the
+persistent profile carries real logins), and human-solved challenges — none of
+which appeared in this sample. Keep it as a cheap last-resort tier; do not
+promote it into default policy on the strength of these results.
+
 ## Risks / open questions
 
 - **neo must be running.** If the desktop app is closed, every neo-tier crawl
