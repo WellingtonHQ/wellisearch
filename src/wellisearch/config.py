@@ -117,6 +117,19 @@ class Settings(BaseSettings):
     # Launch backoff after a failed browser launch (see native-crawler-design.md §3.4).
     CRAWL_LAUNCH_RETRY_AFTER_S: float = 30.0
     CRAWL_MD_MAX_CHARS: int = 150000
+    # BrowserOS neo tier (docs/browseros-tier.md): a real persistent-profile desktop
+    # browser driven over MCP with fixed scripts — last resort for bot-walled sites.
+    # Off by default; requires the neo app running on the host machine.
+    CRAWL_NEO_TIER: bool = False
+    CRAWL_NEO_ENDPOINT: str = "http://host.docker.internal:9010/mcp"
+    # Client read timeout per run call; must exceed neo's hard 30 s cap so its own
+    # timeout error arrives intact.
+    CRAWL_NEO_TIMEOUT_S: int = 45
+    CRAWL_NEO_SETTLE_MS: int = 2000
+    # Bounded manual-solve poll budget on a bot-wall (fresh navigation each poll);
+    # 0 = fail immediately on a wall.
+    CRAWL_NEO_CHALLENGE_BUDGET_S: int = 60
+    CRAWL_NEO_POLL_MS: int = 5000
     CRAWL_POOL_SIZE: int = 3
     CRAWL_PROFILE_DIR: str = "/profiles"
     CRAWL_PROFILE_MAX: int = 8

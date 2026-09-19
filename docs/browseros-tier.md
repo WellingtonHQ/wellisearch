@@ -7,7 +7,9 @@ challenges, login-walled job boards, forums. A human can solve a stubborn
 captcha once in the neo cockpit; the persistent profile then whitelists that
 site for all future crawls.
 
-Status: **design** — not yet implemented. See `features-backlog.md` (Engine →
+Status: **implemented** on branch `exp/browseros-tier` (`crawl/tiers/neo.py`,
+8 unit tests in `tests/test_neo_tier.py`). Experiment results against the real
+walls are at the bottom of this doc. See `features-backlog.md` (Engine →
 "BrowserOS neo crawl tier").
 
 ## Why this works where patchright doesn't
@@ -117,11 +119,16 @@ Each step is inside a single `call_tool("run", {"code": script})`:
 
 **Challenge poll (manual-solve path):** if `is_botwall(html, status, ct)` is
 not None and a budget remains (`CRAWL_NEO_CHALLENGE_BUDGET_S`, default 60s),
-loop: sleep `CRAWL_NEO_POLL_MS` (5s) in Python, then issue a **fresh** run call
-(new page each poll — re-navigation is what picks up the human-solved
-whitelist). Stop when clean or budget exhausted. This mirrors
-`_resolve_challenge`'s bounded loop (`browser.py:137-161`) minus the turnstile
-clicking — a human clicks, not us.
+loop: sleep `CRAWL_NEO_POLL_MS` (5s) in Python, then re-read the page. Stop
+when clean or budget exhausted. This mirrors `_resolve_challenge`'s bounded
+loop (`browser.py:137-161`) minus the turnstile clicking — a human clicks, not
+us.
+
+*Implementation deviation:* polls **re-read the same open tab in place**
+(`_recheck_script`) instead of re-navigating each poll. Re-navigation resets
+auto-solving JS challenges and looks bot-like to WAFs; the persistent profile
+picks up a human-solved whitelist on any subsequent load, so an in-place
+re-read is sufficient (a tab lost mid-poll triggers one fresh navigation).
 
 **Return `Rendered` even if still walled** (do not raise on a wall): the
 engine's own botwall check then records `botwall: <marker>` and fails the crawl
@@ -255,6 +262,86 @@ New file `tests/test_neo_tier.py`, plain-assert + `asyncio.run` style:
 
 Run with the existing convention (`python tests/test_neo_tier.py`, no network,
 DB, or browser needed).
+
+## Experiment results (2026-09-18)
+
+Harness: `benchmarks/neo_vs_cf.py` (full ladder, both phases),
+`benchmarks/neo_first_test.py` (tier-patched ladders), and
+`benchmarks/production_ladder_test.py` (unpatched production ladder). Test
+walls: xdaforums.com (DataDome-class), spectrumbusiness.net, reddit.com
+(reCAPTCHA interstitial).
+
+### Headline finding: the "hard walls" were our own detector
+
+Two `is_botwall()` bugs made every tier look like it was failing on these
+sites; both are fixed in this branch (`crawl/botwall.py`):
+
+1. **False positive — `<noscript>` text.** Legitimate pages put
+   "JavaScript is disabled" warnings inside `<noscript>` blocks for non-JS
+   clients (XenForo does exactly this). The marker scan matched the warning on
+   *clean* pages, so http/browser/neo all returned real content that the engine
+   recorded as `botwall: javascript is disabled` — and neo then polled a clean
+   page for its full 60s budget. Fix: strip `<noscript>...</noscript>` before
+   scanning (challenge walls render markers as visible text, never in noscript).
+2. **False negative — reddit's reCAPTCHA interstitial.** Plain HTTP gets a
+   "Reddit - Prove your humanity" page with no existing marker; the engine
+   stored ~167KB of challenge garbage as content. Fix: added the
+   `"prove your humanity"` marker (title + body text).
+
+### Results after the fix (production ladder, unpatched)
+
+| Site | http tier | browser tier | neo tier |
+|---|---|---|---|
+| xdaforums.com | **ok** 344ms, md=1403 | not reached | ok alone: 6.2s, md=1261 |
+| spectrumbusiness.net | **ok** 132ms, md=237 | not reached | ok alone: 7.2s, md=644 |
+| reddit.com | wall detected (`prove your humanity`) → escalate | **ok** 2.9s, md=4371 | not reached |
+
+- xdaforums/spectrumbusiness resolve at tier 1 once the detector is fixed — no
+  browser or neo needed. The http tier (curl_cffi Chrome TLS impersonation)
+  receives the full noscript page with status 200; content is comparable to the
+  JS-rendered version (md=1403 vs 1261 for xdaforums).
+- reddit's reCAPTCHA wall defeats http but **not** headless patchright: the
+  browser tier resolves it in ~3s. neo was never required by any test site.
+- Neo-only ladders confirm the tier itself works when reached: both walls load
+  clean real pages in ~6–7s, and an immediate second crawl of the same URL also
+  succeeds (no visit-rate walling observed).
+
+### Egress / WAF observations
+
+- The egress IP is a **datacenter address behind a GCP proxy** (`ifconfig.me`
+  shows `X-Forwarded-For: <host-ip>, 34.160.x.x`, `via: google`). WAFs treat it
+  accordingly and escalate fast under sustained traffic.
+- **TLS fingerprint matters more than UA.** Plain httpx (python TLS) to
+  xdaforums gets a hard 403 after heavy hammering; the same URL through the
+  http tier's curl_cffi Chrome impersonation still returns the full page with
+  200. neo's real desktop browser is unaffected by the IP-reputation
+  degradation that hits plain HTTP — it loaded clean pages while http was
+  403'd.
+- Sustained hammering (two ~5min CF-lane cycles per URL plus worker retries)
+  degrades the IP's standing for *plain* clients; a quiet period of tens of
+  minutes partially recovers it. Keep crawl frequency modest on walled domains.
+
+### Experiment hygiene notes (gotchas hit)
+
+- **The background worker kept re-hammering the test URLs in parallel.** Queue
+  entries with retry backoff ran full CF-lane cycles every ~7–10 min through
+  both experiment runs, contaminating "clean window" attempts. Clear
+  `crawl_queue` for the target domains before a clean-shot measurement.
+- **Overlapping test runs look bot-like.** Two concurrent crawls of the same
+  URL (a killed run's orphan process + a fresh run) produced walling that a
+  single sequential run did not. Run one experiment at a time; check for
+  orphans (`/proc/*/cmdline`) before re-running.
+- **Run long container tests detached** (`docker exec -d ... > /tmp/out.txt`):
+  an attached `docker exec` killed by the shell timeout loses all buffered
+  output, and the orphaned process keeps running invisibly.
+
+### Recommendation
+
+Ship the tier as designed (last-resort, per-domain policy entries) — but note
+that with the detector fixes, none of the current test walls actually require
+neo; its value is for WAFs that defeat headless patchright and for
+login-walled / human-solved challenges. The `is_botwall()` fixes benefit all
+tiers and are worth merging independently of the neo tier.
 
 ## Risks / open questions
 

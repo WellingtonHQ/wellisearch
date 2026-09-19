@@ -1,7 +1,7 @@
 """Tier registry: transport tiers — how to get the HTML (design §3.1).
 
 Tiers register themselves by name; the engine walks the policy's tier
-ladder via by_name(). Config can disable a tier (http / stealth).
+ladder via by_name(). Config can disable a tier (http / neo / stealth).
 """
 from __future__ import annotations
 
@@ -43,10 +43,20 @@ def by_name(name: str) -> Tier | None:
     s = get_settings()
     if name == "http" and not s.CRAWL_HTTP_TIER:
         return None
+    if name == "neo" and not s.CRAWL_NEO_TIER:
+        return None
     if name == "stealth" and not s.CRAWL_STEALTH_TIER:
         return None
     return _REGISTRY.get(name)
 
 
+async def aclose_all() -> None:
+    """Close any tier that holds an open session (idempotent; call at exit)."""
+    for tier in _REGISTRY.values():
+        closer = getattr(tier, "aclose", None)
+        if closer is not None:
+            await closer()
+
+
 # Side-effect imports: each tier module registers itself on import.
-from . import browser, http, stealth  # noqa: E402,F401
+from . import browser, http, neo, stealth  # noqa: E402,F401

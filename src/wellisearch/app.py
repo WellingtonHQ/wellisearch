@@ -683,8 +683,10 @@ async def _shutdown() -> None:
         except (asyncio.CancelledError, Exception):
             pass
         _worker_task = None
+    from .crawl.tiers import aclose_all
     from .providers import shutdown_gateway
 
+    await aclose_all()
     await shutdown_gateway()
     await db.close()
 

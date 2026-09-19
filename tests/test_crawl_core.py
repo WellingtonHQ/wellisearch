@@ -52,6 +52,24 @@ assert is_botwall("access denied", 200, None) is not None
 assert is_botwall("access denied", 200, "text/html; charset=utf-8") is not None
 # status >= 400 wins even for non-HTML bodies
 assert is_botwall("", 403, "application/json") == "http_403"
+# <noscript> warnings on legitimate pages are not walls (XenForo et al. put
+# "JavaScript is disabled" there for non-JS clients)
+clean_noscript = (
+    '<html><head><title>WellingtonHQ | XDA Forums</title></head>'
+    '<body><div class="blockMessage">Forum content here</div>'
+    "<noscript><div class=\"u-noJsOnly\">JavaScript is disabled. For a better "
+    "experience, please enable JavaScript.</div></noscript></body></html>"
+)
+assert is_botwall(clean_noscript, 200) is None
+# the same marker as visible text still escalates
+assert is_botwall("<html><body>JavaScript is disabled. Enable it to continue.</body></html>", 200) is not None
+# reddit's reCAPTCHA interstitial must escalate, not be stored as content
+reddit_wall = (
+    '<!DOCTYPE html><html lang="en"><head><title>Reddit - Prove your humanity</title>'
+    "<script src=\"https://www.google.com/recaptcha/api.js\"></script></head>"
+    "<body><form action=\"/r/programming/\" method=\"post\"><input type=\"submit\" value=\"Continue\"></form></body></html>"
+)
+assert is_botwall(reddit_wall, 200) == "prove your humanity"
 print("OK botwall")
 
 # ---------------------------------------------------------------------------

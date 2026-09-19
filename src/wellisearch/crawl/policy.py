@@ -33,8 +33,14 @@ POLICY: dict[str, Policy] = {
     "search.brave.com": Policy(
         "brave", ("browser",), ("settle", "network_idle"), (), "shared",
     ),
+    # Bot-walled domains get neo (persistent-profile browser) as last resort; see docs/browseros-tier.md.
+    "linkedin.com": Policy("linkedin", ("http", "browser", "neo"), ("settle",), (), "shared"),
     "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    "reddit.com": Policy("reddit", ("http", "browser", "neo"), ("settle",), (), "shared"),
     "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    "spectrumbusiness.net": Policy(
+        "spectrumbusiness", ("http", "browser", "neo"), ("settle",), (), "shared",
+    ),
     "target.com": Policy(
         "target", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
     ),
@@ -43,6 +49,7 @@ POLICY: dict[str, Policy] = {
         "walmart", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
     ),
     "wsj.com": Policy("wsj", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    "xdaforums.com": Policy("xdaforums", ("http", "browser", "neo"), ("settle",), (), "shared"),
 }
 
 DEFAULT_POLICY = Policy("default", ("http", "browser"), ("settle",), (), "shared")
