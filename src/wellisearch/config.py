@@ -57,12 +57,20 @@ class Settings(BaseSettings):
     # --- search ---
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
-    # Local-hit gate: fetch at least this many rows so the coverage gate can
-    # see a full-coverage page that ranks just outside the top-k by score.
+    # Local-hit gate: fetch at least this many rows so the gate can see a
+    # passing page that ranks just outside the top-k by score.
     SEARCH_GATE_MIN_K: int = 10
-    # Local-hit gate: serve local if any top result's `coverage`
-    # (fn_search_local column, see docs/ranking.md) is >= this.
+    # Local-hit gate (condition 1): a passing row must cover at least this
+    # fraction of the query's content words (`coverage` column, see
+    # docs/ranking.md).
     LOCAL_MIN_COVERAGE: float = 0.75
+    # Local-hit gate (condition 2): a passing row must also have best-chunk
+    # cosine similarity >= this (`similarity` column). Rejects pages that merely
+    # contain the query's words scattered across a huge body — word lists, vocab
+    # dumps — which coverage alone cannot tell apart. NULL similarity (no
+    # embeddings / failed query embed) never passes; auto mode then defers to
+    # the provider gateway.
+    LOCAL_MIN_SIMILARITY: float = 0.3
     # Legacy local-hit cutoff; now only for ranking (see docs/ranking.md).
     SEARCH_MIN_SCORE: float = 0.06
     STALE_HOURS: int = 72

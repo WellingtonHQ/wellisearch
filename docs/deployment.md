@@ -100,7 +100,9 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 |---|---|---|
 | `SEARCH_K` | `5` | default result count |
 | `SEARCH_MAX_CRAWL` | `5` | gateway result URLs to pre-index per miss |
-| `LOCAL_MIN_COVERAGE` | `0.75` | local-hit gate: min fraction of query words a page must cover (see ranking.md) |
+| `LOCAL_MIN_COVERAGE` | `0.75` | local-hit gate: min fraction of query words a passing page must cover (see ranking.md) |
+| `LOCAL_MIN_SIMILARITY` | `0.3` | local-hit gate: min best-chunk cosine similarity for a passing page; NULL never passes, auto mode defers to providers if fewer than k rows pass |
+| `SEARCH_GATE_MIN_K` | `10` | rows fetched so the gate can see near-miss pages that rank just outside top-k by score |
 | `SEARCH_MIN_SCORE` | `0.06` | legacy; now only for ranking (see ranking.md) |
 | `STALE_HOURS` | `72` | staleness hint for stats/dashboard |
 | `MAX_CHUNK_TOKENS` | `500` | chunk token budget; must stay under MiniLM's 512-token input window (est. ~4 chars/token) |

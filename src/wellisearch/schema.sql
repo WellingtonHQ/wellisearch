@@ -155,9 +155,11 @@ CREATE TABLE IF NOT EXISTS app_state (
 -- ===========================================================================
 -- fn_search_local(query, qvec, k) — the hybrid ranking core: FTS + trigram +
 -- vector legs (each top-50), RRF fusion with a per-page top-3 cap, then
--- prominence/freshness adjustments; disabled pages filtered out.
--- Design, formulas, and calibration: docs/ranking.md (trigram leg:
--- docs/trigram-rewrite.md).
+-- prominence/freshness adjustments; disabled pages filtered out. Each row
+-- also carries `coverage` (query-word fraction in title+body) and
+-- `similarity` (best-chunk cosine to the query vector) — together they are
+-- the local-hit gate (search_web.py). Design, formulas, and calibration:
+-- docs/ranking.md (trigram leg: docs/trigram-rewrite.md).
 -- ===========================================================================
 -- DROP first: CREATE OR REPLACE cannot change the return type (adding a
 -- column), and nothing references this function besides the app at runtime.
@@ -169,6 +171,7 @@ RETURNS TABLE (
   snippet TEXT,
   score DOUBLE PRECISION,
   coverage DOUBLE PRECISION,
+  similarity DOUBLE PRECISION,
   last_crawled TIMESTAMPTZ,
   fetch_count INT
 )
@@ -299,31 +302,48 @@ AS $$
     SELECT b.url AS url, left(regexp_replace(c.text, '\s+', ' ', 'g'), 400) AS snippet
     FROM best b
     JOIN chunks c ON c.id = b.cid
-  )
+  ),
+  ranked AS (
+    SELECT
+      p.url AS url,
+      p.title AS title,
+      bc.snippet AS snippet,
+      (ps.score
+       + 0.005 * ln(1.0 + p.fetch_count))
+       * exp(-GREATEST(EXTRACT(EPOCH FROM (now() - p.last_crawled)) / 1209600.0, 0))
+       AS score,
+      -- Coverage: fraction of the query's content words in title+body (docs/ranking.md).
+      -- left(...): to_tsvector overfits a 1 MB row type — pages with multi-MB
+      -- fit_markdown (raw JSON blobs) overflowed it and crashed the function.
+      (SELECT count(*) FROM words
+         WHERE to_tsvector('english', COALESCE(p.title, '') || ' ' || left(COALESCE(p.fit_markdown, ''), 100000))
+               @@ to_tsquery('english', words.lexeme)) * 1.0
+      / NULLIF((SELECT count(*) FROM words), 0) AS coverage,
+      p.last_crawled AS last_crawled,
+      p.fetch_count AS fetch_count
+    FROM pagescore ps
+    JOIN pages p ON p.url = ps.url AND p.disabled = false
+    JOIN bestchunk bc ON bc.url = ps.url
+  ),
+  topk AS (SELECT * FROM ranked ORDER BY score DESC LIMIT k)
   SELECT
-    p.url AS url,
-    p.title AS title,
-    bc.snippet AS snippet,
-    (ps.score
-     + 0.005 * ln(1.0 + p.fetch_count))
-     * exp(-GREATEST(EXTRACT(EPOCH FROM (now() - p.last_crawled)) / 1209600.0, 0))
-     AS score,
-    -- Coverage: fraction of the query's content words in title+body (docs/ranking.md).
-    -- left(...): to_tsvector overfits a 1 MB row type — pages with multi-MB
-    -- fit_markdown (raw JSON blobs) overflowed it and crashed the function.
-    (SELECT count(*) FROM words
-       WHERE to_tsvector('english', COALESCE(p.title, '') || ' ' || left(COALESCE(p.fit_markdown, ''), 100000))
-             @@ to_tsquery('english', words.lexeme)) * 1.0
-    / NULLIF((SELECT count(*) FROM words), 0) AS coverage,
-    p.last_crawled AS last_crawled,
-    p.fetch_count AS fetch_count
-  FROM pagescore ps
-  JOIN pages p ON p.url = ps.url AND p.disabled = false
-  JOIN bestchunk bc ON bc.url = ps.url
-  ORDER BY
-    (ps.score
-     + 0.005 * ln(1.0 + p.fetch_count))
-     * exp(-GREATEST(EXTRACT(EPOCH FROM (now() - p.last_crawled)) / 1209600.0, 0))
-    DESC
-  LIMIT k;
+    t.url AS url,
+    t.title AS title,
+    t.snippet AS snippet,
+    t.score AS score,
+    t.coverage AS coverage,
+    -- Similarity: cosine similarity of the query vector to this page's closest
+    -- chunk (1 - min L2 distance over its embedded chunks). NULL when qvec is
+    -- absent or the page has no embeddings — the local-hit gate treats NULL as
+    -- unverified and defers to the provider gateway.
+    CASE WHEN qvec IS NOT NULL THEN 1 - s.min_dist END AS similarity,
+    t.last_crawled AS last_crawled,
+    t.fetch_count AS fetch_count
+  FROM topk t
+  LEFT JOIN LATERAL (
+    SELECT min(c.embedding <=> qvec) AS min_dist
+    FROM chunks c
+    WHERE c.url = t.url AND c.embedding IS NOT NULL
+  ) s ON true
+  ORDER BY t.score DESC;
 $$;

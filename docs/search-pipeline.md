@@ -40,9 +40,9 @@ SELECT * FROM fn_search_local(%s, %s::vector, %s)
 ```
 
 See [ranking.md](ranking.md) for the full algorithm. Returns at most
-`max(k, 10)` rows with `url, title, snippet, score, coverage, last_crawled,
-fetch_count` (the extra rows let the gate below see past the top-k by
-score). If the function itself errors, `local_rows = []` **and** the failure
+`max(k, 10)` rows with `url, title, snippet, score, coverage, similarity,
+last_crawled, fetch_count` (the extra rows let the gate below see past the
+top-k by score). If the function itself errors, `local_rows = []` **and** the failure
 is returned as `index_error`: auto mode continues to the gateway (the error
 stays hidden behind the fallback), local mode surfaces it in the error
 envelope (`index_error` field in JSON, `Index Error:` header line in
@@ -55,18 +55,30 @@ kept). This is applied *after* ranking, in Python.
 
 ### 4. Gate: is the local result good enough?
 
+A row passes when it clears both conditions (`fn_search_local` columns,
+computed entirely in Postgres):
+
 ```python
-serve_local = any((r.get("coverage") or 0) >= LOCAL_MIN_COVERAGE for r in local_rows)
+def _passes_local_gate(r):
+    if (r.get("coverage") or 0) < LOCAL_MIN_COVERAGE:      # default 0.75
+        return False
+    sim = r.get("similarity")                              # best-chunk cosine; NULL never passes
+    return sim is not None and sim >= LOCAL_MIN_SIMILARITY # default 0.3
 ```
 
-`LOCAL_MIN_COVERAGE` defaults to **0.75**. `coverage` (computed in
-`fn_search_local`, entirely in Postgres) is the fraction of the query's
-content words the page's title+body contains — the actual "do we have this
-answer?" signal. The RRF `score` is rank-only and does not gate (off-topic
-pages can outscore on-topic ones: 0.134 vs 0.049 on this index), nor does
-cosine similarity (0.410 on-topic vs 0.503 off-topic). See
-[ranking.md § Local-hit gate](ranking.md#local-hit-gate-coverage) for the
-calibration data.
+`coverage` (the fraction of the query's content words in title+body) answers
+"does this page contain what was asked for?"; `similarity` (cosine of the
+query vector to the page's closest chunk) answers "is it topically about it,
+or just a body that happens to contain those words?" — word lists / vocab
+dumps pass coverage but fail similarity. The RRF `score` is rank-only and does
+not gate (off-topic pages can outscore on-topic ones: 0.134 vs 0.049 on this
+index). See [ranking.md § Local-hit gate](ranking.md#local-hit-gate-coverage--similarity)
+for the calibration data.
+
+**Auto mode serves local only when at least k rows pass**; fewer passing rows
+means the corpus does not really answer the query, so the gateway serves
+instead (the served set is the passing rows, in score order). `search_mode=
+"local"` bypasses the gate entirely — the caller explicitly chose the index.
 
 ### 5a. Local hit → serve (zero provider credits)
 

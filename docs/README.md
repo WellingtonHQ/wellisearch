@@ -49,10 +49,11 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
    tool. Both call `search_web()` in `src/wellisearch/search_web.py`.
 2. The query is embedded (fastembed, 384-d) and ranked against the local
    index by the Postgres function `fn_search_local` (hybrid FTS + trigram +
-   vector, RRF-fused). If any result covers ≥ `LOCAL_MIN_COVERAGE` (default
-   `0.75`) of the query's content words, the local rows are served
-   immediately — **zero provider credits**.
- 3. Otherwise the **provider gateway** (`providers/`) tries the providers one
+   vector, RRF-fused). If at least k results each clear both gate conditions —
+   covering ≥ `LOCAL_MIN_COVERAGE` (default `0.75`) of the query's content
+   words **and** best-chunk similarity ≥ `LOCAL_MIN_SIMILARITY` (default
+   `0.3`) — those local rows are served immediately: **zero provider credits**.
+ 3. Otherwise (fewer than k passing rows) the **provider gateway** (`providers/`) tries the providers one
     by one, in the order currently set (a dashboard override via
     `PUT /api/providers/order` when set, else the `SEARCH_PROVIDERS` default),
     gated by runtime toggles, configuration, and a monthly quota ledger. First
