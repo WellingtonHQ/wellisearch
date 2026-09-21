@@ -132,4 +132,4 @@ It should of course show a waiting animation and a status if the fetch operation
 
 - Add a section that shows a log of searches only (including terms), a list of URLs provided, and source (local OR provider). Essentially surfaces `search_log` table.
 - Light mode: automatically determined via system.
-  
+- Remove the "Top pages" section.
