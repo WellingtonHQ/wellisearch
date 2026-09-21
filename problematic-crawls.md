@@ -83,6 +83,22 @@ browser sessions.
 Reddit threads (e.g. `reddit.com/r/MacOS/comments/1g9hel4/...`) are bot-walled
 on both tiers; see the reddit entry in `features-backlog.md`.
 
+
+#### Example Fetch
+```
+Title: Welcome to Reddit
+URL: https://old.reddit.com/r/Frugal/comments/1cal0ff/comparing_costco_prices_instacart_vs_in_store/
+From Index: false
+Chars: 281
+Truncated: false
+---
+To keep Reddit safe, accounts are required to access old Reddit. Log in, or continue without an account on reddit.com.
+
+By continuing, you agree to our User Agreement and acknowledge that you understand the Privacy Policy.
+
+You’ve set up two-factor authentication for this account.
+```
+
 ### microsoft.eightfold.ai job page
 
 `https://microsoft.eightfold.ai/careers/job?domain=microsoft.com&profile_type=candidate&pid=1970393556941428&location=United+States&filter_include_remote=1`
