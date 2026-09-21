@@ -148,6 +148,15 @@ async def _check_queue_quota_provider_state() -> None:
     assert used >= 1 and limit == 1000
     print("OK quota ledger:", used, limit)
 
+    # a bump must not null the stored limit when no runtime override is set
+    await db.set_provider_state("tavily", enabled=True)
+    await db.quota_bump("tavily")
+    row = await db.fetch_one(
+        "SELECT quota_limit FROM provider_quota WHERE provider = 'tavily' ORDER BY month DESC LIMIT 1"
+    )
+    assert row is not None and row["quota_limit"] == 1000, row
+    print("OK quota limit preserved without override")
+
     await db.set_provider_state("brave", enabled=False)
     st = await db.get_provider_state("brave")
     assert st["enabled"] is False
