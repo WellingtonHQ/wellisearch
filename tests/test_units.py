@@ -1,4 +1,4 @@
-"""Unit tests: chunker + truncation + renderers (pure logic, no DB)."""
+"""Unit tests: chunker + truncation + renderers + url filter + backoff/failure detail (pure logic, no DB)."""
 from __future__ import annotations
 
 import importlib.metadata as _im
@@ -250,6 +250,7 @@ print("OK refresh backoff formula")
 # ---------------------------------------------------------------------------
 
 def _result(attempts: list[dict]) -> CrawlResult:
+    """Build a failed CrawlResult carrying the given per-tier attempts."""
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
 
 
