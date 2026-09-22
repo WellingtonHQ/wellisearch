@@ -457,104 +457,9 @@ async def test_dashboard(c: httpx.AsyncClient) -> None:
 
 async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
     """format=json on /api/search + /api/fetch + /api/fetch-bulk: envelope + precedence."""
-    # search: explicit format=json -> JSON envelope
-    params = {"query": "fastapi mcp server", "num_results": 5, "format": "json"}
-    r = await c.get("/api/search", params=params)
-    j = r.json()
-    check(
-        "search json: 200 + content-type json",
-        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json"),
-        r.headers.get("content-type", "")
-    )
-    check(
-        "search json: envelope keys",
-        isinstance(j, dict) and all(k in j for k in ("count", "degraded", "results", "source")),
-        str(sorted(j.keys())) if isinstance(j, dict) else type(j).__name__
-    )
-    check(
-        "search json: results list with url/title/snippet",
-        isinstance(j.get("results"), list) and len(j["results"]) >= 1
-        and all(k in j["results"][0] for k in ("snippet", "title", "url")),
-        json.dumps((j.get("results") or [{}])[0])[:120]
-    )
-    check(
-        "search json: timing object with total_ms + index_ms",
-        isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
-        json.dumps(j.get("timing"))
-    )
-
-    # search: Accept header only (no format param) -> JSON
-    r = await c.get(
-        "/api/search",
-        params={"query": "fastapi mcp server"},
-        headers={"Accept": "application/json"},
-    )
-    check(
-        "search json via Accept header",
-        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
-        and "results" in r.json(),
-        r.headers.get("content-type", "")
-    )
-
-    # precedence: format=markdown + Accept: application/json -> param wins
-    r = await c.get(
-        "/api/search",
-        params={"query": "fastapi mcp server", "format": "markdown"},
-        headers={"Accept": "application/json"}
-    )
-    check(
-        "search precedence: format param wins over Accept",
-        r.status_code == 200
-        and r.headers.get("content-type", "").startswith("text/markdown")
-        and "Source:" in r.text,
-        r.headers.get("content-type", ""),
-    )
-
-    # invalid format -> 400
-    r = await c.get("/api/search", params={"query": "fastapi", "format": "yaml"})
-    check("search invalid format -> 400", r.status_code == 400, r.text[:120])
-
-    # fetch: format=json -> JSON envelope
-    r = await c.post("/api/fetch", json={"url": url, "format": "json"})
-    j = r.json()
-    check(
-        "fetch json: 200 + content-type json + envelope keys",
-        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
-        and all(k in j for k in ("chars", "from_index", "markdown", "ok", "title", "truncated", "url")),
-        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
-    )
-    check(
-        "fetch json: timing object with total_ms + index_ms",
-        isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
-        json.dumps(j.get("timing"))
-    )
-
-    # fetch-bulk: format=json -> JSON envelope
-    r = await c.post(
-        "/api/fetch-bulk",
-        json={
-            "urls": ["https://python.langchain.com/docs/introduction/",
-                     "https://python.langchain.com/docs/get_started/quickstart/"],
-            "max_chars": 3000, "strategy": "even", "format": "json"}
-    )
-    j = r.json()
-    check(
-        "fetch-bulk json: 200 + content-type json + envelope keys",
-        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
-        and all(k in j for k in ("ok", "pages", "pages_fetched", "strategy", "total_chars")),
-        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
-    )
-    check(
-        "fetch-bulk json: pages list with content/chars",
-        isinstance(j.get("pages"), list) and len(j["pages"]) >= 1
-        and all(k in j["pages"][0] for k in ("chars", "content", "title", "truncated", "url")),
-        json.dumps((j.get("pages") or [{}])[0])[:120]
-    )
-    check(
-        "fetch-bulk json: timing object with total_ms + index_ms",
-        isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
-        json.dumps(j.get("timing"))
-    )
+    await _search_json_checks(c)
+    await _fetch_json_checks(c, url)
+    await _fetch_bulk_json_checks(c)
 
 
 # ---------------------------------------------------------------------------
@@ -634,6 +539,114 @@ async def _set_pages_disabled(
     """PATCH each page's disabled flag (forces/undoes gateway failover)."""
     for u in urls:
         await c.patch(f"/api/pages/{quote(u, safe='')}", json={"disabled": disabled})
+
+
+async def _search_json_checks(c: httpx.AsyncClient) -> None:
+    """/api/search with format=json: envelope keys + Accept/param precedence."""
+    # search: explicit format=json -> JSON envelope
+    params = {"query": "fastapi mcp server", "num_results": 5, "format": "json"}
+    r = await c.get("/api/search", params=params)
+    j = r.json()
+    check(
+        "search json: 200 + content-type json",
+        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json"),
+        r.headers.get("content-type", "")
+    )
+    check(
+        "search json: envelope keys",
+        isinstance(j, dict) and all(k in j for k in ("count", "degraded", "results", "source")),
+        str(sorted(j.keys())) if isinstance(j, dict) else type(j).__name__
+    )
+    check(
+        "search json: results list with url/title/snippet",
+        isinstance(j.get("results"), list) and len(j["results"]) >= 1
+        and all(k in j["results"][0] for k in ("snippet", "title", "url")),
+        json.dumps((j.get("results") or [{}])[0])[:120]
+    )
+    check(
+        "search json: timing object with total_ms + index_ms",
+        isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
+        json.dumps(j.get("timing"))
+    )
+
+    # search: Accept header only (no format param) -> JSON
+    r = await c.get(
+        "/api/search",
+        params={"query": "fastapi mcp server"},
+        headers={"Accept": "application/json"},
+    )
+    check(
+        "search json via Accept header",
+        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
+        and "results" in r.json(),
+        r.headers.get("content-type", "")
+    )
+
+    # precedence: format=markdown + Accept: application/json -> param wins
+    r = await c.get(
+        "/api/search",
+        params={"query": "fastapi mcp server", "format": "markdown"},
+        headers={"Accept": "application/json"}
+    )
+    check(
+        "search precedence: format param wins over Accept",
+        r.status_code == 200
+        and r.headers.get("content-type", "").startswith("text/markdown")
+        and "Source:" in r.text,
+        r.headers.get("content-type", ""),
+    )
+
+    # invalid format -> 400
+    r = await c.get("/api/search", params={"query": "fastapi", "format": "yaml"})
+    check("search invalid format -> 400", r.status_code == 400, r.text[:120])
+
+
+async def _fetch_json_checks(c: httpx.AsyncClient, url: str) -> None:
+    """/api/fetch with format=json: envelope keys + timing."""
+    # fetch: format=json -> JSON envelope
+    r = await c.post("/api/fetch", json={"url": url, "format": "json"})
+    j = r.json()
+    check(
+        "fetch json: 200 + content-type json + envelope keys",
+        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
+        and all(k in j for k in ("chars", "from_index", "markdown", "ok", "title", "truncated", "url")),
+        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
+    )
+    check(
+        "fetch json: timing object with total_ms + index_ms",
+        isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
+        json.dumps(j.get("timing"))
+    )
+
+
+async def _fetch_bulk_json_checks(c: httpx.AsyncClient) -> None:
+    """/api/fetch-bulk with format=json: envelope keys + pages list."""
+    # fetch-bulk: format=json -> JSON envelope
+    r = await c.post(
+        "/api/fetch-bulk",
+        json={
+            "urls": ["https://python.langchain.com/docs/introduction/",
+                     "https://python.langchain.com/docs/get_started/quickstart/"],
+            "max_chars": 3000, "strategy": "even", "format": "json"}
+    )
+    j = r.json()
+    check(
+        "fetch-bulk json: 200 + content-type json + envelope keys",
+        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
+        and all(k in j for k in ("ok", "pages", "pages_fetched", "strategy", "total_chars")),
+        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
+    )
+    check(
+        "fetch-bulk json: pages list with content/chars",
+        isinstance(j.get("pages"), list) and len(j["pages"]) >= 1
+        and all(k in j["pages"][0] for k in ("chars", "content", "title", "truncated", "url")),
+        json.dumps((j.get("pages") or [{}])[0])[:120]
+    )
+    check(
+        "fetch-bulk json: timing object with total_ms + index_ms",
+        isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
+        json.dumps(j.get("timing"))
+    )
 
 
 async def _mcp_http_auth_checks() -> None:
