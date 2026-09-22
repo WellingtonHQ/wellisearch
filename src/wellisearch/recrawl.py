@@ -101,7 +101,7 @@ async def _run(
                 print(f"  ... and {total - PREVIEW_LIMIT} more")
             return
 
-        stats = {"ok": 0, "unchanged": 0, "failed": 0}
+        stats = {"failed": 0, "ok": 0, "unchanged": 0}
         t0 = time.monotonic()
 
         async def process(url: str) -> None:

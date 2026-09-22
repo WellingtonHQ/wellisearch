@@ -29,14 +29,14 @@ POLICY: dict[str, Policy] = {
         "bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
     ),
     "boardgamegeek.com": Policy("bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated"),
+    "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     # SERP is a SvelteKit SPA: results render client-side, so wait for network
     # idle before capturing (same as amazon/target). Browser-first — the raw
     # HTML has no content at all, so there is nothing for the http tier to win.
     "search.brave.com": Policy(
         "brave", ("browser",), ("settle", "network_idle"), (), "shared",
     ),
-    "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
-    "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "target.com": Policy(
         "target", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
     ),

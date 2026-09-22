@@ -78,7 +78,7 @@ def allocate_budgets(
         weights = [1.0 / n] * n
     elif strategy in ("head", "tail"):
         weights = [l / total_len for l in lens]
-    else:  # smart | priority → prominence-based
+    else:  # priority | smart → prominence-based
         w = [max(1, 1 + int(w)) for w in page_weights]
         if max(int(wi) for wi in page_weights) <= 0:
             # no prominence signal (all fetch_count=0) → §15: fall back to even
@@ -109,7 +109,7 @@ def truncate_page(
         return content, False
     if strategy == "tail":
         return boundary_cut_tail(content, chars), True
-    # smart/head/even/priority all keep the lead (article lead = best
+    # even/head/priority/smart all keep the lead (article lead = best
     # generic signal-per-char without a query context)
     return boundary_cut_head(content, chars), True
 

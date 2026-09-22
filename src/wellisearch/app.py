@@ -366,9 +366,9 @@ async def api_pages(sort: str = "fetch_count", limit: int = API_PAGES_DEFAULT_LI
     """
     allowed = {
         "fetch_count": "fetch_count DESC",
-        "search_hit_count": "search_hit_count DESC",
-        "last_crawled": "last_crawled DESC",
         "first_seen": "first_seen DESC",
+        "last_crawled": "last_crawled DESC",
+        "search_hit_count": "search_hit_count DESC",
     }
     order = allowed.get(sort, allowed["fetch_count"])
     pages = await db.fetch_all(
