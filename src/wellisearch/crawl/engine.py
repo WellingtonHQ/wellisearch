@@ -18,6 +18,10 @@ from .results import ChallengeDetected, CrawlResult, Escalate, Fitted
 
 log = logging.getLogger("wellisearch.crawl.engine")
 
+# The CF-lane browser backstop is this multiple of CRAWL_CF_TIMEOUT_S (goto +
+# the full challenge loop; see _flat_backstop).
+CF_BACKSTOP_FACTOR = 2
+
 
 async def crawl(url: str) -> CrawlResult:
     """Crawl one URL through its policy's tier ladder.
@@ -120,7 +124,7 @@ def _flat_backstop(name: str) -> float:
     if name == "stealth":
         return float(s.CRAWL_STEALTH_TIMEOUT_S)
     if name == "browser" and get_lane() == CF:
-        return float(s.CRAWL_CF_TIMEOUT_S) * 2
+        return float(s.CRAWL_CF_TIMEOUT_S) * CF_BACKSTOP_FACTOR
     return float(s.CRAWL_TIMEOUT_S)
 
 

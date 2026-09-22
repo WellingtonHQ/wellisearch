@@ -55,6 +55,8 @@ class Settings(BaseSettings):
 
     # --- search ---
     SEARCH_K: int = 5
+    # Max chars of a snippet in search results (local + provider).
+    SNIPPET_MAX_LEN: int = 400
     SEARCH_MAX_CRAWL: int = 5
     # Local-hit gate: fetch at least this many rows so the coverage gate can
     # see a full-coverage page that ranks just outside the top-k by score.

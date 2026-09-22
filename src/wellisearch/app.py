@@ -103,7 +103,8 @@ WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
 API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
 API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
 API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
-API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
+API_LOGS_DEFAULT_LIMIT = 50  # /api/logs/crawls + /api/logs/searches default limit
+API_LOGS_MERGED_DEFAULT_LIMIT = 200  # /api/logs (merged stream) default limit
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +464,7 @@ async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
 @app.get("/api/logs")
 async def api_logs(
     secs: int = WINDOW_MAX_SECS,
-    limit: int = 200,
+    limit: int = API_LOGS_MERGED_DEFAULT_LIMIT,
     q: str = "",
 ) -> Any:
     """Merged windowed log stream: crawls + searches + events, ts DESC.
