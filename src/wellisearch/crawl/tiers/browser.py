@@ -213,7 +213,9 @@ async def _click_turnstile_checkbox(page: Page) -> bool:
               for (const el of els) {
                 const r = el.getBoundingClientRect();
                 if (r.width > 600 && r.width < 1000 && r.height > 55 && r.height < 85 && r.y > 100) {
-                  return JSON.stringify([Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]);
+                  return JSON.stringify([
+                    Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)
+                  ]);
                 }
               }
               return null;
@@ -290,7 +292,10 @@ async def _walmart_recover_item_url(page: Page, url: str) -> str | None:
           const out = [];
           document.querySelectorAll('a[href*="/ip/"]').forEach((a) => {
             const m = (a.getAttribute('href') || '').match(/\\/ip\\/([^/?#]+)\\/([0-9]+)/);
-            if (m && !seen.has(m[1] + '/' + m[2])) { seen.add(m[1] + '/' + m[2]); out.push(m[1] + '/' + m[2]); }
+            if (m && !seen.has(m[1] + '/' + m[2])) {
+              seen.add(m[1] + '/' + m[2]);
+              out.push(m[1] + '/' + m[2]);
+            }
           });
           return JSON.stringify(out);
         })()"""
