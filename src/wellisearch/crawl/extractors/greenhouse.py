@@ -80,9 +80,17 @@ def _job_posting(soup: BeautifulSoup) -> dict | None:
         except (TypeError, ValueError):
             continue
         items = data if isinstance(data, list) else [data]
-        for item in items:
-            if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
-                return item
+        posting = _find_job_posting(items)
+        if posting is not None:
+            return posting
+    return None
+
+
+def _find_job_posting(items: list[object]) -> dict | None:
+    """The first JobPosting node in a decoded JSON-LD block, else None."""
+    for item in items:
+        if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
+            return item
     return None
 
 
@@ -123,14 +131,9 @@ def _location(posting: dict) -> str | None:
         addr = (loc or {}).get("address")
         if not isinstance(addr, dict):
             continue
-        seen: list[str] = []
-        primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
-        candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
-        for piece in candidates:
-            if piece and piece not in seen:
-                seen.append(piece)
-        if seen:
-            return ", ".join(seen)
+        parts = _addr_parts(addr)
+        if parts:
+            return ", ".join(parts)
     return None
 
 
@@ -140,6 +143,17 @@ def _employment_type(posting: dict) -> str | None:
     if not isinstance(et, str) or not et.strip():
         return None
     return et.replace("_", " ").title()
+
+
+def _addr_parts(addr: dict) -> list[str]:
+    """Deduped address pieces in display order (street/locality, region, country)."""
+    seen: list[str] = []
+    primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
+    candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
+    for piece in candidates:
+        if piece and piece not in seen:
+            seen.append(piece)
+    return seen
 
 
 def _addr_piece(value: object) -> str | None:

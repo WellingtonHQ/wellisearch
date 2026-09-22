@@ -261,6 +261,18 @@ def make_runner(model_id: str, args: argparse.Namespace) -> TorchRunner | FastEm
         return FastEmbedRunner(model_id, args)
     return TorchRunner(model_id, args)
 
+def _first_rel_rank(
+    idx: np.ndarray,
+    chunks: list[dict],
+    order: list[int],
+    rel: set[str],
+) -> int:
+    """Rank (1-based) of the first top-k doc in `rel`, else 0."""
+    for rank, d in enumerate(idx, start=1):
+        if chunks[order[d]]["id"] in rel:
+            return rank
+    return 0
+
 def score_quality(
     S: np.ndarray,
     queries: list[dict],
@@ -278,11 +290,7 @@ def score_quality(
     for i, q in enumerate(queries):
         rel = truth[q["q"]]
         idx = np.argsort(-S[i])[:topk]
-        best = 0
-        for rank, d in enumerate(idx, start=1):
-            if chunks[order[d]]["id"] in rel:
-                best = rank
-                break
+        best = _first_rel_rank(idx, chunks, order, rel)
         for k in (1, 5, 10):
             recall[k] += 1 if (best and best <= k) else 0
         if best:

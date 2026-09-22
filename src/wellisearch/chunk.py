@@ -70,11 +70,12 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
             continue
 
         if in_fence:
+            # inside a fenced block: append until the matching closing fence
+            closes = bool(fence_match and fence_match.group(1) == fence_marker)
             current.append(line)
             current_tokens += _tokens(line)
-            if fence_match and fence_match.group(1) == fence_marker:
-                in_fence = False
             i += 1
+            in_fence = not closes
             continue
 
         if current_tokens + _tokens(line) > budget and current:

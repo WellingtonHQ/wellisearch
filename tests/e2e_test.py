@@ -20,6 +20,8 @@ from urllib.parse import quote
 import httpx
 
 if TYPE_CHECKING:
+    import httpx2
+
     from mcp import ClientSession
 
 BASE = "http://127.0.0.1:8780"
@@ -674,17 +676,22 @@ async def _mcp_http_auth_checks() -> None:
 
 async def _mcp_http_session_checks() -> None:
     """Open one Streamable-HTTP session; drive the handshake + tool checks."""
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamable_http_client
-
     # the SDK's streamable client takes its own httpx2 client (for headers)
     import httpx2
 
     async with httpx2.AsyncClient(headers={"X-API-Key": KEY}) as http:
-        async with streamable_http_client(f"{BASE}/mcp/http", http_client=http) as (read, write):
-            async with ClientSession(read, write) as session:
-                await _mcp_http_handshake_checks(session)
-                await _mcp_http_tool_call_checks(session)
+        await _drive_mcp_session(http)
+
+
+async def _drive_mcp_session(http: httpx2.AsyncClient) -> None:
+    """Drive the MCP handshake + tool checks over one streamable session."""
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    async with streamable_http_client(f"{BASE}/mcp/http", http_client=http) as (read, write):
+        async with ClientSession(read, write) as session:
+            await _mcp_http_handshake_checks(session)
+            await _mcp_http_tool_call_checks(session)
 
 
 async def _mcp_http_handshake_checks(session: ClientSession) -> None:

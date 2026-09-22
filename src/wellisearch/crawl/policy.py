@@ -57,9 +57,8 @@ def match(url: str) -> Policy:
         host = host[4:]
     best_key: str | None = None
     for key in POLICY:
-        if host == key or host.endswith("." + key):
-            if best_key is None or len(key) > len(best_key):
-                best_key = key
+        if (host == key or host.endswith("." + key)) and (best_key is None or len(key) > len(best_key)):
+            best_key = key
     if best_key is not None:
         return POLICY[best_key]
     return DEFAULT_POLICY

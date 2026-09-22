@@ -49,22 +49,27 @@ def _visible_text_markdown(html: str) -> str:
     repeated nav labels dedupe.
     """
     try:
-        soup = _soup(html)
-        for tag in soup(["script", "style", "noscript", "template"]):
-            tag.decompose()
-        root = soup.body or soup
-        lines: list[str] = []
-        seen: set[str] = set()
-        for el in root.find_all(True):
-            if el.find(True) is not None:
-                continue  # has a nested element — its text is emitted deeper down
-            text = " ".join(el.get_text().split())
-            if text and text not in seen:
-                seen.add(text)
-                lines.append(text)
-        return "\n".join(lines)
+        return "\n".join(_visible_text_lines(html))
     except Exception:
         return ""
+
+
+def _visible_text_lines(html: str) -> list[str]:
+    """Deduped visible-text lines from the body's terminal elements."""
+    soup = _soup(html)
+    for tag in soup(["script", "style", "noscript", "template"]):
+        tag.decompose()
+    root = soup.body or soup
+    lines: list[str] = []
+    seen: set[str] = set()
+    for el in root.find_all(True):
+        if el.find(True) is not None:
+            continue  # has a nested element — its text is emitted deeper down
+        text = " ".join(el.get_text().split())
+        if text and text not in seen:
+            seen.add(text)
+            lines.append(text)
+    return lines
 
 
 def _soup(html: str):

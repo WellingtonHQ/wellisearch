@@ -176,18 +176,7 @@ def load_config(args: argparse.Namespace) -> Config:
         f"password={pg_pass} dbname={pg_db} sslmode=disable connect_timeout=5"
     )
 
-    models = DEFAULT_MODELS
-    if args.models:
-        models = []
-        for part in args.models.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            if "=" in part:
-                label, tag = [p.strip() for p in part.split("=", 1)]
-            else:
-                label = tag = part
-            models.append((label, tag))
+    models = _parse_models(args.models) if args.models else DEFAULT_MODELS
 
     out_dir = Path(args.out_dir or os.environ.get("BENCH_OUT_DIR") or (HERE / "results"))
 
@@ -228,6 +217,20 @@ def load_config(args: argparse.Namespace) -> Config:
         smoke=args.smoke,
     )
 
+def _parse_models(spec: str) -> list[tuple[str, str]]:
+    """Parse 'label=tag,label2' into (label, tag) pairs; bare names use themselves as the tag."""
+    models: list[tuple[str, str]] = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" in part:
+            label, tag = [p.strip() for p in part.split("=", 1)]
+        else:
+            label = tag = part
+        models.append((label, tag))
+    return models
+
 # ---------------------------------------------------------------------------
 # Sampling
 # ---------------------------------------------------------------------------
@@ -259,16 +262,28 @@ def select_random_pages(
     seen: set[str] = set()
     round_idx = 0
     while len(picked) < target:
-        progressed = False
-        for d in domains:
-            if len(picked) >= target:
-                break
-            if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
-                progressed = True
-        if not progressed:
+        if not _pick_one_round(domains, by_domain, round_idx, cap, seen, picked, target):
             break
         round_idx += 1
     return picked
+
+def _pick_one_round(
+    domains: list[str],
+    by_domain: dict[str, list[dict[str, Any]]],
+    round_idx: int,
+    cap: int,
+    seen: set[str],
+    picked: list[dict[str, Any]],
+    target: int,
+) -> bool:
+    """One round-robin pass across domains; True if anything was picked."""
+    progressed = False
+    for d in domains:
+        if len(picked) >= target:
+            break
+        if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
+            progressed = True
+    return progressed
 
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     """Pull a random set of real pages (spread across domains) from the index."""
@@ -434,6 +449,29 @@ async def judge_call(
     scores = _parse_judge_scores(text)
     return {"scores": scores, "raw": text, "ms": round((time.perf_counter() - t0) * 1000, 1)}
 
+async def _judge_and_log(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    page: dict[str, Any],
+    out: dict[str, Any],
+    rec: dict[str, Any],
+    who: str,
+    stats: str,
+) -> None:
+    """Call the judge on a non-empty output and log both sides."""
+    if cfg.use_judge and out["text"].strip():
+        log(f"{who} — {stats} → awaiting judge …")
+        rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
+        sc = rec["judge"].get("scores") or {}
+        log(
+            f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
+            f"(faith={sc.get('faithfulness')} "
+            f"noise={sc.get('noise_removal')} "
+            f"presv={sc.get('preservation')})"
+        )
+    else:
+        log(f"{who} — {stats}")
+
 def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
     """Compute no-addition, preservation, boilerplate-removal, structure, and length metrics."""
     o_words = _words(original)
@@ -511,18 +549,7 @@ async def run_model(
                 stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
                          f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
                          f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
-                if cfg.use_judge and out["text"].strip():
-                    log(f"{who} — {stats} → awaiting judge …")
-                    rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
-                    sc = rec["judge"].get("scores") or {}
-                    log(
-                        f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
-                        f"(faith={sc.get('faithfulness')} "
-                        f"noise={sc.get('noise_removal')} "
-                        f"presv={sc.get('preservation')})"
-                    )
-                else:
-                    log(f"{who} — {stats}")
+                await _judge_and_log(client, cfg, page, out, rec, who, stats)
             except Exception as e:
                 rec["error"] = f"{type(e).__name__}: {e}"
                 log(f"{who} — ERROR: {rec['error']}")
@@ -854,18 +881,22 @@ def _process_stream_line(
 def _parse_judge_scores(text: str) -> dict[str, Any]:
     """Extract the judge's 1-5 scores (and note) from a free-text reply."""
     m = re.search(r"\{.*\}", text, re.DOTALL)
-    scores: dict[str, Any] = {}
     if not m:
-        return scores
+        return {}
     try:
         obj = json.loads(m.group(0))
-        for k in ("faithfulness", "noise_removal", "preservation"):
-            if isinstance(obj.get(k), (int, float)):
-                scores[k] = int(obj[k])
-        if isinstance(obj.get("note"), str):
-            scores["note"] = obj["note"]
     except json.JSONDecodeError:
-        return scores
+        return {}
+    return _judge_fields(obj)
+
+def _judge_fields(obj: Any) -> dict[str, Any]:
+    """The judge's numeric scores (and note) from a parsed JSON object."""
+    scores: dict[str, Any] = {}
+    for k in ("faithfulness", "noise_removal", "preservation"):
+        if isinstance(obj.get(k), (int, float)):
+            scores[k] = int(obj[k])
+    if isinstance(obj.get("note"), str):
+        scores["note"] = obj["note"]
     return scores
 
 # ---------------------------------------------------------------------------
@@ -988,6 +1019,23 @@ def _report_table_lines(
     lines.append("")
     return lines
 
+def _detail_row(r: dict[str, Any]) -> str:
+    """One detail-table row (error rows carry the truncated error)."""
+    if "error" in r:
+        return f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |"
+    mt = r.get("metrics", {})
+    js = r.get("judge", {}).get("scores", {})
+    judge_cell = (
+        f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
+        f"{js.get('preservation','–')}"
+        if js else "—"
+    )
+    return (
+        f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
+        f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
+        f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
+    )
+
 def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str]:
     """The per-page detail tables (one per model)."""
     lines = ["## Per-page detail", ""]
@@ -999,21 +1047,7 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
         )
         lines.append("|---|---|---|---|---|---|---|---|---|")
         for r in payload["results"][label]:
-            if "error" in r:
-                lines.append(f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |")
-                continue
-            mt = r.get("metrics", {})
-            js = r.get("judge", {}).get("scores", {})
-            judge_cell = (
-                f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
-                f"{js.get('preservation','–')}"
-                if js else "—"
-            )
-            lines.append(
-                f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
-                f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
-                f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
-            )
+            lines.append(_detail_row(r))
         lines.append("")
     return lines
 
