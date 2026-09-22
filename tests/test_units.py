@@ -249,7 +249,7 @@ print("OK refresh backoff formula")
 # Failure Detail
 # ---------------------------------------------------------------------------
 
-def _result(attempts):
+def _result(attempts: list[dict]) -> CrawlResult:
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
 
 

@@ -72,7 +72,7 @@ def _visible_text_lines(html: str) -> list[str]:
     return lines
 
 
-def _soup(html: str):
+def _soup(html: str) -> BeautifulSoup:
     """BeautifulSoup (lxml) parse; the repo's shared parser choice."""
     from bs4 import BeautifulSoup
 
