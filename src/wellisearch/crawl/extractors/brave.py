@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from ..results import Fitted, Rendered
 from . import register
-from .base import MIN_MD_CHARS, generic_md, trim_md
+from .base import generic_md, MIN_MD_CHARS, trim_md
 
 
 class BraveExtractor:

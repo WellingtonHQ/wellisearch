@@ -5,15 +5,16 @@ from wellisearch.crawl.extractors import for_url
 from wellisearch.crawl.extractors.amazon import AmazonExtractor
 from wellisearch.crawl.extractors.ap import APExtractor
 from wellisearch.crawl.extractors.base import (
-    MIN_MD_CHARS,
-    TITLE_MAX_LEN,
     generic_md,
+    MIN_MD_CHARS,
     title_from_markdown,
+    TITLE_MAX_LEN,
 )
 from wellisearch.crawl.extractors.bestbuy import BestBuyExtractor
+import wellisearch.crawl.extractors.brave as _brave_mod
 from wellisearch.crawl.extractors.brave import (
-    BraveExtractor,
     _visible_text_markdown,
+    BraveExtractor,
 )
 from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
@@ -209,7 +210,6 @@ assert ex.accept(fitted)
 
 # trafilatura-blind DOM (e.g. a future Svelte build): the visible-text fallback
 # must rescue it and flag itself so the failure mode stays diagnosable.
-import wellisearch.crawl.extractors.brave as _brave_mod
 _orig_generic = _brave_mod.generic_md
 _brave_mod.generic_md = lambda html: ""
 try:

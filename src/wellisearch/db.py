@@ -21,7 +21,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from .config import Settings, get_settings
+from .config import get_settings, Settings
 from .url_filter import garbage_reason
 
 log = logging.getLogger("wellisearch.db")

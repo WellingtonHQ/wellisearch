@@ -38,7 +38,7 @@ from .providers import get_gateway
 from .search_web import render_search_markdown, search_web as search_web_pipeline
 from .serialize import resolve_format, to_json
 from .tools import _index_stats_data
-from .worker import STATE as WORKER_STATE, crawl_url, run_forever
+from .worker import crawl_url, run_forever, STATE as WORKER_STATE
 
 log = logging.getLogger("wellisearch.app")
 

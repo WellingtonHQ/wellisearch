@@ -25,8 +25,8 @@ from .crawl.results import ChallengeDetected
 from .db import db
 from .serialize import format_timing
 from .truncation import (
-    STRATEGIES,
     allocate_budgets,
+    STRATEGIES,
     truncate_page,
     truncation_marker,
 )

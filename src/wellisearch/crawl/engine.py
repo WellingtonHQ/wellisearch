@@ -13,7 +13,7 @@ import time
 from ..config import get_settings
 from . import botwall, extractors, tiers
 from .lane import CF, get_lane
-from .policy import Policy, match
+from .policy import match, Policy
 from .results import ChallengeDetected, CrawlResult, Escalate, Fitted
 
 log = logging.getLogger("wellisearch.crawl.engine")

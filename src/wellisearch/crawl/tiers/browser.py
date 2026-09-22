@@ -19,7 +19,7 @@ from ..lane import CF, get_lane
 from ..policy import Policy
 from ..pool import get_cf_pool, get_pool
 from ..results import ChallengeDetected, Rendered
-from ..wait import NETWORK_IDLE_TIMEOUT_S, network_idle, settle
+from ..wait import network_idle, NETWORK_IDLE_TIMEOUT_S, settle
 from . import register
 
 if TYPE_CHECKING:

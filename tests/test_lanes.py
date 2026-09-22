@@ -12,7 +12,7 @@ import time
 
 from wellisearch.crawl import engine, tiers
 from wellisearch.crawl.lane import CF, FAST, get_lane, reset_lane, set_lane
-from wellisearch.crawl.policy import Policy, match
+from wellisearch.crawl.policy import match, Policy
 import wellisearch.crawl.pool as pool_mod
 from wellisearch.crawl.results import ChallengeDetected, Rendered
 import wellisearch.crawl.tiers.browser as browser_tier

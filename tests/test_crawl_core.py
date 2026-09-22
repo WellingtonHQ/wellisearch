@@ -6,7 +6,7 @@ import asyncio
 from wellisearch.crawl import engine, tiers
 from wellisearch.crawl.botwall import is_botwall
 from wellisearch.crawl.extractors.base import GenericExtractor
-from wellisearch.crawl.policy import Policy, match
+from wellisearch.crawl.policy import match, Policy
 from wellisearch.crawl.results import Rendered
 from wellisearch.crawl.signals import find_price, find_stock
 

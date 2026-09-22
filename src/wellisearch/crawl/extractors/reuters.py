@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from ..results import Fitted, Rendered
 from . import register
-from .base import MIN_NEWS_ARTICLE_BODY_CHARS, cut_at_first, generic_md, trim_md
+from .base import cut_at_first, generic_md, MIN_NEWS_ARTICLE_BODY_CHARS, trim_md
 
 RELATED = ("Also Viewed", "More from Reuters", "Related", "Top Stories")
 

@@ -1,7 +1,13 @@
 """Unit tests: chunker + truncation + renderers (pure logic, no DB)."""
 from __future__ import annotations
 
+import importlib.metadata as _im
+
+import wellisearch as _ws
 from wellisearch.chunk import chunk_markdown
+from wellisearch.config import Settings
+from wellisearch.crawl.results import CrawlResult
+from wellisearch.crawler import failure_detail
 from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_markdown
 from wellisearch.search_web import render_search_markdown
 from wellisearch.serialize import format_timing
@@ -230,8 +236,6 @@ print("OK url_filter")
 # Refresh Backoff Formula
 # ---------------------------------------------------------------------------
 
-from wellisearch.config import Settings  # noqa: E402
-
 s = Settings(REFRESH_MIN_AGE_HOURS=72, REFRESH_BACKOFF_BASE_HOURS=6)
 assert s.refresh_backoff_hours(0) == 0, "a never-failed page has no backoff"
 assert [s.refresh_backoff_hours(k) for k in (1, 2, 3, 4)] == [6, 12, 24, 48]
@@ -244,10 +248,6 @@ print("OK refresh backoff formula")
 # ---------------------------------------------------------------------------
 # Failure Detail
 # ---------------------------------------------------------------------------
-
-from wellisearch.crawl.results import CrawlResult  # noqa: E402
-from wellisearch.crawler import failure_detail  # noqa: E402
-
 
 def _result(attempts):
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
@@ -286,9 +286,6 @@ print("OK failure detail")
 # installed package metadata (pyproject, via hatch) must equal the source
 # of truth (wellisearch.__version__). Skipped for source-tree dev runs where
 # the package is not installed.
-import importlib.metadata as _im
-import wellisearch as _ws
-
 try:
     _meta_ver = _im.version("wellisearch")
 except _im.PackageNotFoundError:
