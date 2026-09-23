@@ -655,18 +655,19 @@ async def _auth(request: Request, call_next: Callable[[Request], Awaitable[Respo
     s = get_settings()
     key = s.WELLISEARCH_API_KEY
     path = request.url.path
-    if key and (path.startswith("/api") or path.startswith("/mcp")):
-        token: str | None = None
-        authz = request.headers.get("authorization", "")
-        if authz.lower().startswith("bearer "):
-            token = authz[len("bearer "):].strip()
-        elif request.headers.get("x-api-key"):
-            token = request.headers["x-api-key"].strip()
-        if token is None or not hmac.compare_digest(token, key):
-            return JSONResponse(
-                {"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"},
-                status_code=401,
-            )
+    if not key or not (path.startswith("/api") or path.startswith("/mcp")):
+        return await call_next(request)
+    token: str | None = None
+    authz = request.headers.get("authorization", "")
+    if authz.lower().startswith("bearer "):
+        token = authz[len("bearer "):].strip()
+    elif request.headers.get("x-api-key"):
+        token = request.headers["x-api-key"].strip()
+    if token is None or not hmac.compare_digest(token, key):
+        return JSONResponse(
+            {"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"},
+            status_code=401,
+        )
     return await call_next(request)
 
 

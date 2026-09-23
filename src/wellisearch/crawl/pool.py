@@ -281,12 +281,13 @@ def _profile_dir(key: str, prefix: str = "") -> str:
 def _remove_singleton_lock(profile_dir: str) -> None:
     """Drop a stale SingletonLock so a fresh launch can acquire the profile."""
     lock = os.path.join(profile_dir, "SingletonLock")
-    if os.path.islink(lock) or os.path.exists(lock):
-        try:
-            os.unlink(lock)
-            log.warning("removed stale profile SingletonLock %s", profile_dir)
-        except OSError:
-            pass
+    if not (os.path.islink(lock) or os.path.exists(lock)):
+        return
+    try:
+        os.unlink(lock)
+        log.warning("removed stale profile SingletonLock %s", profile_dir)
+    except OSError:
+        pass
 
 
 def _is_orphan_chromium(pid: str, marker: str) -> bool:

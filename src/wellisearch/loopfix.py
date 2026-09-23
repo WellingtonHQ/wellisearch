@@ -20,11 +20,11 @@ def loop_factory(use_subprocess: bool = False) -> asyncio.AbstractEventLoop:
     # calls it with no args, expecting a loop INSTANCE back.
     # the proactor loop is the only one that supports subprocesses on Windows;
     # everything else runs fine on the selector loop (and psycopg requires it).
-    if sys.platform == "win32":
-        if use_subprocess:
-            return asyncio.ProactorEventLoop()
-        # the concrete WindowsSelectorEventLoop is private in 3.12+; the
-        # public policy hands out an instance
-        policy = asyncio.WindowsSelectorEventLoopPolicy()
-        return policy.new_event_loop()
-    return asyncio.SelectorEventLoop()
+    if sys.platform != "win32":
+        return asyncio.SelectorEventLoop()
+    if use_subprocess:
+        return asyncio.ProactorEventLoop()
+    # the concrete WindowsSelectorEventLoop is private in 3.12+; the
+    # public policy hands out an instance
+    policy = asyncio.WindowsSelectorEventLoopPolicy()
+    return policy.new_event_loop()
