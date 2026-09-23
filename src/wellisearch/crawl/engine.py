@@ -83,7 +83,7 @@ async def crawl(url: str) -> CrawlResult:
         )
         i += 1
     ms = int((time.monotonic() - start) * 1000)
-    log.info("crawl %s failed (tier=none ms=%d)", url, ms)
+    log.warning("crawl %s failed (tier=none ms=%d)", url, ms)
     if best is not None:
         return CrawlResult(
             ok=False,
