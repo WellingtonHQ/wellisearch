@@ -5,15 +5,16 @@ from wellisearch.crawl.extractors import for_url
 from wellisearch.crawl.extractors.amazon import AmazonExtractor
 from wellisearch.crawl.extractors.ap import APExtractor
 from wellisearch.crawl.extractors.base import (
-    MIN_MD_CHARS,
-    TITLE_MAX_LEN,
     generic_md,
+    MIN_MD_CHARS,
     title_from_markdown,
+    TITLE_MAX_LEN,
 )
 from wellisearch.crawl.extractors.bestbuy import BestBuyExtractor
+import wellisearch.crawl.extractors.brave as _brave_mod
 from wellisearch.crawl.extractors.brave import (
-    BraveExtractor,
     _visible_text_markdown,
+    BraveExtractor,
 )
 from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
@@ -209,7 +210,6 @@ assert ex.accept(fitted)
 
 # trafilatura-blind DOM (e.g. a future Svelte build): the visible-text fallback
 # must rescue it and flag itself so the failure mode stays diagnosable.
-import wellisearch.crawl.extractors.brave as _brave_mod
 _orig_generic = _brave_mod.generic_md
 _brave_mod.generic_md = lambda html: ""
 try:
@@ -244,9 +244,12 @@ GREENHOUSE_HTML = (
     '{"@context":"http://schema.org","@type":"JobPosting",'
     '"title":"Sample Platform Engineer","employmentType":"FULL_TIME",'
     '"jobLocation":[{"@type":"Place","address":{"@type":"PostalAddress",'
-    '"streetAddress":"Remote","addressLocality":"Remote","addressRegion":"Nationwide","addressCountry":"US"}}],'
-    '"description":"<p>We are building the platform that keeps thousands of customer teams productive every day. '
-    "The team ships small, reviewed changes through a fast continuous delivery pipeline with an emphasis on observability.</p>"
+    '"streetAddress":"Remote","addressLocality":"Remote",'
+    '"addressRegion":"Nationwide","addressCountry":"US"}}],'
+    '"description":"<p>We are building the platform that keeps thousands of customer teams '
+    "productive every day. "
+    "The team ships small, reviewed changes through a fast continuous delivery pipeline "
+    "with an emphasis on observability.</p>"
     "<ul><li>Design and build services in Python and Go with a focus on reliability</li>"
     "<li>Own deployment pipelines end to end and improve developer experience</li>"
     "<li>Mentor engineers on architecture, testing, and incident response</li></ul>\""
@@ -267,7 +270,8 @@ assert ex.accept(fitted)
 fallback = ex.fit(
     rendered(
         "<html><body><h1>Sample Ops Role</h1>"
-        "<div class=\"job-description\"><p>We run the platform that keeps customers productive around the clock.</p>"
+        "<div class=\"job-description\"><p>We run the platform that keeps customers "
+        "productive around the clock.</p>"
         "<ul><li>Triage production incidents and drive them to resolution</li></ul></div>"
         "</body></html>"
     )
@@ -452,7 +456,8 @@ assert title_from_markdown("") is None, "empty md must yield None"
 assert title_from_markdown("   \n") is None, "whitespace-only md must yield None"
 assert title_from_markdown("[a](b)\n[c](d)") is None, "all-link md must yield None"
 mixed_nav = "Home | [Log in](/login)\nReal Headline Below\nSome body copy."
-assert title_from_markdown(mixed_nav) == "Real Headline Below", "mixed nav-junk line with a link must be skipped"
+assert title_from_markdown(mixed_nav) == "Real Headline Below", \
+    "mixed nav-junk line with a link must be skipped"
 assert title_from_markdown("___\nPlain Title Here\nBody text.") == "Plain Title Here", \
     "underscore HR (symbol-only, word-char-ish) first line must be skipped"
 fenced_h1 = (

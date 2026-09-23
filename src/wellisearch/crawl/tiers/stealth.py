@@ -62,10 +62,11 @@ def _extract_title(page: object) -> str | None:
     """Best-effort <title> from the Scrapling Response; None on any failure."""
     try:
         el = page.css("title")
-        if el:
-            t = el[0].get_all_text()
-            if t and t.strip():
-                return t.strip()
+        if not el:
+            return None
+        t = el[0].get_all_text()
+        if t and t.strip():
+            return t.strip()
     except Exception:
         pass
     return None

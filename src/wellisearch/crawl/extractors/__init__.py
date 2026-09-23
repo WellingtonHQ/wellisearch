@@ -41,9 +41,8 @@ def for_url(url: str) -> Extractor:
         host = host[4:]
     best: str | None = None
     for domain in _REGISTRY:
-        if host == domain or host.endswith("." + domain):
-            if best is None or len(domain) > len(best):
-                best = domain
+        if (host == domain or host.endswith("." + domain)) and (best is None or len(domain) > len(best)):
+            best = domain
     if best is not None:
         return _REGISTRY[best]
     return GenericExtractor()

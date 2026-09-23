@@ -21,7 +21,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from .config import Settings, get_settings
+from .config import get_settings, Settings
 from .url_filter import garbage_reason
 
 log = logging.getLogger("wellisearch.db")
@@ -104,33 +104,38 @@ class Database:
         created DB must already have the extension — otherwise the pool fails
         to open before ``schema.sql`` gets a chance to create it.
         """
+        await self._create_app_db_if_missing(s)
+        await self._ensure_extensions(s)
+
+    async def _create_app_db_if_missing(self, s: Settings) -> None:
+        """Create the app DB via the admin DB when it does not exist yet."""
         admin = await psycopg.AsyncConnection.connect(
             s.conninfo(s.POSTGRES_ADMIN_DB), autocommit=True
         )
         try:
-            async with admin.cursor() as cur:
-                await cur.execute(
-                    "SELECT 1 FROM pg_database WHERE datname = %s",
-                    (s.POSTGRES_DB,),
-                )
-                exists = await cur.fetchone()
-                if not exists:
-                    # identifier must be safe: it comes from our own config
-                    safe = s.POSTGRES_DB.replace('"', '""')
-                    await cur.execute(f'CREATE DATABASE "{safe}"')
-                    log.info("created database %s", s.POSTGRES_DB)
+            cur = await admin.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s",
+                (s.POSTGRES_DB,),
+            )
+            if not await cur.fetchone():
+                # identifier must be safe: it comes from our own config
+                safe = s.POSTGRES_DB.replace('"', '""')
+                await admin.execute(f'CREATE DATABASE "{safe}"')
+                log.info("created database %s", s.POSTGRES_DB)
         finally:
             await admin.close()
 
-        # Ensure the extensions the pool needs are present in the app DB, so a
-        # fresh database boots without the "vector type not found" pool error.
+    async def _ensure_extensions(self, s: Settings) -> None:
+        """Ensure the extensions the pool needs exist in the app DB.
+
+        A fresh database must already have them — otherwise the pool fails to
+        open with a "vector type not found" error before ``schema.sql`` runs."""
         app = await psycopg.AsyncConnection.connect(
             s.conninfo(s.POSTGRES_DB), autocommit=True
         )
         try:
-            async with app.cursor() as cur:
-                await cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
-                await cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+            await app.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            await app.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
         finally:
             await app.close()
         log.info("ensured extensions (vector, pg_trgm) in %s", s.POSTGRES_DB)
@@ -167,12 +172,22 @@ class Database:
         psycopg.errors.QueryCanceled on expiry."""
         async with self.pool.connection() as conn:
             if timeout_ms is not None:
-                # SET does not accept parameter placeholders — inline the
-                # (int-coerced) value instead.
-                async with conn.transaction():
-                    await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
-                    cur = await conn.execute(sql, params or ())
-                    return list(await cur.fetchall())
+                return await self._fetch_all_timed(conn, sql, params, timeout_ms)
+            cur = await conn.execute(sql, params or ())
+            return list(await cur.fetchall())
+
+    async def _fetch_all_timed(
+        self,
+        conn: psycopg.AsyncConnection,
+        sql: str,
+        params: tuple | list | None,
+        timeout_ms: int,
+    ) -> list[dict[str, Any]]:
+        """Run a SELECT under SET LOCAL statement_timeout (one explicit txn)."""
+        async with conn.transaction():
+            # SET does not accept parameter placeholders — inline the
+            # (int-coerced) value instead.
+            await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
             cur = await conn.execute(sql, params or ())
             return list(await cur.fetchall())
 

@@ -6,7 +6,7 @@ import json
 from ..results import Fitted, Rendered
 from ..signals import find_price, find_stock
 from . import register
-from .base import MIN_PRODUCT_CHARS, generic_md, trim_md
+from .base import generic_md, MIN_PRODUCT_CHARS, trim_md
 
 
 class BestBuyExtractor:
@@ -55,18 +55,19 @@ def _jsonld_price(html: str) -> str | None:
 def _product_price(data: object) -> str | None:
     """offers.price for a @type Product node (lists, @graph, offer lists)."""
     if isinstance(data, list):
-        for item in data:
-            price = _product_price(item)
-            if price is not None:
-                return price
-        return None
+        return _first_product_price(data)
     if not isinstance(data, dict):
         return None
     if data.get("@type") == "Product":
         price = _offers_price(data.get("offers"))
         if price is not None:
             return price
-    for item in data.get("@graph") or []:
+    return _first_product_price(data.get("@graph") or [])
+
+
+def _first_product_price(items: list[object]) -> str | None:
+    """First non-None price found by recursing into each item, else None."""
+    for item in items:
         price = _product_price(item)
         if price is not None:
             return price
@@ -76,12 +77,13 @@ def _product_price(data: object) -> str | None:
 def _offers_price(offers: object) -> str | None:
     """price from a single offer dict or a list of offers, else None."""
     if isinstance(offers, dict):
-        price = offers.get("price")
-        return str(price) if price is not None else None
-    if isinstance(offers, list):
-        for offer in offers:
-            if isinstance(offer, dict) and offer.get("price") is not None:
-                return str(offer["price"])
+        offers = [offers]
+    if not isinstance(offers, list):
+        return None
+    for offer in offers:
+        price = offer.get("price") if isinstance(offer, dict) else None
+        if price is not None:
+            return str(price)
     return None
 
 

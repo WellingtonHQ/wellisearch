@@ -18,7 +18,7 @@ import logging
 from . import worker
 from .config import get_settings
 from .crawl.lane import CF, get_lane
-from .crawler import crawl_semaphore, cf_crawl_semaphore
+from .crawler import cf_crawl_semaphore, crawl_semaphore
 from .db import db
 
 log = logging.getLogger("wellisearch.queue")

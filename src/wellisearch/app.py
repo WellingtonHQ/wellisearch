@@ -38,7 +38,7 @@ from .providers import get_gateway
 from .search_web import render_search_markdown, search_web as search_web_pipeline
 from .serialize import resolve_format, to_json
 from .tools import _index_stats_data
-from .worker import STATE as WORKER_STATE, crawl_url, run_forever
+from .worker import crawl_url, run_forever, STATE as WORKER_STATE
 
 log = logging.getLogger("wellisearch.app")
 
@@ -103,7 +103,8 @@ WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
 API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
 API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
 API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
-API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
+API_LOGS_DEFAULT_LIMIT = 50  # /api/logs/crawls + /api/logs/searches default limit
+API_LOGS_MERGED_DEFAULT_LIMIT = 200  # /api/logs (merged stream) default limit
 
 
 # ---------------------------------------------------------------------------
@@ -366,9 +367,9 @@ async def api_pages(sort: str = "fetch_count", limit: int = API_PAGES_DEFAULT_LI
     """
     allowed = {
         "fetch_count": "fetch_count DESC",
-        "search_hit_count": "search_hit_count DESC",
-        "last_crawled": "last_crawled DESC",
         "first_seen": "first_seen DESC",
+        "last_crawled": "last_crawled DESC",
+        "search_hit_count": "search_hit_count DESC",
     }
     order = allowed.get(sort, allowed["fetch_count"])
     pages = await db.fetch_all(
@@ -463,7 +464,7 @@ async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
 @app.get("/api/logs")
 async def api_logs(
     secs: int = WINDOW_MAX_SECS,
-    limit: int = 200,
+    limit: int = API_LOGS_MERGED_DEFAULT_LIMIT,
     q: str = "",
 ) -> Any:
     """Merged windowed log stream: crawls + searches + events, ts DESC.
@@ -654,18 +655,19 @@ async def _auth(request: Request, call_next: Callable[[Request], Awaitable[Respo
     s = get_settings()
     key = s.WELLISEARCH_API_KEY
     path = request.url.path
-    if key and (path.startswith("/api") or path.startswith("/mcp")):
-        token: str | None = None
-        authz = request.headers.get("authorization", "")
-        if authz.lower().startswith("bearer "):
-            token = authz[len("bearer "):].strip()
-        elif request.headers.get("x-api-key"):
-            token = request.headers["x-api-key"].strip()
-        if token is None or not hmac.compare_digest(token, key):
-            return JSONResponse(
-                {"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"},
-                status_code=401,
-            )
+    if not key or not (path.startswith("/api") or path.startswith("/mcp")):
+        return await call_next(request)
+    token: str | None = None
+    authz = request.headers.get("authorization", "")
+    if authz.lower().startswith("bearer "):
+        token = authz[len("bearer "):].strip()
+    elif request.headers.get("x-api-key"):
+        token = request.headers["x-api-key"].strip()
+    if token is None or not hmac.compare_digest(token, key):
+        return JSONResponse(
+            {"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"},
+            status_code=401,
+        )
     return await call_next(request)
 
 

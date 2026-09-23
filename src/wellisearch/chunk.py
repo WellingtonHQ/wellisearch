@@ -17,6 +17,7 @@ from .config import get_settings
 
 CHARS_PER_TOKEN = 4
 _MIN_CHUNK_TOKENS = 50
+_MIN_BUDGET_TOKENS = 100  # floor on the chunk token budget (guards tiny max_tokens)
 STUB_MERGE_DIVISOR = 5  # trailing stub below budget//5 merges into the previous chunk
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -33,7 +34,7 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
     if not markdown or not markdown.strip():
         return []
 
-    budget = max(100, max_tokens)
+    budget = max(_MIN_BUDGET_TOKENS, max_tokens)
     lines = markdown.splitlines()
 
     chunks: list[str] = []
@@ -70,11 +71,12 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
             continue
 
         if in_fence:
+            # inside a fenced block: append until the matching closing fence
+            closes = bool(fence_match and fence_match.group(1) == fence_marker)
             current.append(line)
             current_tokens += _tokens(line)
-            if fence_match and fence_match.group(1) == fence_marker:
-                in_fence = False
             i += 1
+            in_fence = not closes
             continue
 
         if current_tokens + _tokens(line) > budget and current:

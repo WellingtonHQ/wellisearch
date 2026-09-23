@@ -4,7 +4,7 @@ from __future__ import annotations
 from ..results import Fitted, Rendered
 from ..signals import find_price, find_stock
 from . import register
-from .base import MIN_PRODUCT_CHARS, generic_md, trim_md
+from .base import generic_md, MIN_PRODUCT_CHARS, trim_md
 
 
 class WalmartExtractor:

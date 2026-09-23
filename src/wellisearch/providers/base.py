@@ -13,7 +13,7 @@ import re
 
 import httpx
 
-from ..config import Settings
+from ..config import Settings, get_settings
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
@@ -86,7 +86,7 @@ class Provider:
         return _WS_RE.sub(" ", text).strip()
 
     @staticmethod
-    def snippet(text: str, limit: int = 400) -> str:
+    def snippet(text: str, limit: int = get_settings().SNIPPET_MAX_LEN) -> str:
         """Trim to ~limit chars, boundary-safe (never mid-word)."""
         text = Provider.clean_html(text)
         if len(text) <= limit:
@@ -95,4 +95,4 @@ class Provider:
         b = cut.rfind(" ")
         if b > limit // 2:
             cut = cut[:b]
-        return cut.rstrip(" ,.;:") + "…"
+        return f"{cut.rstrip(' ,.;:')}…"
