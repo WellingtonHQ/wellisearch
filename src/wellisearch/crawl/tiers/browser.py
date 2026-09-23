@@ -283,7 +283,7 @@ async def _walmart_recover_item_url(page: Page, url: str) -> str | None:
     if len(orig_tokens) < MIN_SLUG_TOKENS:
         return None
     query = " ".join(parts[1].split("-")[:MAX_SLUG_QUERY_TOKENS])
-    search_url = "https://www.walmart.com/search?q=" + quote_plus(query)
+    search_url = f"https://www.walmart.com/search?q={quote_plus(query)}"
     await page.goto(search_url, wait_until="domcontentloaded")
     await page.wait_for_timeout(WALMART_SEARCH_SETTLE_MS)
     raw = await page.evaluate(

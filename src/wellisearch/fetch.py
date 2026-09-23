@@ -158,7 +158,7 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
         text = truncate_page(text, max_chars, "head")[0]
         truncated = True
         omitted = len(page["content"]) - len(text)
-        text = text + "\n" + truncation_marker(omitted, "head")
+        text = f"{text}\n{truncation_marker(omitted, 'head')}"
 
     timing = _timing(index_ms=page.get("index_ms", 0))
     if page.get("crawl_ms"):
@@ -377,7 +377,7 @@ def _allocate_pages(
         text, truncated = truncate_page(p["content"], chars, strat)
         omitted = len(p["content"]) - len(text)
         if truncated:
-            text = text + "\n" + truncation_marker(omitted, strat)
+            text = f"{text}\n{truncation_marker(omitted, strat)}"
             any_truncated = True
         total_chars += len(text)
         pages_out.append({
