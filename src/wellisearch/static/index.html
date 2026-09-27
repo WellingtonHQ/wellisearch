@@ -30,6 +30,11 @@
           border-radius: 8px; padding: 10px 12px; }
   .card .big { font-size: 22px; margin: 2px 0; }
   .card .sub { color: var(--dim); font-size: 12px; }
+  .fresh-bar { display: flex; height: 7px; margin: 9px 0 7px; border-radius: 4px;
+               overflow: hidden; background: #21262d; }
+  .fresh-legend { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--dim); font-size: 11px; }
+  .fresh-legend i { display: inline-block; width: 7px; height: 7px; margin-right: 5px;
+                    border-radius: 50%; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--dim); font-weight: normal; white-space: nowrap; }
@@ -134,7 +139,13 @@
   <div class="grid c4">
     <div class="card"><div class="sub">pages / chunks</div><div class="big" id="idx-size">—</div></div>
     <div class="card"><div class="sub">crawl queue</div><div class="big" id="queue-depth">—</div><div class="sub" id="queue-oldest"></div></div>
-    <div class="card"><div class="sub">freshness</div><div class="row" id="fresh" style="gap:12px;margin-top:6px"></div></div>
+    <div class="card">
+      <div class="sub">freshness</div>
+      <div class="big" id="fresh-rate">—</div>
+      <div class="sub" id="fresh-summary"></div>
+      <div class="fresh-bar" id="fresh-bar" aria-hidden="true"></div>
+      <div class="fresh-legend" id="fresh-legend"></div>
+    </div>
     <div class="card"><div class="sub" id="crawls30-label">successful crawls (window)</div><div class="row" id="crawls30" style="gap:12px;margin-top:6px"></div></div>
   </div>
 </section>
@@ -438,16 +449,25 @@ function renderIndex(st, pagesData, win) {
   $("#queue-depth").textContent = `${q.pending ?? 0} pending`;
   $("#queue-oldest").textContent = q.oldest_pending ? "oldest pending " + age(q.oldest_pending) : "";
   const f = pagesData?.freshness || {};
-  const total = (f["<1d"] ?? 0) + (f["1-7d"] ?? 0) + (f["7-30d"] ?? 0) + (f[">30d"] ?? 0) + (f["never"] ?? 0);
-  const seg = (k, v, color) => total
-    ? `<div class="bar" style="flex:${v};min-width:0"><div style="width:${v / total * 100}%;background:${color}"></div></div>`
-    : "";
-  $("#fresh").innerHTML =
-    (f["<1d"] ? `<span class="muted">&lt;1d: ${f["<1d"]}</span>` : "") +
-    (f["1-7d"] ? `<span class="muted">1–7d: ${f["1-7d"]}</span>` : "") +
-    (f["7-30d"] ? `<span class="muted">7–30d: ${f["7-30d"]}</span>` : "") +
-    (f[">30d"] ? `<span class="muted">&gt;30d: ${f[">30d"]}</span>` : "") +
-    (f["never"] ? `<span class="muted">never: ${f["never"]}</span>` : "") || `<span class="muted">empty index</span>`;
+  const buckets = [
+    ["<1d", "<1d", "var(--ok)"],
+    ["1-7d", "1–7d", "var(--accent)"],
+    ["7-30d", "7–30d", "var(--warn)"],
+    [">30d", ">30d", "var(--bad)"],
+    ["never", "never", "var(--dim)"],
+  ].map(([key, label, color]) => ({ label, color, count: Number(f[key] ?? 0) }));
+  const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
+  const recent = buckets[0].count + buckets[1].count;
+  $("#fresh-rate").textContent = total ? `${Math.round(recent / total * 100)}%` : "—";
+  $("#fresh-summary").textContent = total
+    ? `${recent.toLocaleString()} of ${total.toLocaleString()} pages within 7 days`
+    : "empty index";
+  $("#fresh-bar").innerHTML = total ? buckets.filter(b => b.count).map(b =>
+    `<span style="width:${b.count / total * 100}%;background:${b.color}"></span>`
+  ).join("") : "";
+  $("#fresh-legend").innerHTML = buckets.filter(b => b.count).map(b =>
+    `<span><i style="background:${b.color}"></i>${esc(b.label)} ${b.count.toLocaleString()}</span>`
+  ).join("");
   const bs = (win?.crawls && win.crawls.by_status) || {};
   const errs = Object.entries(bs).filter(([k]) => k !== "ok" && k !== "unchanged").reduce((a, [, v]) => a + v, 0);
   const pm = win?.crawls?.successful_per_minute ?? ((bs.ok ?? 0) + (bs.unchanged ?? 0)) / (winSecs / 60);
