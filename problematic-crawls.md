@@ -70,6 +70,36 @@ now also captures:
 Product details (tech-spec table) were already extracted when present on the
 page; individual review texts are still not captured (count only).
 
+### Reddit post extraction (fixed 2026-09-27)
+
+Reddit threads were bot-walled on both tiers for anonymous crawls, so indexed
+posts held only a login-wall stub. Fixed by the reddit extractor PR: a
+browser-first policy with the persistent profile fetches `?sort=top/best`, and
+`RedditExtractor` stores the post body plus highest-ranked comments under a
+`## Reddit comments (...)` heading that also records ranking mode + limit.
+NSFW-gated posts (wall text "this post contains mature content") are exempt so
+fetches never loop on them.
+
+Verified live (2026-09-27): recrawled all 232 indexed post URLs — 229 stored
+with ranked comments, 3 NSFW-gated and marker-exempt, **0** left in a state
+where `fetch_page` would re-trigger a browser crawl.
+
+### Fetch-path reddit re-crawl backoff (fixed 2026-09-27)
+
+Latent since the reddit extractor PR: when an indexed post's stored markdown
+lacks the ranking heading, `fetch_page` runs a full browser re-crawl inline; if
+that crawl fails nothing is stored and the next fetch repeats it — unbounded.
+The refresh backoff (`refresh_fail_streak` / `refresh_backoff_until`) only
+applied to the worker refresh path; fetch-triggered failures never bumped it
+(see `fetch.py:_resolve_page`, `worker.py:167`).
+
+Fixed in `fetch.py`: while a page's refresh backoff is active, `_resolve_page`
+serves the stored markdown instead of re-crawling, and a failed
+refresh-triggered re-crawl (plain tier failure or bot-wall → CF routing) now
+bumps the streak via `db.refresh_fail_bump`, mirroring the worker's refresh
+handling. First-time indexing failures are not bumped; successes reset it in
+`worker._crawl_and_store`. Regression tests: `tests/test_fetch_refresh_backoff.py`.
+
 ## Open
 
 ### LinkedIn job descriptions
@@ -77,27 +107,6 @@ page; individual review texts are still not captured (count only).
 Need full job descriptions from public LinkedIn postings (no authentication).
 Not implemented — no extractor, and LinkedIn aggressively bot-walls anonymous
 browser sessions.
-
-### Reddit content
-
-Reddit threads (e.g. `reddit.com/r/MacOS/comments/1g9hel4/...`) are bot-walled
-on both tiers; see the reddit entry in `features-backlog.md`.
-
-
-#### Example Fetch
-```
-Title: Welcome to Reddit
-URL: https://old.reddit.com/r/Frugal/comments/1cal0ff/comparing_costco_prices_instacart_vs_in_store/
-From Index: false
-Chars: 281
-Truncated: false
----
-To keep Reddit safe, accounts are required to access old Reddit. Log in, or continue without an account on reddit.com.
-
-By continuing, you agree to our User Agreement and acknowledge that you understand the Privacy Policy.
-
-You’ve set up two-factor authentication for this account.
-```
 
 ### microsoft.eightfold.ai job page
 

@@ -14,6 +14,7 @@ on-demand read path (plan §7).
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 import time
 from urllib.parse import urlparse
@@ -280,20 +281,53 @@ def _valid_url(url: str) -> bool:
         return False
 
 
+def _refresh_backoff_active(page: dict) -> bool:
+    """True while the row's refresh-failure backoff window is still running."""
+    until = page.get("refresh_backoff_until")
+    if until is None:
+        return False
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=dt.timezone.utc)
+    return until > dt.datetime.now(dt.timezone.utc)
+
+
+async def _record_failed_refresh(url: str, needed_refresh: bool) -> None:
+    """Back off a refresh-triggered re-crawl that just failed (best-effort).
+
+    Mirrors the worker's refresh handling: consecutive failures push the page's
+    next attempt out on an exponential schedule; a success resets it via
+    db.refresh_success_reset in worker._crawl_and_store."""
+    if not needed_refresh:
+        return
+    try:
+        await db.refresh_fail_bump(url)
+    except Exception as e:
+        log.warning("refresh backoff bump failed for %s: %s", url, e)
+
+
 async def _resolve_page(url: str) -> dict:
-    """Content for one URL: from index when present, else crawl on demand."""
+    """Content for one URL: from index when present, else crawl on demand.
+
+    A reddit post whose stored markdown is stale (reddit_needs_refresh) normally
+    re-crawls inline; while a refresh-failure backoff is active it serves the
+    stored copy instead, so a walled page can't burn a full browser crawl on
+    every fetch."""
     s = get_settings()
     t_index = time.monotonic()
     page = await db.page_get(url)
     index_ms = int((time.monotonic() - t_index) * 1000)
-    if (
-        page and not page.get("disabled") and page.get("fit_markdown")
-        and not reddit_needs_refresh(url, page["fit_markdown"])
-    ):
+    stored_md = page.get("fit_markdown") if page and not page.get("disabled") else None
+    needs_refresh = bool(stored_md) and reddit_needs_refresh(url, stored_md)
+    if stored_md and (not needs_refresh or _refresh_backoff_active(page)):
+        if needs_refresh:
+            log.debug(
+                "serving stale %s; refresh backoff active until %s",
+                url, page.get("refresh_backoff_until"),
+            )
         return {
             "url": url,
-            "title": page.get("title") or title_from_markdown(page["fit_markdown"]) or url,
-            "content": page["fit_markdown"],
+            "title": page.get("title") or title_from_markdown(stored_md) or url,
+            "content": stored_md,
             "from_index": True,
             "fetch_count": page.get("fetch_count") or 0,
             "index_ms": index_ms,
@@ -329,7 +363,13 @@ async def _resolve_page(url: str) -> dict:
             log.warning("enqueue for background retry failed (%s): %s", url, e)
         raise crawler.CrawlError(url, _timed_out_error(s, paused))
 
-    task.result()  # re-raises the crawl's CrawlError if any
+    try:
+        task.result()  # re-raises the crawl's CrawlError if any
+    except Exception:
+        # A refresh-triggered re-crawl that fails stores nothing; without a
+        # backoff bump the next fetch would run the same full browser crawl.
+        await _record_failed_refresh(url, needs_refresh)
+        raise
     page = await db.page_get(url)
     crawl_ms = int((time.monotonic() - t_crawl) * 1000)
     md = (page or {}).get("fit_markdown") or ""
