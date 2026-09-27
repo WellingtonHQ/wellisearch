@@ -272,12 +272,10 @@ async def test_provider_failover(c: httpx.AsyncClient) -> None:
         r.text[:120],
     )
 
-    # local-first is correct, so force the gateway two ways: disable the
-    # most-read pages, AND use a query the index cannot cover ("quixotic
-    # zzyzx" tops out at 0.5 coverage < LOCAL_MIN_COVERAGE — verified
-    # 2026-08-25; any 3+ real-word query has a full-coverage page in a
-    # 25k-page corpus). The worker may index concurrently, so retry if a
-    # local hit still wins.
+    # local-first is correct, so force the gateway: disable every indexed page
+    # (the gate then has no rows to pass), and use a nonsense query ("quixotic
+    # zzyzx") that no real corpus page answers topically. The worker may index
+    # concurrently, so retry if a local hit still wins.
     for _attempt in range(3):
         await _set_pages_disabled(c, await _all_page_urls(c), True)
         r = await c.get("/api/search", params={"query": "quixotic zzyzx", "k": "5"})

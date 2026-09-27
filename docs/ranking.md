@@ -190,13 +190,23 @@ decision is made by two `fn_search_local` columns, both computed in Postgres:
   that happens to contain those words?"
 
 `search_web` (auto mode) serves local only when **at least k rows** each clear
-both conditions — `coverage >= LOCAL_MIN_COVERAGE` (default **0.75**) and
+both conditions — `coverage >= LOCAL_MIN_COVERAGE` (default **0.5**) and
 `similarity >= LOCAL_MIN_SIMILARITY` (default **0.3**; NULL never passes);
 otherwise it falls through to the provider gateway (local rows stay available
 as the degraded-mode fallback). Requiring a full set of k means one marginal
 page can no longer trigger local serving — the corpus has to actually answer
 the query, not just touch on it. `search_mode="local"` bypasses the gate
 entirely; `provider` never consults it.
+
+The coverage threshold is deliberately low (0.5, "at least half the content
+words"): similarity is the primary topical filter, and a high coverage bar
+vetoed exactly the pages that matter most for shopping-style queries — e.g.
+"Best Costco Dishwasher under $700" reduces to content words {best, costco,
+dishwash} (Postgres drops "$700"), and Costco's own catalog page contains all
+the substantive terms but not "best", measuring coverage 0.67 / similarity
+0.78 — the best row in the index, rejected by a generic qualifier word at the
+old 0.75 bar. At 0.5 it passes, and the full set of k assembles from catalog
+pages instead of deferring to the provider forever.
 
 Calibrated 2026-09-20 on the ~1.3M-chunk index (best-chunk similarity per
 query):
@@ -252,9 +262,10 @@ ORDER BY score DESC;
 
 with the query embedded by the same model as the chunks (a page's own stored
 embedding is **not** a query embedding and will corrupt the probe). Place
-`LOCAL_MIN_COVERAGE` between the on-topic and off-topic coverage clusters, and
 `LOCAL_MIN_SIMILARITY` between on-topic similarity and word-dump / unrelated-body
-similarity.
+similarity. Keep `LOCAL_MIN_COVERAGE` at its weak lexical floor (0.5) — do not
+raise it to separate clusters: qualifier words ("best", "top") that catalog
+pages omit would veto the most relevant results (see above).
 
 ## Changing the ranking
 

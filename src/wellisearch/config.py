@@ -62,8 +62,10 @@ class Settings(BaseSettings):
     SEARCH_GATE_MIN_K: int = 10
     # Local-hit gate (condition 1): a passing row must cover at least this
     # fraction of the query's content words (`coverage` column, see
-    # docs/ranking.md).
-    LOCAL_MIN_COVERAGE: float = 0.75
+    # docs/ranking.md). Kept deliberately low: generic qualifier words ("best",
+    # "top") that catalog pages omit must not veto them — similarity is the
+    # primary topical filter.
+    LOCAL_MIN_COVERAGE: float = 0.5
     # Local-hit gate (condition 2): a passing row must also have best-chunk
     # cosine similarity >= this (`similarity` column). Rejects pages that merely
     # contain the query's words scattered across a huge body — word lists, vocab

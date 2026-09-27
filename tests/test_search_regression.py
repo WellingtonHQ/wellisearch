@@ -11,6 +11,9 @@ Scenarios pinned to the dataset below:
   Q1 on-topic query, a full set passes both gate conditions -> served local (zero credits)
   Q2 only one page passes; k=5 not met                     -> deferred to the provider
   Q3 word dump has coverage 1.0 but no topical similarity  -> deferred to the provider
+  Q4 shopping query with a qualifier word ("best") that the catalog pages omit:
+     they cover 2/3 of {best, costco, dishwash} — below the old 0.75 bar (which
+     made auto mode defer forever) but above the current 0.5 floor           -> served local
   Q2 with search_mode="local"                              -> index rows, gate bypassed
 """
 from __future__ import annotations
@@ -42,6 +45,8 @@ CAR_SEAT_B = "https://example.com/rear-facing-car-seat-bumpy-road"
 WORD_DUMP = "https://example.com/common-word-list"
 APOLLO_1202 = "https://example.com/apollo-11-1202-alarm"
 DOORBELL_FAQ = "https://example.com/smart-doorbell-alarm-faq"
+DISHWASHER_A = "https://example.com/costco-dishwasher-catalog"
+DISHWASHER_B = "https://example.com/dishwasher-price-guide"
 
 # Q1: 12 content words; both car-seat pages contain every one of them.
 Q1 = "newborn head bobbing bouncing bumpy road car seat normal safe rear facing"
@@ -50,6 +55,11 @@ Q1 = "newborn head bobbing bouncing bumpy road car seat normal safe rear facing"
 Q2 = "Apollo 11 1202 program alarm priority interrupt AGC proximity sensor Margaret Hamilton lunar descent"
 # Q3: topical words that appear in the word dump but are concentrated on no article page.
 Q3 = "quantum physics black hole telescope galaxy"
+# Q4: content words {best, costco, dishwash} — Postgres drops "$700" and
+# "under" is a stopword. Both catalog pages contain costco + dishwasher but
+# never the qualifier "best": coverage 2/3 = 0.67, above the 0.5 floor but
+# below the old 0.75 bar that made this query defer to the provider forever.
+Q4 = "Best Costco Dishwasher under $700"
 
 CAR_SEAT_A_MD = """\
 # Why a newborn's head flops forward in the car seat
@@ -90,12 +100,30 @@ DOORBELL_FAQ_MD = """\
 **What does the alarm program do?** The alarm program arms your doorbell's motion sensor and chime when you leave home. You can set a priority for alerts so that person detections interrupt other notifications first. The device uses a wide-angle camera and two-way audio, and it works with most smart home hubs. Battery life is about three months per charge. If the sensor detects repeated motion while disarmed, the app sends a low-priority notification instead of an alarm.
 """
 
+# Q4 fixtures: catalog-style pages that contain every substantive term of the
+# query but never the qualifier word "best" — exactly what a real product
+# listing looks like (the live costco.com/dishwashers.html measured coverage
+# 0.67 / similarity 0.78 on this query shape).
+DISHWASHER_A_MD = """\
+# Dishwashers at Costco — full catalog
+
+Shop the complete dishwasher lineup: built-in, freestanding, and compact models from Maytag, LG, Whirlpool, and KitchenAid. Prices start at $499 for a basic 14-place-setting freestanding unit and run to $1,299 for a connected stainless-steel built-in with third rack and quiet drive (as low as 44 dBA). Every model includes a six-year limited warranty on the motor and pump. Filter by capacity, noise level, and finish; most units ship free within two weeks, and in-store pickup is available at all warehouses. Energy Star ratings are listed per model, and this season's popular picks include the Maytag MDBH356 and the LG LFW24STVQ.
+"""
+
+DISHWASHER_B_MD = """\
+# Dishwasher deals and price guide
+
+Current dishwasher prices by tier: entry models with 14 place settings run $499–$649, mid-range units with third racks and quiet operation land at $700–$900, and premium connected built-ins top out near $1,300. What the price buys: stainless interiors replace plastic tubs around $550, inverter motors cut noise below 46 dBA past $750, and Wi-Fi control with leak detection appears above $800. Look for open-box pricing at warehouse clubs like Costco — a like-new mid-range unit often saves $150–$250 off list. Compare the energy guide before buying: an efficient model pays back its premium in about four years of utility savings.
+"""
+
 DATASET: list[tuple[str, str, str]] = [
     (CAR_SEAT_A, "Why a newborn's head flops forward in the car seat", CAR_SEAT_A_MD),
     (CAR_SEAT_B, "Keeping a baby's head supported in a rear facing car seat on bumpy roads", CAR_SEAT_B_MD),
     (WORD_DUMP, "Common English word list", WORD_DUMP_MD),
     (APOLLO_1202, 'The Apollo 11 "1202 Program Alarm" explained', APOLLO_1202_MD),
     (DOORBELL_FAQ, "Smart doorbell alarm system FAQ", DOORBELL_FAQ_MD),
+    (DISHWASHER_A, "Dishwashers at Costco — full catalog", DISHWASHER_A_MD),
+    (DISHWASHER_B, "Dishwasher deals and price guide", DISHWASHER_B_MD),
 ]
 
 
@@ -215,6 +243,20 @@ async def _check_word_dump_never_serves(stub: StubGateway) -> None:
     print("OK word dump never served (coverage 1.0, similarity below gate)")
 
 
+async def _check_qualifier_word_does_not_veto(stub: StubGateway) -> None:
+    """Q4 with k=2: both catalog pages cover 2/3 of {best, costco, dishwash} —
+    they omit the qualifier "best" but contain every substantive term. At the
+    old 0.75 bar both failed coverage and auto mode deferred forever; at the
+    current 0.5 floor local serves them with zero provider credits."""
+    before = len(stub.calls)  # earlier checks legitimately call the provider
+    out = await sw.search_web(Q4, num_results=2)
+    assert out["source"] == "local", f"expected local, got {out['source']}: {out}"
+    urls = [r["url"] for r in out["results"]]
+    assert set(urls) == {DISHWASHER_A, DISHWASHER_B}, urls
+    assert stub.calls[before:] == [], f"provider must not be called on a local hit: {stub.calls[before:]}"
+    print("OK qualifier word does not veto (coverage 0.67 clears the 0.5 floor)")
+
+
 async def _check_local_mode_bypasses_gate() -> None:
     """search_mode='local' serves index rows even when the gate would not pass."""
     out = await sw.search_web(Q2, num_results=5, search_mode="local")
@@ -238,6 +280,7 @@ async def main() -> None:
         await _check_local_hit_full_set(stub)
         await _check_defer_when_incomplete(stub)
         await _check_word_dump_never_serves(stub)
+        await _check_qualifier_word_does_not_veto(stub)
         await _check_local_mode_bypasses_gate()
     finally:
         await db.close()

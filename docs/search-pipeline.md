@@ -60,7 +60,7 @@ computed entirely in Postgres):
 
 ```python
 def _passes_local_gate(r):
-    if (r.get("coverage") or 0) < LOCAL_MIN_COVERAGE:      # default 0.75
+    if (r.get("coverage") or 0) < LOCAL_MIN_COVERAGE:      # default 0.5 — low on purpose, see ranking.md
         return False
     sim = r.get("similarity")                              # best-chunk cosine; NULL never passes
     return sim is not None and sim >= LOCAL_MIN_SIMILARITY # default 0.3

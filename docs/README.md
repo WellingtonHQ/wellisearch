@@ -50,7 +50,7 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
 2. The query is embedded (fastembed, 384-d) and ranked against the local
    index by the Postgres function `fn_search_local` (hybrid FTS + trigram +
    vector, RRF-fused). If at least k results each clear both gate conditions —
-   covering ≥ `LOCAL_MIN_COVERAGE` (default `0.75`) of the query's content
+   covering ≥ `LOCAL_MIN_COVERAGE` (default `0.5`) of the query's content
    words **and** best-chunk similarity ≥ `LOCAL_MIN_SIMILARITY` (default
    `0.3`) — those local rows are served immediately: **zero provider credits**.
  3. Otherwise (fewer than k passing rows) the **provider gateway** (`providers/`) tries the providers one
