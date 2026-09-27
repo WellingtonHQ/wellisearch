@@ -11,9 +11,9 @@ Scenarios pinned to the dataset below:
   Q1 on-topic query, a full set passes both gate conditions -> served local (zero credits)
   Q2 only one page passes; k=5 not met                     -> deferred to the provider
   Q3 word dump has coverage 1.0 but no topical similarity  -> deferred to the provider
-  Q4 shopping query with a qualifier word ("best") that the catalog pages omit:
-     they cover 2/3 of {best, costco, dishwash} — below the old 0.75 bar (which
-     made auto mode defer forever) but above the current 0.5 floor           -> served local
+  Q4 shopping query with a qualifier and a price term:
+     the catalog covers 2/4 of {best, costco, dishwash, 700}, the price guide
+     covers 3/4; only one cleared the old 0.75 bar, but both clear 0.5       -> served local
   Q2 with search_mode="local"                              -> index rows, gate bypassed
 """
 from __future__ import annotations
@@ -55,10 +55,10 @@ Q1 = "newborn head bobbing bouncing bumpy road car seat normal safe rear facing"
 Q2 = "Apollo 11 1202 program alarm priority interrupt AGC proximity sensor Margaret Hamilton lunar descent"
 # Q3: topical words that appear in the word dump but are concentrated on no article page.
 Q3 = "quantum physics black hole telescope galaxy"
-# Q4: content words {best, costco, dishwash} — Postgres drops "$700" and
-# "under" is a stopword. Both catalog pages contain costco + dishwasher but
-# never the qualifier "best": coverage 2/3 = 0.67, above the 0.5 floor but
-# below the old 0.75 bar that made this query defer to the provider forever.
+# Q4: lexemes {best, costco, dishwash, 700} — Postgres retains "700" but
+# drops "under". Both pages contain costco + dishwasher but not "best";
+# the catalog omits 700 (coverage 2/4 = 0.5) and the price guide mentions it
+# (coverage 3/4 = 0.75). Only one cleared the old 0.75 bar, so k=2 deferred.
 Q4 = "Best Costco Dishwasher under $700"
 
 CAR_SEAT_A_MD = """\
@@ -100,10 +100,9 @@ DOORBELL_FAQ_MD = """\
 **What does the alarm program do?** The alarm program arms your doorbell's motion sensor and chime when you leave home. You can set a priority for alerts so that person detections interrupt other notifications first. The device uses a wide-angle camera and two-way audio, and it works with most smart home hubs. Battery life is about three months per charge. If the sensor detects repeated motion while disarmed, the app sends a low-priority notification instead of an alarm.
 """
 
-# Q4 fixtures: catalog-style pages that contain every substantive term of the
-# query but never the qualifier word "best" — exactly what a real product
-# listing looks like (the live costco.com/dishwashers.html measured coverage
-# 0.67 / similarity 0.78 on this query shape).
+# Q4 fixtures: pages about Costco dishwashers that omit the qualifier "best";
+# one mentions 700 and the other does not. A live Costco catalog variant
+# measured coverage 0.5 / similarity 0.78 on the literal query.
 DISHWASHER_A_MD = """\
 # Dishwashers at Costco — full catalog
 
@@ -243,18 +242,26 @@ async def _check_word_dump_never_serves(stub: StubGateway) -> None:
     print("OK word dump never served (coverage 1.0, similarity below gate)")
 
 
-async def _check_qualifier_word_does_not_veto(stub: StubGateway) -> None:
-    """Q4 with k=2: both catalog pages cover 2/3 of {best, costco, dishwash} —
-    they omit the qualifier "best" but contain every substantive term. At the
-    old 0.75 bar both failed coverage and auto mode deferred forever; at the
-    current 0.5 floor local serves them with zero provider credits."""
+async def _check_catalog_reaches_coverage_floor(stub: StubGateway) -> None:
+    """Q4 with k=2: one catalog covers 2/4 lexemes, the price guide 3/4.
+    Only one cleared the old 0.75 bar; at 0.5 both serve without a provider.
+    Mentioning 700 does not establish that a product costs less than $700."""
+    qvec = await asyncio.to_thread(embed_one, Q4)
+    rows = await db.fetch_all(
+        "SELECT url, coverage FROM fn_search_local(%s, %s::vector, 10)",
+        (Q4, qvec),
+    )
+    coverage = {r["url"]: r["coverage"] for r in rows}
+    assert coverage[DISHWASHER_A] == 0.5, coverage
+    assert coverage[DISHWASHER_B] == 0.75, coverage
+
     before = len(stub.calls)  # earlier checks legitimately call the provider
     out = await sw.search_web(Q4, num_results=2)
     assert out["source"] == "local", f"expected local, got {out['source']}: {out}"
     urls = [r["url"] for r in out["results"]]
     assert set(urls) == {DISHWASHER_A, DISHWASHER_B}, urls
     assert stub.calls[before:] == [], f"provider must not be called on a local hit: {stub.calls[before:]}"
-    print("OK qualifier word does not veto (coverage 0.67 clears the 0.5 floor)")
+    print("OK catalog pages clear the coverage floor (0.5 and 0.75)")
 
 
 async def _check_local_mode_bypasses_gate() -> None:
@@ -280,7 +287,7 @@ async def main() -> None:
         await _check_local_hit_full_set(stub)
         await _check_defer_when_incomplete(stub)
         await _check_word_dump_never_serves(stub)
-        await _check_qualifier_word_does_not_veto(stub)
+        await _check_catalog_reaches_coverage_floor(stub)
         await _check_local_mode_bypasses_gate()
     finally:
         await db.close()

@@ -200,13 +200,13 @@ entirely; `provider` never consults it.
 
 The coverage threshold is deliberately low (0.5, "at least half the content
 words"): similarity is the primary topical filter, and a high coverage bar
-vetoed exactly the pages that matter most for shopping-style queries — e.g.
-"Best Costco Dishwasher under $700" reduces to content words {best, costco,
-dishwash} (Postgres drops "$700"), and Costco's own catalog page contains all
-the substantive terms but not "best", measuring coverage 0.67 / similarity
-0.78 — the best row in the index, rejected by a generic qualifier word at the
-old 0.75 bar. At 0.5 it passes, and the full set of k assembles from catalog
-pages instead of deferring to the provider forever.
+can veto relevant catalog pages. PostgreSQL reduces "Best Costco Dishwasher
+under $700" to {best, costco, dishwash, 700}: it retains `700` but drops
+"under". A Costco catalog URL variant covering only {costco, dishwash}
+measured coverage 0.5 / similarity 0.78 on the literal query; it failed the
+old 0.75 bar but passes the current 0.5 floor. This does **not** prove that
+any listed dishwasher costs less than $700 — coverage does not capture the
+price relationship. See [problematic-searches.md](../problematic-searches.md).
 
 Calibrated 2026-09-20 on the ~1.3M-chunk index (best-chunk similarity per
 query):
@@ -248,9 +248,10 @@ coverage 1.0.
 So the gate is conjunctive — coverage says "contains what was asked for",
 similarity says "is topically about it" — and serving requires a full set of k
 passing rows, so one marginal page that slips through both conditions cannot
-serve alone (this also retires the old known false positive: "bees make honey"
-→ a mine-clearance article at coverage 1.0 / similarity 0.503 now defers to
-the gateway instead of serving a single marginal page).
+serve alone. This once prevented a lone mine-clearance hit for "bees make
+honey", but the growing index now has enough passing rows to serve locally,
+including an off-topic wasp-removal page. A full set alone is not a guarantee
+of relevance (see [problematic-searches.md](../problematic-searches.md)).
 
 ### Re-measuring after a big index change
 
