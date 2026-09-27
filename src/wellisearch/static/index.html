@@ -40,8 +40,6 @@
   button { background: #21262d; color: var(--text); border: 1px solid var(--border);
            border-radius: 6px; padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; }
   button:hover { border-color: var(--accent); }
-  button.danger:hover { border-color: var(--bad); color: var(--bad); }
-  button.on { border-color: var(--ok); color: var(--ok); }
   button.warn { border-color: var(--warn); color: var(--warn); }
   button.mini { padding: 1px 6px; font-size: 12px; line-height: 1.5; }
   button:disabled { opacity: .35; cursor: default; }
@@ -138,14 +136,6 @@
     <div class="card"><div class="sub">freshness</div><div class="row" id="fresh" style="gap:12px;margin-top:6px"></div></div>
     <div class="card"><div class="sub" id="crawls30-label">successful crawls (window)</div><div class="row" id="crawls30" style="gap:12px;margin-top:6px"></div></div>
   </div>
-</section>
-
-<section>
-  <h2>Top pages by fetch_count</h2>
-  <div class="card"><table id="top-fetch"><thead><tr>
-    <th>url</th><th>title</th><th class="num">fetches</th><th class="num">search hits</th>
-    <th>last crawled</th><th>status</th><th>actions</th>
-  </tr></thead><tbody></tbody></table></div>
 </section>
 
 <section>
@@ -285,17 +275,6 @@ function renderWorkerToggle() {
   if (!b) return;
   b.textContent = workerPaused ? "resume background indexing" : "pause background indexing";
   b.className = workerPaused ? "warn" : "";
-}
-async function togglePage(url, disabled) {
-  try { await api("/api/pages/" + encodeURIComponent(url), { method: "PATCH", body: { disabled } });
-        toast("page " + (disabled ? "disabled" : "enabled")); refresh(); }
-  catch (e) { toast(e.message, false); }
-}
-async function delPage(url) {
-  if (!confirm("Delete " + url + " from the index?")) return;
-  try { await api("/api/pages/" + encodeURIComponent(url), { method: "DELETE" });
-        toast("deleted"); refresh(); }
-  catch (e) { toast(e.message, false); }
 }
 async function setProvider(name, enabled) {
   try { await api("/api/providers/" + name, { method: "PATCH", body: { enabled } });
@@ -479,21 +458,6 @@ function renderIndex(st, pagesData, win) {
     `<span class="err">errors: ${errs}</span>`;
 }
 
-function pageRows(pages) {
-  return (pages || []).map(p => `<tr>
-    <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${esc(p.url)}">
-        <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a></td>
-    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" class="muted" title="${esc(p.title)}">${esc(p.title) || "—"}</td>
-    <td class="num">${p.fetch_count}</td><td class="num">${p.search_hit_count}</td>
-    <td>${p.last_crawled ? ts(p.last_crawled) + " <span class='muted'>(" + age(p.last_crawled) + ")</span>" : "never"}</td>
-    <td>${p.disabled ? `<span class="pill warn">disabled</span>` : `<span class="muted">ok: ${esc(p.last_status) || "—"}</span>`}</td>
-    <td>
-      <button class="${p.disabled ? "on" : ""}" onclick="togglePage('${esc(p.url)}', ${!p.disabled})">${p.disabled ? "enable" : "disable"}</button>
-      <button class="danger" onclick="delPage('${esc(p.url)}')">delete</button>
-    </td>
-  </tr>`).join("");
-}
-
 function infoStr(info) {
   if (!info || typeof info !== "object") return "";
   return Object.entries(info)
@@ -586,7 +550,7 @@ async function refresh() {
     const [st, prov, pagesF, searches, win, logsData, health] = await Promise.all([
       api("/api/stats"),
       api("/api/providers"),
-      api("/api/pages?sort=fetch_count&limit=5"),
+      api("/api/pages?limit=0"),
       api(`/api/logs/searches?limit=${SQ_PAGE_SIZE}&offset=${sqPage * SQ_PAGE_SIZE}`),
       api("/api/window?secs=" + winSecs),
       api("/api/logs?secs=" + winSecs + "&limit=200&q=" + encodeURIComponent(logQ)),
@@ -605,7 +569,6 @@ async function refresh() {
     renderProviders(prov);
     renderActivity(win);
     renderIndex(st, pagesF, win);
-    $("#top-fetch tbody").innerHTML = pageRows(pagesF.pages);
     if (mySqSeq === sqSeq) { // skip stale search pages from overlapping refresh() calls
       sqLast = searches.searches || [];
       renderRecentQueries(sqLast, searches.total ?? sqLast.length);
