@@ -1,6 +1,10 @@
 """Unit tests: per-site extractors (fixture HTML, no network)."""
 from __future__ import annotations
 
+import re
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from wellisearch.crawl.extractors import for_url
 from wellisearch.crawl.extractors.amazon import AmazonExtractor
 from wellisearch.crawl.extractors.ap import APExtractor
@@ -18,10 +22,12 @@ from wellisearch.crawl.extractors.brave import (
 from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
 from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
+from wellisearch.crawl.extractors.reddit import RedditExtractor, comment_request_url, needs_refresh
 from wellisearch.crawl.extractors.reuters import ReutersExtractor
 from wellisearch.crawl.extractors.target import TargetExtractor
 from wellisearch.crawl.extractors.walmart import WalmartExtractor
 from wellisearch.crawl.extractors.wsj import WSJExtractor
+from wellisearch.crawl.policy import match
 from wellisearch.crawl.results import Escalate, Rendered
 
 
@@ -243,6 +249,89 @@ assert _visible_text_markdown("<html><body></body></html>") == ""
 shell = ex.fit(rendered('<html><head><title>x</title></head><body></body></html>'))
 assert not ex.accept(shell)
 print("OK brave")
+
+# ---------------------------------------------------------------------------
+# Reddit
+# ---------------------------------------------------------------------------
+
+REDDIT_COMMENTS = "".join(
+    f'<shreddit-comment author="user{i}" depth="{i % 3}" score="{i}">'
+    f'<div slot="comment"><p>Comment body {i} with useful advice.</p></div>'
+    "</shreddit-comment>"
+    for i in range(30)
+)
+REDDIT_HTML = (
+    '<html><body><shreddit-post post-title="Dishwashers at Costco" comment-count="30">'
+    '<div property="schema:articleBody"><p>Which dishwasher should I buy?</p></div>'
+    "</shreddit-post>"
+    '<div id="comments">' + REDDIT_COMMENTS + "</div>"
+    '<aside>Unrelated recommendations and navigation</aside></body></html>'
+)
+reddit = RedditExtractor()
+reddit_fit = reddit.fit(rendered(REDDIT_HTML))
+assert reddit.accept(reddit_fit)
+assert reddit_fit.title == "Dishwashers at Costco"
+assert reddit_fit.signals["comments"] == 25
+assert "Comment body 29" in reddit_fit.md
+assert "Comment body 5" in reddit_fit.md
+assert "Comment body 4" not in reddit_fit.md
+assert reddit_fit.md.index("Comment body 29") < reddit_fit.md.index("Comment body 28")
+assert "Unrelated recommendations" not in reddit_fit.md
+assert reddit_fit.md.count("### ") == 25
+assert "depth 1" in reddit_fit.md and "depth 2" in reddit_fit.md
+with patch(
+    "wellisearch.crawl.extractors.reddit.get_settings",
+    return_value=SimpleNamespace(
+        CRAWL_REDDIT_COMMENT_RANKING="best",
+        CRAWL_REDDIT_MAX_COMMENTS=20,
+    ),
+):
+    configured_fit = reddit.fit(rendered(REDDIT_HTML))
+    best_url = comment_request_url("https://www.reddit.com/r/x/comments/123/?sort=new")
+assert configured_fit.signals["comments"] == 20
+assert "Comment body 0" in configured_fit.md
+assert "Comment body 19" in configured_fit.md
+assert "Comment body 20" not in configured_fit.md
+assert "Reddit Best" in configured_fit.md
+assert best_url.endswith("?sort=best")
+partial_comments = "".join(re.findall(r"<shreddit-comment.*?</shreddit-comment>", REDDIT_COMMENTS)[:3])
+partial_fit = reddit.fit(rendered(REDDIT_HTML.replace(REDDIT_COMMENTS, partial_comments)))
+assert partial_fit.signals["comments"] == 3
+assert partial_fit.signals["comments_reported"] == 30
+assert reddit.accept(partial_fit), "the maximum must not become a minimum when Reddit renders fewer comments"
+post_only = reddit.fit(rendered(REDDIT_HTML.replace(REDDIT_COMMENTS, "")))
+assert not reddit.accept(post_only), "a comment-bearing post must not be stored without its comments"
+no_count_html = REDDIT_HTML.replace('comment-count="30"', "").replace(REDDIT_COMMENTS, "")
+count_missing = reddit.fit(rendered(no_count_html))
+assert not reddit.accept(count_missing), "unknown comment count must not allow a post-only result"
+empty_html = REDDIT_HTML.replace('comment-count="30"', 'comment-count="0"').replace(REDDIT_COMMENTS, "")
+empty_thread = reddit.fit(rendered(empty_html))
+assert reddit.accept(empty_thread), "a real zero-comment post should still be fetchable"
+reddit_url = "https://www.reddit.com/r/Appliances/comments/1s8pw99/dishwashers_at_costco/"
+assert match(reddit_url).name == "reddit"
+assert isinstance(for_url(reddit_url), RedditExtractor)
+assert comment_request_url(reddit_url).endswith("?sort=top")
+assert comment_request_url(reddit_url + "?sort=new&foo=bar").endswith("?foo=bar&sort=top")
+assert (
+    comment_request_url("https://www.reddit.com/r/x/comments/123/post/?context=3#t1_abc")
+    == "https://www.reddit.com/r/x/comments/123/post/?context=3&sort=top#t1_abc"
+)
+assert needs_refresh(reddit_url, "# Dishwashers at Costco\n\nWhich dishwasher should I buy?")
+assert not needs_refresh(reddit_url, reddit_fit.md)
+with patch(
+    "wellisearch.crawl.extractors.reddit.get_settings",
+    return_value=SimpleNamespace(
+        CRAWL_REDDIT_COMMENT_RANKING="best",
+        CRAWL_REDDIT_MAX_COMMENTS=25,
+    ),
+):
+    assert needs_refresh(reddit_url, reddit_fit.md)
+assert not needs_refresh("https://notreddit.com/r/x/comments/123", "post only")
+assert not needs_refresh("https://old.reddit.com/r/x/comments/123", "post only")
+assert not needs_refresh("https://www.reddit.com/r/Appliances/", "subreddit listing")
+nsfw_gate = "This post contains mature content and may not be appropriate for certain viewers."
+assert not needs_refresh(reddit_url, nsfw_gate), "a login wall can never hydrate comments; do not loop"
+print("OK reddit")
 
 # ---------------------------------------------------------------------------
 # Greenhouse

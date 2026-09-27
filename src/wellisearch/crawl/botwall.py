@@ -28,6 +28,7 @@ PHRASE_MARKERS: tuple[str, ...] = (
     "attention required",
     "unusual traffic",
     "request blocked",
+    "you've been blocked by network security",
     "javascript is disabled",
     "prove your humanity",  # reddit's reCAPTCHA interstitial (title + body text)
     "verify that you're not a robot",

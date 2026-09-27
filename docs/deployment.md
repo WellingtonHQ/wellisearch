@@ -131,6 +131,8 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `CRAWL_MAX_PARALLEL` | `3` | concurrent crawls |
 | `CRAWL_IGNORE_SSL_ERRORS` | `true` | the tiers are read-only (fetch public pages, never send data), so untrusted TLS certs are accepted; set `false` to enforce strict verification |
 | `CRAWL_LAUNCH_RETRY_AFTER_S` | `30` | relaunch backoff after a failed browser launch; keep equal to the entrypoint.sh Xvfb self-heal poll interval |
+| `CRAWL_REDDIT_COMMENT_RANKING` | `score` | `score` selects the highest scored rendered comments; `best` keeps Reddit's Best order |
+| `CRAWL_REDDIT_MAX_COMMENTS` | `25` | maximum ranked comments included per Reddit post; fewer are returned when Reddit renders fewer; changing this or the ranking recrawls an indexed post on its next fetch |
 
 ### Server
 | Var | Default | Notes |

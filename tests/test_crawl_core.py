@@ -23,6 +23,9 @@ assert "stealth" in p.tiers
 assert match("https://www.walmart.com/ip/123").name == "walmart"
 assert match("https://boardgamegeek.com/geeklist.php?id=1").name == "bgg"
 assert match("https://www.nytimes.com/2026/01/01/tech/x.html").name == "nytimes"
+reddit_policy = match("https://www.reddit.com/r/Appliances/comments/1s8pw99/dishwashers_at_costco/")
+assert reddit_policy.tiers[0] == "browser"
+assert "network_idle" in reddit_policy.waits
 assert match("https://example.com/x").name == "default"
 assert match("https://notamazon.com/x").name == "default"  # suffix match must not false-positive
 print("OK policy")
@@ -50,6 +53,10 @@ assert is_botwall('{"error": "unusual traffic"}', 200, "application/json") is No
 assert is_botwall("access denied", 200) is not None
 assert is_botwall("access denied", 200, None) is not None
 assert is_botwall("access denied", 200, "text/html; charset=utf-8") is not None
+assert is_botwall(
+    "<html><body>You've been blocked by network security.</body></html>",
+    200,
+) == "you've been blocked by network security"
 # status >= 400 wins even for non-HTML bodies
 assert is_botwall("", 403, "application/json") == "http_403"
 # <noscript> warnings on legitimate pages are not walls (XenForo et al. put
@@ -184,6 +191,61 @@ res = asyncio.run(engine.crawl("https://example.com/x"))
 assert res.ok is True
 assert res.tier == "http"
 assert res.md
+
+
+class RedditTier:
+    """Fake browser tier that records Reddit's requested sort URL."""
+
+    name = "browser"
+    requested_url: str | None = None
+
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Return a real zero-comment post without a network request."""
+        self.requested_url = url
+        html = '<shreddit-post post-title="Test post" comment-count="0"></shreddit-post>'
+        return Rendered(html=html, title="Test post", status=200, ms=1, engine="fake")
+
+
+reddit_tier = RedditTier()
+tiers._REGISTRY.clear()
+tiers.register(reddit_tier)
+reddit_result = asyncio.run(engine.crawl("https://www.reddit.com/r/test/comments/123/test_post/"))
+assert reddit_result.ok
+assert reddit_tier.requested_url is not None and reddit_tier.requested_url.endswith("?sort=top")
+
+
+class RedditListingTier:
+    """Fake browser tier returning a subreddit feed full of post cards."""
+
+    name = "browser"
+
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Return a listing page whose DOM contains shreddit-post cards."""
+        html = (
+            "<html><body><main>"
+            "<p>Appliance questions, comments or complaints. This is the subreddit front "
+            "page with enough plain text to clear the generic extraction gate.</p>"
+            '<shreddit-post post-title="First" comment-count="30"></shreddit-post>'
+            '<shreddit-post post-title="Second" comment-count="12"></shreddit-post>'
+            "</main></body></html>"
+        )
+        return Rendered(html=html, title="Appliances", status=200, ms=1, engine="fake")
+
+
+listing_tier = RedditListingTier()
+tiers._REGISTRY.clear()
+tiers.register(listing_tier)
+listing_result = asyncio.run(engine.crawl("https://www.reddit.com/r/Appliances/"))
+assert listing_result.ok
+assert listing_result.flags.get("extractor") == "generic"
 
 
 class BotwallHttpTier:

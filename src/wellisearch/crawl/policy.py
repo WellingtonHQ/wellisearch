@@ -34,6 +34,8 @@ POLICY: dict[str, Policy] = {
         "brave", ("browser",), ("settle", "network_idle"), (), "shared",
     ),
     "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
+    # Post comments arrive after hydration; the HTTP response contains only the post.
+    "reddit.com": Policy("reddit", ("browser", "stealth"), ("settle", "network_idle"), (), "shared"),
     "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "target.com": Policy(
         "target", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",

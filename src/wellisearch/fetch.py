@@ -23,6 +23,7 @@ from psycopg_pool import PoolTimeout
 from . import crawler, queue
 from .config import Settings, get_settings
 from .crawl.extractors.base import title_from_markdown
+from .crawl.extractors.reddit import needs_refresh as reddit_needs_refresh
 from .crawl.probe import reset_probe_budget, set_probe_budget
 from .crawl.results import ChallengeDetected
 from .db import db
@@ -285,7 +286,10 @@ async def _resolve_page(url: str) -> dict:
     t_index = time.monotonic()
     page = await db.page_get(url)
     index_ms = int((time.monotonic() - t_index) * 1000)
-    if page and not page.get("disabled") and page.get("fit_markdown"):
+    if (
+        page and not page.get("disabled") and page.get("fit_markdown")
+        and not reddit_needs_refresh(url, page["fit_markdown"])
+    ):
         return {
             "url": url,
             "title": page.get("title") or title_from_markdown(page["fit_markdown"]) or url,

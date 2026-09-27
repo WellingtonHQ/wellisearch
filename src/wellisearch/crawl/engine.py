@@ -13,7 +13,7 @@ import time
 from ..config import get_settings
 from . import botwall, extractors, tiers
 from .lane import CF, get_lane
-from .policy import Policy, match
+from .policy import DEFAULT_POLICY, Policy, match
 from .results import ChallengeDetected, CrawlResult, Escalate, Fitted
 
 log = logging.getLogger("wellisearch.crawl.engine")
@@ -28,6 +28,15 @@ async def crawl(url: str) -> CrawlResult:
     """
     p = match(url)
     ex = extractors.for_url(url)
+    request_url = url
+    if p.name == "reddit":
+        # Only single-post pages need browser-first comment hydration; other
+        # reddit pages (listings, profiles, search) keep the standard ladder.
+        if extractors.reddit.is_post_url(url):
+            request_url = extractors.reddit.comment_request_url(url)
+        else:
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
     attempts: list[dict] = []
     best: Fitted | None = None
     start = time.monotonic()
@@ -41,7 +50,7 @@ async def crawl(url: str) -> CrawlResult:
             i += 1
             continue
         try:
-            r = await asyncio.wait_for(tier.fetch(url, p), timeout=_tier_backstop(tier, name, p))
+            r = await asyncio.wait_for(tier.fetch(request_url, p), timeout=_tier_backstop(tier, name, p))
         except ChallengeDetected:
             # Fast-lane probe hit a bot-wall: route to the CF lane rather than
             # trying the next tier (the challenge needs the CF lane's loop).

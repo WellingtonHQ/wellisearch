@@ -6,6 +6,7 @@ container, or a loaded .env when running on the host).
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -130,6 +131,8 @@ class Settings(BaseSettings):
     CRAWL_POOL_SIZE: int = 3
     CRAWL_PROFILE_DIR: str = "/profiles"
     CRAWL_PROFILE_MAX: int = 8
+    CRAWL_REDDIT_COMMENT_RANKING: Literal["best", "score"] = "score"
+    CRAWL_REDDIT_MAX_COMMENTS: int = 25  # highest-ranked comments kept per post
     CRAWL_SETTLE_S: float = 2.0
     CRAWL_STEALTH_TIER: bool = True
     CRAWL_STEALTH_TIMEOUT_S: int = 120
