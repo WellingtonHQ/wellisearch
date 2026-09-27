@@ -15,7 +15,7 @@ Think of it as a personal, always-learning search box for your LLM. Ask a questi
 ## Why wellisearch?
 
 - **Free repeat searches.** Pages your agent reads get stored locally. The next search on the same topic is answered by your own index — no provider credits burned.
-- **One pipeline, three doors.** The exact same search is exposed as **MCP tools** (for your LLM), a **REST API** (for scripts), and a live **dashboard** (for you).
+- **One pipeline, several doors.** The same search is exposed as **MCP tools** (for your LLM), a **REST API** (for scripts), and a **search UI** (for you). The live dashboard shows activity and controls.
 - **LLM-friendly output.** Results come back as clean, readable Markdown — not raw HTML soup or a wall of JSON.
 - **Self-hosted & private.** Your index, your data, your machine. No third-party SaaS in the loop.
 - **Degrades gracefully.** Provider down or quota exhausted? It fails over to the next one, and to your local index as a last resort — your agent still gets an answer.
@@ -34,6 +34,7 @@ Think of it as a personal, always-learning search box for your LLM. Ask a questi
 |---|---|---|
 | **MCP tools** | your LLM / agent | `search_web`, `fetch_page`, `fetch_pages`, `index_stats`, `seed_url`, `refresh_page` |
 | **REST API** | scripts & automation | the same pipeline over HTTP (`/api/search`, `/api/fetch`, …) |
+| **Search UI** | you | search by mode, open results, and read fetched Markdown at `/search` |
 | **Dashboard** | you | live activity: index size, hit-rate, provider quotas, recent crawls — plus one-click controls |
 
 ## Quick start
@@ -112,10 +113,14 @@ Open **http://localhost:8780/** in a browser. It auto-refreshes and shows:
 - search hit-rate by source (local vs. each provider) over time
 - provider quota usage vs. limits
 - the crawl queue and recent activity
-- your most-read pages
 - one-click actions: seed a URL, refresh a page, toggle a provider, set a quota
 
 If you set `WELLISEARCH_API_KEY`, paste it into the header bar once and it's remembered.
+
+For a browser search, open **http://localhost:8780/search** or use the dashboard's
+Search link. Choose auto, provider, or local mode, open a result in a new tab,
+or select **View content** to read the page's fetched Markdown. The two pages
+share the saved API key in the same browser.
 
 ## Provider keys (optional but recommended)
 

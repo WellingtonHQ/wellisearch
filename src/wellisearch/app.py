@@ -18,7 +18,7 @@ import pathlib
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -614,6 +614,12 @@ app.mount("/mcp", mcp_asgi(), name="mcp")
 # ---------------------------------------------------------------------------
 # Static
 # ---------------------------------------------------------------------------
+
+@app.get("/search", include_in_schema=False)
+async def search_ui() -> FileResponse:
+    """Serve the browser search interface alongside the dashboard."""
+    return FileResponse(STATIC_DIR / "search.html")
+
 
 # catch-all last: serves static/index.html at / and any static assets
 

@@ -22,8 +22,15 @@ X-API-Key: <WELLISEARCH_API_KEY>
 ```
 
 Comparison is constant-time. An unset key means the API is open (fine for a
-trusted LAN; set it for anything reachable). `/health` and the dashboard (`/`)
-are always open.
+trusted LAN; set it for anything reachable). `/health`, the dashboard (`/`),
+and the search UI (`/search`) are always open; their API calls still require the key.
+
+## Browser search UI
+
+Open `/search` to search in `auto`, `provider`, or `local` mode. Results link to
+their original pages; **View content** reads the page's fit Markdown through
+`POST /api/fetch` and shows a waiting status or a queued bot-wall retry message.
+The API key entered here is shared with the dashboard in the same browser.
 
 ## REST endpoints
 
