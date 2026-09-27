@@ -479,26 +479,36 @@ function renderIndex(st, pagesData, win) {
     `<span class="err">errors: ${errs}</span>`;
 }
 
-function infoStr(info) {
-  if (!info || typeof info !== "object") return "";
-  return Object.entries(info)
-    .map(([k, v]) => {
-      if (v === null || v === undefined || v === "") return null;
-      let sv = typeof v === "object" ? JSON.stringify(v) : String(v);
-      if (sv.length > 48) sv = sv.slice(0, 47) + "…";
-      return `${k}=${sv}`;
-    })
-    .filter(Boolean)
-    .join(" · ");
+function infoEntries(info) {
+  if (!info || typeof info !== "object") return [];
+  return Object.entries(info).filter(([, v]) => v !== null && v !== undefined && v !== "");
+}
+
+const infoPlain = (entries) => entries
+  .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+  .join(" · ");
+
+function infoHtml(info) {
+  const entries = infoEntries(info);
+  if (!entries.length) return "";
+  return entries.map(([k, v]) => {
+    let sv = typeof v === "object" ? JSON.stringify(v) : String(v);
+    const shown = sv.length > 48 ? sv.slice(0, 47) + "…" : sv;
+    if (/^https?:\/\//i.test(sv)) {
+      return `${esc(k)}=<a href="${esc(sv)}" target="_blank" rel="noopener" title="${esc(sv)}">${esc(shown)}</a>`;
+    }
+    return `${esc(k)}=${esc(shown)}`;
+  }).join(" · ");
 }
 
 function renderLog(logs) {
   const rows = (logs || []).map(l => {
-    const info = infoStr(l.info);
+    const entries = infoEntries(l.info);
+    const info = infoHtml(l.info);
     return `<tr>
       <td style="white-space:nowrap">${ts(l.ts)} <span class="muted">(${age(l.ts)})</span></td>
       <td style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(l.message)}">${esc(l.message)}</td>
-      <td class="muted" style="max-width:340px;overflow:hidden;text-overflow:ellipsis" title="${esc(info)}">${esc(info) || "—"}</td>
+      <td class="muted" style="max-width:340px;overflow:hidden;text-overflow:ellipsis" title="${esc(infoPlain(entries))}">${info || "—"}</td>
     </tr>`;
   }).join("");
   $("#log-title").textContent = "Log (last " + winLabel() + ")";
