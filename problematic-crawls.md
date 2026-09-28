@@ -124,7 +124,11 @@ posting, so no dedicated extractor was needed.
 
 Verified live (2026-09-28): manual recrawl after redeploy stored 7,844 chars of
 clean markdown — job number, work site, travel, overview, full description
-("Principal Software Engineer", Azure Data engineering). Note: the page carries
+("Principal Software Engineer", Azure Data engineering). All three indexed
+eightfold pages were then recrawled under the new policy: the two marketing
+pages (`eightfold.ai`, `/responsible-ai/`) came back `unchanged` (5.1s / 2.7s) —
+their stored content already matches what the browser tier produces, so no stale
+JSON blobs remain in the index. Note: the job page carries
 `<meta name="robots" content="noindex">` — irrelevant for a private index.
 
 ## Open
