@@ -94,12 +94,14 @@ async def search_web(
     if search_mode != "provider":
         local_rows, index_ms, index_error = await _search_local_index(query, k, max_age_days)
 
-    # Gate: does any top local result cover the query enough? `coverage` is
-    # computed in fn_search_local (see docs/ranking.md). In provider mode the
-    # row set is empty, so the gate is always False and the gateway serves.
-    serve_local = any(
-        (r.get("coverage") or 0.0) >= s.LOCAL_MIN_COVERAGE for r in local_rows
-    )
+    # Auto mode: each row must clear all three per-row gates — coverage, similarity,
+    # and distinctive-term coverage (a page missing every rare / brand query word
+    # cannot serve). A full set of k passing rows serves; an incomplete set can also
+    # serve if several pass or one is strongly similar. This lets indexed provider
+    # hits satisfy repeat queries without trusting a marginal lone match or off-brand
+    # junk. Local mode bypasses the gate; provider mode has no local rows.
+    passing = [r for r in local_rows if _passes_local_gate(r)]
+    strong = [r for r in passing if _passes_partial_local_gate(r)]
 
     source: str
     results: list[dict]
@@ -109,17 +111,23 @@ async def search_web(
 
     if search_mode == "local":
         # local only: serve what the index has — the caller explicitly chose
-        # local, so the coverage gate does not apply. No provider fallback.
+        # local, so the gate does not apply. No provider fallback.
         if local_rows:
             source, results = await _serve_local(local_rows, k)
         else:
             source = "error"
             results = []
-    elif serve_local:
+    elif len(passing) >= k:
         # local hit — zero provider credits (the quota-preservation layer)
-        source, results = await _serve_local(local_rows, k)
+        source, results = await _serve_local(passing, k)
+    elif passing and len(passing) >= s.LOCAL_PARTIAL_MIN_PASSING:
+        # Several qualifying pages are evidence of a useful partial answer.
+        source, results = await _serve_local(passing, k)
+    elif strong:
+        # One unusually strong page is enough; omit marginal companions.
+        source, results = await _serve_local(strong, k)
     else:
-        # ---- provider gateway (auto: no good local hit; provider: always)
+        # ---- provider gateway (auto: no qualifying local set; provider: always)
         source, results, degraded, errors, provider_ms = await _provider_search(
             query, k, crawl_n, search_mode, local_rows
         )
@@ -157,6 +165,30 @@ async def search_web(
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _passes_local_gate(r: dict) -> bool:
+    """Whether one local row clears all three gate conditions: coverage, similarity,
+    and distinctive-term coverage. A page that misses every rare / brand query word
+    cannot serve even if it covers the common words (docs/ranking.md)."""
+    s = get_settings()
+    if (r.get("coverage") or 0.0) < s.LOCAL_MIN_COVERAGE:
+        return False
+    sim = r.get("similarity")
+    if sim is None or sim < s.LOCAL_MIN_SIMILARITY:
+        return False
+    # Missing/NULL distinctive_coverage means "no info" (e.g. a hand-built row);
+    # treat it as satisfied rather than penalizing an unknown.
+    dc = r.get("distinctive_coverage")
+    if dc is None:
+        return True
+    return dc >= s.LOCAL_MIN_DISTINCTIVE_COVERAGE
+
+
+def _passes_partial_local_gate(r: dict) -> bool:
+    """Whether a passing row is strong enough to serve without a full set."""
+    sim = r.get("similarity")
+    return sim is not None and sim >= get_settings().LOCAL_PARTIAL_MIN_SIMILARITY
+
+
 async def _search_local_index(
     query: str,
     k: int,
@@ -180,10 +212,9 @@ async def _search_local_index(
         log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
         qvec = None
 
-    # Fetch a bit more than we'll return so the coverage gate can see a
-    # full-coverage page that ranks just outside the top-k by score. The extra
-    # rows cost nothing — the legs/fusion are the same; only the final LIMIT
-    # differs.
+    # Fetch a bit more than we'll return so the local-hit gate can see a
+    # passing page that ranks just outside the top-k by score. The extra rows
+    # cost nothing — the legs/fusion are the same; only the final LIMIT differs.
     gate_k = max(k, s.SEARCH_GATE_MIN_K)
     try:
         rows = await db.fetch_all(
@@ -212,6 +243,7 @@ def _local_result(r: dict) -> dict:
         "snippet": (r.get("snippet") or "")[:SNIPPET_MAX_LEN],
         "score": r.get("score"),
         "coverage": r.get("coverage"),
+        "similarity": r.get("similarity"),
         "last_crawled": r.get("last_crawled"),
         "fetch_count": r.get("fetch_count"),
     }

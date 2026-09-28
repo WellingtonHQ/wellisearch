@@ -46,6 +46,7 @@ class HttpTier:
             status=r.status_code,
             ms=ms,
             engine="http",
+            content_type=r.headers.get("Content-Type"),
         )
 
     def worst_case_s(self, p: Policy) -> float:

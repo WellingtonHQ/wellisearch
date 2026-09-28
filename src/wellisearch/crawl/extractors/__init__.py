@@ -58,6 +58,7 @@ from . import (  # noqa: E402,F401
     greenhouse,
     guardian,
     nytimes,
+    reddit,
     reuters,
     target,
     walmart,

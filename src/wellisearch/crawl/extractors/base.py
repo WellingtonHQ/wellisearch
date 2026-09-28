@@ -10,12 +10,19 @@ from __future__ import annotations
 import re
 
 from ...config import get_settings
-from ..results import Fitted, Rendered
+from ..results import Escalate, Fitted, Rendered
 
 MIN_MD_CHARS = 100
 # News article body gate (ap/guardian/reuters): a real article body clears this;
 # decoy/nav/related-links stubs do not.
 MIN_NEWS_ARTICLE_BODY_CHARS = 800
+# A short body that still shows a "Loading..." placeholder is a client-rendered
+# shell captured before JS ran (http tier); escalate to the browser tier, which
+# waits for settle/network-idle, instead of storing the stub. Real articles that
+# merely mention loading are far longer than this.
+LOADING_STUB_MAX_CHARS = 1500
+_LOADING_STUB_RE = re.compile(r"\bloading\s*(?:\.{2,}|…)", re.IGNORECASE)
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
 # Retail product pages (buy-box + "About this item" + specs) are 5k+ chars once
 # extracted; a thin/degraded render (e.g. the HTTP tier's lazy buy-box) is well
 # under this. The gate uses it to reject thin renders so the engine escalates
@@ -30,8 +37,13 @@ class GenericExtractor:
     name = "generic"
 
     def fit(self, r: Rendered) -> Fitted:
-        """Extract markdown (trafilatura, else readability) + title; never raises."""
+        """Extract markdown (trafilatura, else readability) + title.
+
+        Raises Escalate("browser") when the body is a short "Loading..." stub —
+        the http tier captured the shell before JS rendered the real content."""
         md = generic_md(r.html)
+        if _is_loading_stub(md, r.html):
+            raise Escalate("browser")
         title = r.title
         if title is None:
             title = _trafilatura_title(r.html)
@@ -96,6 +108,18 @@ def title_from_markdown(md: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _is_loading_stub(md: str, html: str) -> bool:
+    """True when a short markdown body came from a page still showing 'Loading...'.
+
+    The pattern is searched in the raw HTML (scripts/styles stripped), not the
+    extracted markdown: trafilatura drops short placeholder nodes, so the stub
+    marker can be absent from md even though it drove the render."""
+    if len(md.strip()) > LOADING_STUB_MAX_CHARS:
+        return False
+    visible = _SCRIPT_STYLE_RE.sub("", html)
+    return _LOADING_STUB_RE.search(visible) is not None
+
 
 def _lines_outside_fences(md: str) -> list[str]:
     """The markdown's prose lines, with fenced code-block content (markers included)."""

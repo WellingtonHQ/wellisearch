@@ -22,8 +22,15 @@ X-API-Key: <WELLISEARCH_API_KEY>
 ```
 
 Comparison is constant-time. An unset key means the API is open (fine for a
-trusted LAN; set it for anything reachable). `/health` and the dashboard (`/`)
-are always open.
+trusted LAN; set it for anything reachable). `/health`, the dashboard (`/`),
+and the search UI (`/search`) are always open; their API calls still require the key.
+
+## Browser search UI
+
+Open `/search` to search in `auto`, `provider`, or `local` mode. Results link to
+their original pages; **View content** reads the page's fit Markdown through
+`POST /api/fetch` and shows a waiting status or a queued bot-wall retry message.
+The API key entered here is shared with the dashboard in the same browser.
 
 ## REST endpoints
 
@@ -37,11 +44,16 @@ The search pipeline.
 | Param | Type | Default | Notes |
 |---|---|---|---|
 | `query` | string | required | the search text |
-| `k` | int | `SEARCH_K` (5) | max results |
-| `max_crawl` | int | `SEARCH_MAX_CRAWL` (5) | how many gateway result URLs to index in the background |
+| `k` | int | 5 | max results |
+| `max_crawl` | int | 5 | how many gateway result URLs to index in the background |
 | `max_age_days` | float | unset | drop local rows crawled older than this (never-crawled kept); ignored with `search_mode=provider` (the index is never consulted) |
 | `search_mode` | string | `auto` | `auto` (local first, provider on a miss), `local` (index only — an error if the index has nothing), or `provider` (bypass the local index and force a live provider answer) |
 | `format` | string | `markdown` | `markdown` or `json`; wins over the `Accept` header |
+
+`k` is an upper bound, not a minimum: a search may return fewer results. In
+`auto` mode, sufficiently relevant local results can serve even when fewer
+than `k` are available; otherwise the search uses a provider. An explicit
+`search_mode=local` uses only the index, while `provider` bypasses it.
 
 By default returns the Markdown search document (`Content-Type:
 text/markdown`, no JSON envelope — see [search-pipeline.md](search-pipeline.md)):

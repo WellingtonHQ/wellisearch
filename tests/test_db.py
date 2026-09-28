@@ -1,11 +1,17 @@
-"""DB integration: schema apply, store_page, fn_search_local, queue, quota."""
+"""DB integration: schema apply, store_page, fn_search_local, queue, quota.
+
+Runs against a dedicated throwaway database (wellisearch_test — created on
+first run) so the destructive clean-slate below can never touch production
+state such as provider_quota / provider_state."""
 from __future__ import annotations
 
 import asyncio
 import os
 
-# host-local endpoints (container aliases don't resolve on the host)
+# host-local endpoint + dedicated test DB (container aliases don't resolve on
+# the host; a throwaway DB keeps this suite away from production state)
 os.environ.setdefault("POSTGRES_HOST", "127.0.0.1")
+os.environ["POSTGRES_DB"] = "wellisearch_test"
 
 from wellisearch.db import db  # noqa: E402
 
@@ -103,11 +109,10 @@ async def _store_page_roundtrip() -> None:
 
 async def _check_local_hit() -> None:
     """fn_search_local now finds the stored page (findability, not top-5)."""
-    # Findability, not top-5: the live corpus (~1.34M chunks) contains dozens
-    # of real, more complete pgvector pages that legitimately outrank this
-    # synthetic blurb (it typically lands in the ~40s-50s). The assertion is
-    # that a stored page matching the query topic is ranked at all — a broken
-    # candidate pool (e.g. an empty trigram leg) misses it entirely.
+    # Findability, not top-1: other pages in the test index may legitimately
+    # outrank this synthetic blurb. The assertion is that a stored page
+    # matching the query topic is ranked at all — a broken candidate pool
+    # (e.g. an empty trigram leg) misses it entirely.
     from wellisearch.embed import embed_one
 
     qvec = await asyncio.to_thread(embed_one, "how to use pgvector for semantic search")
@@ -147,6 +152,15 @@ async def _check_queue_quota_provider_state() -> None:
     used, limit = await db.quota_used_limit("tavily")
     assert used >= 1 and limit == 1000
     print("OK quota ledger:", used, limit)
+
+    # a bump must not null the stored limit when no runtime override is set
+    await db.set_provider_state("tavily", enabled=True)
+    await db.quota_bump("tavily")
+    row = await db.fetch_one(
+        "SELECT quota_limit FROM provider_quota WHERE provider = 'tavily' ORDER BY month DESC LIMIT 1"
+    )
+    assert row is not None and row["quota_limit"] == 1000, row
+    print("OK quota limit preserved without override")
 
     await db.set_provider_state("brave", enabled=False)
     st = await db.get_provider_state("brave")

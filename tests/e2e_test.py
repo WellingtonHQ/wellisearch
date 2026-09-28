@@ -1,10 +1,11 @@
-r"""E2E pass (BLUEPRINT section 14) against the running server on 127.0.0.1:8780.
+r"""E2E pass (BLUEPRINT section 14) against a running wellisearch server.
 
 One test function per API surface (health, auth, search, fetch, pages,
 providers, stats, logs, window, dashboard, format=json, mcp/http);
 `main()` only orders them, since later steps reuse state from earlier ones.
 
 Run: .venv/Scripts/python.exe tests/e2e_test.py
+Set WELLISEARCH_TEST_BASE_URL to target an isolated server with a test database.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ import httpx
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-BASE = "http://127.0.0.1:8780"
+BASE = os.environ.get("WELLISEARCH_TEST_BASE_URL", "http://127.0.0.1:8780")
 DEFAULT_URL = "https://python.langchain.com/docs/introduction/"
 
 
@@ -112,12 +113,17 @@ async def test_search_gateway(c: httpx.AsyncClient) -> str:
 
 
 async def test_local_search(c: httpx.AsyncClient, url: str) -> None:
-    """GET /api/search (local index hit): zero provider cost, real Title != URL."""
-    r = await c.get("/api/search", params={"query": url.split("/")[2] + " introduction"})
+    """Search for the fetched page's title: index hit without a provider call."""
+    pages = await c.get("/api/pages", params={"limit": "100"})
+    rows = pages.json().get("pages", []) if pages.status_code == 200 else []
+    page = next((p for p in rows if p.get("url") == url), None)
+    query = (page or {}).get("title") or url
+    r = await c.get("/api/search", params={"query": query, "max_crawl": 0})
     md = r.text
     check(
-        "local search: 200 + degraded=false",
-        r.status_code == 200 and "Degraded: false" in md and "URL:" in md,
+        "local search: indexed page served without provider",
+        r.status_code == 200 and "Source: local" in md
+        and "Degraded: false" in md and f"URL: {url}" in md,
         md[:120].replace("\n", " | "),
     )
     # the locally-indexed result must carry a real Title, not the URL —
@@ -272,12 +278,10 @@ async def test_provider_failover(c: httpx.AsyncClient) -> None:
         r.text[:120],
     )
 
-    # local-first is correct, so force the gateway two ways: disable the
-    # most-read pages, AND use a query the index cannot cover ("quixotic
-    # zzyzx" tops out at 0.5 coverage < LOCAL_MIN_COVERAGE — verified
-    # 2026-08-25; any 3+ real-word query has a full-coverage page in a
-    # 25k-page corpus). The worker may index concurrently, so retry if a
-    # local hit still wins.
+    # local-first is correct, so force the gateway: disable every indexed page
+    # (the gate then has no rows to pass), and use a nonsense query ("quixotic
+    # zzyzx") that no real corpus page answers topically. The worker may index
+    # concurrently, so retry if a local hit still wins.
     for _attempt in range(3):
         await _set_pages_disabled(c, await _all_page_urls(c), True)
         r = await c.get("/api/search", params={"query": "quixotic zzyzx", "k": "5"})

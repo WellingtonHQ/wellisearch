@@ -97,8 +97,9 @@ Notes:
   MCP endpoints.
 - **No crawl in the response path**: searches never block on a crawl. On a
   gateway hit the top result URLs are enqueued for background indexing
-  (`queue.enqueue(source="search")` + kick), so the *next* query for the
-  same topic can be served locally.
+  (`queue.enqueue(source="search")` + kick). Once relevant pages are stored,
+  a later query for the same topic can be served locally with a partial set:
+  three ordinary gate-passing pages or one stronger match (by default).
 
 ## Deployment topology (typical stack)
 

@@ -19,6 +19,7 @@ class Rendered:
     ms: int
     engine: str
     notes: str | None = None
+    content_type: str | None = None  # response Content-Type (botwall guard)
 
 
 @dataclass

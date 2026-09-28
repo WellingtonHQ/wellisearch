@@ -49,15 +49,22 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
    tool. Both call `search_web()` in `src/wellisearch/search_web.py`.
 2. The query is embedded (fastembed, 384-d) and ranked against the local
    index by the Postgres function `fn_search_local` (hybrid FTS + trigram +
-   vector, RRF-fused). If any result covers ≥ `LOCAL_MIN_COVERAGE` (default
-   `0.75`) of the query's content words, the local rows are served
-   immediately — **zero provider credits**.
- 3. Otherwise the **provider gateway** (`providers/`) tries the providers one
-    by one, in the order currently set (a dashboard override via
-    `PUT /api/providers/order` when set, else the `SEARCH_PROVIDERS` default),
-    gated by runtime toggles, configuration, and a monthly quota ledger. First
-    non-empty result serves; the top result URLs are **enqueued for background
-    indexing** so the next identical query is free.
+   vector, RRF-fused). A full set of k pages covering ≥
+   `LOCAL_MIN_COVERAGE` (default `0.5`) of the query's content words **and**
+   best-chunk similarity ≥ `LOCAL_MIN_SIMILARITY` (default `0.3`) serves locally;
+   each page must also contain every rare/brand query word
+   (`LOCAL_MIN_DISTINCTIVE_COVERAGE`, default `1.0`) so off-brand junk can't
+   answer a brand query. A smaller set also serves locally when at least three
+   pages pass the gate, or one passing page clears the stronger
+   `LOCAL_PARTIAL_MIN_SIMILARITY` threshold (default `0.55`): **zero provider
+   credits**.
+3. Otherwise the **provider gateway** (`providers/`) tries the providers one
+   by one, in the order currently set (a dashboard override via
+   `PUT /api/providers/order` when set, else the `SEARCH_PROVIDERS` default),
+   gated by runtime toggles, configuration, and a monthly quota ledger. First
+   non-empty result serves; the top result URLs are **enqueued for background
+   indexing** so a later identical query can be served locally once relevant
+   pages have been indexed.
 4. **All paths are logged** to `search_log`; every crawl is logged to
    `crawl_log` with trigger, status, and timing.
 5. The **background worker** (one asyncio task) drains the crawl queue and

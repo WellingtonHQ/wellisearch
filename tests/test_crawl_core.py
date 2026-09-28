@@ -23,6 +23,9 @@ assert "stealth" in p.tiers
 assert match("https://www.walmart.com/ip/123").name == "walmart"
 assert match("https://boardgamegeek.com/geeklist.php?id=1").name == "bgg"
 assert match("https://www.nytimes.com/2026/01/01/tech/x.html").name == "nytimes"
+reddit_policy = match("https://www.reddit.com/r/Appliances/comments/1s8pw99/dishwashers_at_costco/")
+assert reddit_policy.tiers[0] == "browser"
+assert "network_idle" in reddit_policy.waits
 assert match("https://example.com/x").name == "default"
 assert match("https://notamazon.com/x").name == "default"  # suffix match must not false-positive
 print("OK policy")
@@ -42,6 +45,88 @@ js_wall = (
     "This requires JavaScript. Enable JavaScript and then reload the page.</body></html>"
 )
 assert is_botwall(js_wall, 200) is not None  # JS-disabled bot-wall must escalate, not store
+# non-HTML content types skip the marker scan (code files contain marker-like strings)
+raw_py = 'def check(body):\n    if "access denied" in body:\n        raise Blocked("request blocked")\n'
+assert is_botwall(raw_py, 200, "text/plain; charset=utf-8") is None
+assert is_botwall('{"error": "unusual traffic"}', 200, "application/json") is None
+# absent/unknown content type still gets scanned (safe default)
+assert is_botwall("access denied", 200) is not None
+assert is_botwall("access denied", 200, None) is not None
+assert is_botwall("access denied", 200, "text/html; charset=utf-8") is not None
+assert is_botwall(
+    "<html><body>You've been blocked by network security.</body></html>",
+    200,
+) == "you've been blocked by network security"
+# status >= 400 wins even for non-HTML bodies
+assert is_botwall("", 403, "application/json") == "http_403"
+# <noscript> warnings on legitimate pages are not walls (XenForo et al. put
+# "JavaScript is disabled" there for non-JS clients)
+clean_noscript = (
+    '<html><head><title>WellingtonHQ | XDA Forums</title></head>'
+    '<body><div class="blockMessage">Forum content here</div>'
+    "<noscript><div class=\"u-noJsOnly\">JavaScript is disabled. For a better "
+    "experience, please enable JavaScript.</div></noscript></body></html>"
+)
+assert is_botwall(clean_noscript, 200) is None
+# the same marker as visible text still escalates
+assert is_botwall("<html><body>JavaScript is disabled. Enable it to continue.</body></html>", 200) is not None
+# reddit's reCAPTCHA interstitial must escalate, not be stored as content
+reddit_wall = (
+    '<!DOCTYPE html><html lang="en"><head><title>Reddit - Prove your humanity</title>'
+    "<script src=\"https://www.google.com/recaptcha/api.js\"></script></head>"
+    "<body><form action=\"/r/programming/\" method=\"post\"><input type=\"submit\" value=\"Continue\"></form></body></html>"
+)
+assert is_botwall(reddit_wall, 200) == "prove your humanity"
+# marker phrases in code samples are content, not walls (security articles show
+# 403 examples); the same phrase as a short page's visible text still escalates
+article_code = (
+    '<html><head><title>Fix Privilege Escalation Vulnerabilities</title></head>'
+    "<body><h1>Privilege escalation</h1>" + "<p>Article text. " * 200 + "</p>"
+    "<pre><code>if (!req.user.isAdmin) { return res.status(403).json({ error: 'Access denied' }); }</code></pre>"
+    "</body></html>"
+)
+assert is_botwall(article_code, 200) is None
+denied_wall = (
+    '<html><head><title>Access Denied</title></head>'
+    "<body><h1>Access Denied</h1><p>You do not have permission to view this page.</p></body></html>"
+)
+assert is_botwall(denied_wall, 200) == "access denied"
+# marker phrases in <script> data blobs (nav JSON etc.) are not walls
+page_script_blob = (
+    '<html><head><title>Vultr Docs</title></head>'
+    "<body>" + "<p>Documentation content. " * 200 + "</p>"
+    '<script>window.__NAV__={"label":"Fix MySQL Access Denied Errors","href":"/x"};</script>'
+    "</body></html>"
+)
+assert is_botwall(page_script_blob, 200) is None
+# embedded CF assets on a content-rich page are not walls (Turnstile form
+# widgets, jsd bootstrap scripts); structural markers only count on
+# interstitial-sized pages
+clean_cf_assets = (
+    '<html><head><title>Website Design | Computer Scene</title></head>'
+    "<body>" + "<p>Real content. " * 200 + "</p>"
+    '<div class="cf7-cf-turnstile"><div id="cf-turnstile-cf7-1" class="cf-turnstile"'
+    ' data-sitekey="0x4AAAAA"></div></div>'
+    "<script>var a=document.createElement('script');"
+    "a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';</script>"
+    "</body></html>"
+)
+assert is_botwall(clean_cf_assets, 200) is None
+# a real CF interstitial (short visible text + structural assets) still escalates
+cf_interstitial = (
+    '<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title></head>'
+    "<body><div id=\"content\"><h1>Just a moment...</h1>"
+    "Checking your browser before accessing example.com</div>"
+    "<script src=\"/cdn-cgi/challenge-platform/scripts/jsd/main.js\"></script></body></html>"
+)
+assert is_botwall(cf_interstitial, 200) == "just a moment"
+# structural markers alone still catch an interstitial with no recognizable copy
+cf_bare = (
+    '<html><head><title>Checking...</title></head>'
+    "<body><div class=\"cf-turnstile\" data-sitekey=\"0x4AAAAA\"></div>"
+    "<script src=\"/cdn-cgi/challenge-platform/scripts/jsd/main.js\"></script></body></html>"
+)
+assert is_botwall(cf_bare, 200) == "challenge-platform"
 print("OK botwall")
 
 # ---------------------------------------------------------------------------
@@ -106,6 +191,61 @@ res = asyncio.run(engine.crawl("https://example.com/x"))
 assert res.ok is True
 assert res.tier == "http"
 assert res.md
+
+
+class RedditTier:
+    """Fake browser tier that records Reddit's requested sort URL."""
+
+    name = "browser"
+    requested_url: str | None = None
+
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Return a real zero-comment post without a network request."""
+        self.requested_url = url
+        html = '<shreddit-post post-title="Test post" comment-count="0"></shreddit-post>'
+        return Rendered(html=html, title="Test post", status=200, ms=1, engine="fake")
+
+
+reddit_tier = RedditTier()
+tiers._REGISTRY.clear()
+tiers.register(reddit_tier)
+reddit_result = asyncio.run(engine.crawl("https://www.reddit.com/r/test/comments/123/test_post/"))
+assert reddit_result.ok
+assert reddit_tier.requested_url is not None and reddit_tier.requested_url.endswith("?sort=top")
+
+
+class RedditListingTier:
+    """Fake browser tier returning a subreddit feed full of post cards."""
+
+    name = "browser"
+
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Return a listing page whose DOM contains shreddit-post cards."""
+        html = (
+            "<html><body><main>"
+            "<p>Appliance questions, comments or complaints. This is the subreddit front "
+            "page with enough plain text to clear the generic extraction gate.</p>"
+            '<shreddit-post post-title="First" comment-count="30"></shreddit-post>'
+            '<shreddit-post post-title="Second" comment-count="12"></shreddit-post>'
+            "</main></body></html>"
+        )
+        return Rendered(html=html, title="Appliances", status=200, ms=1, engine="fake")
+
+
+listing_tier = RedditListingTier()
+tiers._REGISTRY.clear()
+tiers.register(listing_tier)
+listing_result = asyncio.run(engine.crawl("https://www.reddit.com/r/Appliances/"))
+assert listing_result.ok
+assert listing_result.flags.get("extractor") == "generic"
 
 
 class BotwallHttpTier:

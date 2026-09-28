@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Search · wellisearch</title>
+  <link rel="stylesheet" href="/search.css">
+  <script src="/search.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/">wellisearch</a>
+      <nav aria-label="Main navigation">
+        <a href="/search" aria-current="page">Search</a>
+        <a href="/">Dashboard</a>
+      </nav>
+      <span class="header-note">local-first web search</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="search-panel" aria-labelledby="page-title">
+      <p class="eyebrow">SEARCH THE WEB + YOUR INDEX</p>
+      <h1 id="page-title">Find what you need.</h1>
+      <p class="intro">Search your saved pages first, or ask a provider for fresh results.</p>
+      <form id="search-form" role="search">
+        <label class="field-label" for="query">Search query</label>
+        <div class="query-row">
+          <input id="query" name="query" type="search" placeholder="What are you looking for?"
+                 autocomplete="off" required autofocus>
+          <button id="search-button" class="primary" type="submit">Search <span aria-hidden="true">→</span></button>
+        </div>
+        <fieldset class="modes">
+          <legend>Search mode</legend>
+          <label><input type="radio" name="mode" value="auto" checked><span>Auto</span></label>
+          <label><input type="radio" name="mode" value="provider"><span>Provider</span></label>
+          <label><input type="radio" name="mode" value="local"><span>Local</span></label>
+        </fieldset>
+        <p class="mode-help" id="mode-help">Search the index first, then use a provider if needed.</p>
+      </form>
+    </section>
+
+    <section id="auth-panel" class="auth-panel" aria-labelledby="auth-title" hidden>
+      <div>
+        <h2 id="auth-title">API key needed</h2>
+        <p>Enter the same key used by the dashboard to search and fetch pages.</p>
+      </div>
+      <form id="auth-form">
+        <label class="field-label" for="api-key">API key</label>
+        <div class="auth-row">
+          <input id="api-key" type="password" autocomplete="off" required>
+          <button type="submit">Save key</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="results-section" aria-labelledby="results-title">
+      <div class="section-heading">
+        <h2 id="results-title">Results</h2>
+        <span id="results-meta" class="muted"></span>
+      </div>
+      <div id="search-status" class="status" role="status" aria-live="polite">Enter a query to begin.</div>
+      <div id="results" class="results"></div>
+    </section>
+  </main>
+
+  <dialog id="content-dialog" aria-labelledby="content-title">
+    <div class="dialog-shell">
+      <div class="dialog-header">
+        <div class="dialog-heading">
+          <p class="eyebrow">FETCHED CONTENT</p>
+          <h2 id="content-title">Page content</h2>
+          <a id="content-url" href="#" target="_blank" rel="noopener noreferrer"></a>
+        </div>
+        <button id="close-dialog" class="icon-button" type="button" aria-label="Close content view">×</button>
+      </div>
+      <div class="dialog-body">
+        <div id="fetch-status" class="status" role="status" aria-live="polite"></div>
+        <div id="content-meta" class="content-meta"></div>
+        <pre id="content-markdown" hidden></pre>
+        <button id="retry-fetch" type="button" hidden>Try again</button>
+      </div>
+    </div>
+  </dialog>
+</body>
+</html>

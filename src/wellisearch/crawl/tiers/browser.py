@@ -90,6 +90,7 @@ class BrowserTier:
             url, wait_until="domcontentloaded", timeout=timeout_s * 1000
         )
         status = resp.status if resp is not None else 200
+        content_type = _response_content_type(resp)
         await settle(page)
         if "network_idle" in p.waits:
             await network_idle(page, clamp(NETWORK_IDLE_TIMEOUT_S))
@@ -97,11 +98,13 @@ class BrowserTier:
 
         if is_cf:
             # CF lane: run the full turnstile loop with the high budget.
-            html = await self._resolve_challenge(page, url, html, status, budget=timeout_s)
+            html = await self._resolve_challenge(
+                page, url, html, status, content_type=content_type, budget=timeout_s
+            )
         else:
             # Fast lane: probe only — a bot-wall means route to the CF lane
             # instead of spending the fast lane's time on the challenge loop.
-            if is_botwall(html, status) is not None:
+            if is_botwall(html, status, content_type) is not None:
                 raise ChallengeDetected(url)
 
         notes: str | None = None
@@ -121,7 +124,15 @@ class BrowserTier:
 
         title = await _page_title(page)
         ms = int((time.monotonic() - start) * 1000)
-        return Rendered(html=html, title=title, status=status, ms=ms, engine="browser", notes=notes)
+        return Rendered(
+            html=html,
+            title=title,
+            status=status,
+            ms=ms,
+            engine="browser",
+            notes=notes,
+            content_type=content_type,
+        )
 
     async def _resolve_challenge(
         self,
@@ -129,19 +140,23 @@ class BrowserTier:
         url: str,
         html: str,
         status: int,
+        content_type: str | None = None,
         budget: int | None = None,
     ) -> str:
         """Click the turnstile checkbox until clean or the budget is exhausted."""
         budget = budget if budget is not None else get_settings().CRAWL_CHALLENGE_BUDGET_S
         start = time.monotonic()
         round_no = 0
-        while is_botwall(html, status) is not None and (time.monotonic() - start) < budget:
+        while (
+            is_botwall(html, status, content_type) is not None
+            and (time.monotonic() - start) < budget
+        ):
             round_no += 1
             log.info("challenge present (poll %d, budget %ds) — clicking turnstile", round_no, budget)
             await _click_turnstile_checkbox(page)
             await page.wait_for_timeout(CHALLENGE_POLL_MS)
             html = await page.content()
-        if is_botwall(html, status) is not None:
+        if is_botwall(html, status, content_type) is not None:
             log.warning("challenge still present after %ds budget for %s", budget, url)
         return html
 
@@ -176,6 +191,14 @@ async def _safe_close(page: Page) -> None:
         await page.close()
     except Exception:
         pass
+
+
+def _response_content_type(resp: object) -> str | None:
+    """The goto response's Content-Type header, or None when unavailable."""
+    headers = getattr(resp, "headers", None)
+    if isinstance(headers, dict):
+        return headers.get("content-type") or headers.get("Content-Type")
+    return None
 
 
 async def _page_title(page: Page) -> str | None:

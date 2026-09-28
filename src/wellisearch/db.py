@@ -297,13 +297,15 @@ class Database:
             """,
             (provider, _month(), limit),
         )
-        # refresh the runtime override if one was set
+        # refresh the runtime override if one was set (a NULL override must not
+        # clobber the stored env-default limit)
         await self.execute(
             """
             UPDATE provider_quota q
                SET quota_limit = st.limit_override
               FROM provider_state st
              WHERE st.provider = q.provider AND st.provider = %s AND q.month = %s
+               AND st.limit_override IS NOT NULL
             """,
             (provider, _month()),
         )

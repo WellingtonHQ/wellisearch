@@ -6,6 +6,7 @@ container, or a loaded .env when running on the host).
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -57,12 +58,37 @@ class Settings(BaseSettings):
     # --- search ---
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
-    # Local-hit gate: fetch at least this many rows so the coverage gate can
-    # see a full-coverage page that ranks just outside the top-k by score.
+    # Local-hit gate: fetch at least this many rows so the gate can see a
+    # passing page that ranks just outside the top-k by score.
     SEARCH_GATE_MIN_K: int = 10
-    # Local-hit gate: serve local if any top result's `coverage`
-    # (fn_search_local column, see docs/ranking.md) is >= this.
-    LOCAL_MIN_COVERAGE: float = 0.75
+    # Local-hit gate (condition 1): a passing row must cover at least this
+    # fraction of the query's content words (`coverage` column, see
+    # docs/ranking.md). Kept deliberately low: generic qualifier words ("best",
+    # "top") that catalog pages omit must not veto them — similarity is the
+    # primary topical filter.
+    LOCAL_MIN_COVERAGE: float = 0.5
+    # Local-hit gate (condition 2): a passing row must also have best-chunk
+    # cosine similarity >= this (`similarity` column). Rejects pages that merely
+    # contain the query's words scattered across a huge body — word lists, vocab
+    # dumps — which coverage alone cannot tell apart. NULL similarity (no
+    # embeddings / failed query embed) never passes; auto mode then defers to
+    # the provider gateway.
+    LOCAL_MIN_SIMILARITY: float = 0.3
+    # Local-hit gate (condition 3): a passing row must cover at least this fraction
+    # of the query's DISTINCTIVE words — those in <1% of the corpus, i.e. brand /
+    # product names rather than common words (`distinctive_coverage` column). Default
+    # 1.0: a page that misses every distinctive term is not about what was asked even
+    # if it covers the common words ("baby bottles reviews" junk must not answer
+    # "Playtex baby bottles reviews"). Queries with no rare words are unaffected (the
+    # column is 1.0). See docs/ranking.md.
+    LOCAL_MIN_DISTINCTIVE_COVERAGE: float = 1.0
+    # A single strong page can satisfy auto mode even when fewer than SEARCH_K
+    # pages pass. Keep this above the ordinary gate's floor so a marginal lone
+    # hit still defers to the provider (see docs/ranking.md).
+    LOCAL_PARTIAL_MIN_SIMILARITY: float = 0.55
+    # Several ordinary gate-passing pages can also serve a partial answer,
+    # even when no single chunk meets the stronger similarity threshold.
+    LOCAL_PARTIAL_MIN_PASSING: int = 3
     # Legacy local-hit cutoff; now only for ranking (see docs/ranking.md).
     SEARCH_MIN_SCORE: float = 0.06
     STALE_HOURS: int = 72
@@ -120,6 +146,8 @@ class Settings(BaseSettings):
     CRAWL_POOL_SIZE: int = 3
     CRAWL_PROFILE_DIR: str = "/profiles"
     CRAWL_PROFILE_MAX: int = 8
+    CRAWL_REDDIT_COMMENT_RANKING: Literal["best", "score"] = "score"
+    CRAWL_REDDIT_MAX_COMMENTS: int = 25  # highest-ranked comments kept per post
     CRAWL_SETTLE_S: float = 2.0
     CRAWL_STEALTH_TIER: bool = True
     CRAWL_STEALTH_TIMEOUT_S: int = 120
