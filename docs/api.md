@@ -44,20 +44,16 @@ The search pipeline.
 | Param | Type | Default | Notes |
 |---|---|---|---|
 | `query` | string | required | the search text |
-| `k` | int | `SEARCH_K` (5) | max results |
-| `max_crawl` | int | `SEARCH_MAX_CRAWL` (5) | how many gateway result URLs to index in the background |
+| `k` | int | 5 | max results |
+| `max_crawl` | int | 5 | how many gateway result URLs to index in the background |
 | `max_age_days` | float | unset | drop local rows crawled older than this (never-crawled kept); ignored with `search_mode=provider` (the index is never consulted) |
 | `search_mode` | string | `auto` | `auto` (local first, provider on a miss), `local` (index only — an error if the index has nothing), or `provider` (bypass the local index and force a live provider answer) |
 | `format` | string | `markdown` | `markdown` or `json`; wins over the `Accept` header |
 
-`k` is an upper bound, not a minimum. In `auto` mode, pages must pass the
-coverage (default 0.5) and similarity (default 0.3) gates. A full set of `k`
-passing pages serves locally; with fewer than `k`, auto mode also serves at
-least three passing pages by default, or just the passing pages with stronger
-similarity (default 0.55) when at least one exists. A lone marginal page falls
-through to the provider. The partial-set thresholds are configurable as
-`LOCAL_PARTIAL_MIN_PASSING` and `LOCAL_PARTIAL_MIN_SIMILARITY`. An explicit
-`search_mode=local` bypasses these gates; `provider` bypasses the index.
+`k` is an upper bound, not a minimum: a search may return fewer results. In
+`auto` mode, sufficiently relevant local results can serve even when fewer
+than `k` are available; otherwise the search uses a provider. An explicit
+`search_mode=local` uses only the index, while `provider` bypasses it.
 
 By default returns the Markdown search document (`Content-Type:
 text/markdown`, no JSON envelope — see [search-pipeline.md](search-pipeline.md)):

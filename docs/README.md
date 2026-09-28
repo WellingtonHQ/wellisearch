@@ -51,10 +51,13 @@ viewers that support SVG (GitHub, VS Code, Obsidian):
    index by the Postgres function `fn_search_local` (hybrid FTS + trigram +
    vector, RRF-fused). A full set of k pages covering ≥
    `LOCAL_MIN_COVERAGE` (default `0.5`) of the query's content words **and**
-   best-chunk similarity ≥ `LOCAL_MIN_SIMILARITY` (default `0.3`) serves locally.
-   A smaller set also serves locally when at least three pages pass both gates,
-   or one page passes coverage and the stronger `LOCAL_PARTIAL_MIN_SIMILARITY`
-   threshold (default `0.55`): **zero provider credits**.
+   best-chunk similarity ≥ `LOCAL_MIN_SIMILARITY` (default `0.3`) serves locally;
+   each page must also contain every rare/brand query word
+   (`LOCAL_MIN_DISTINCTIVE_COVERAGE`, default `1.0`) so off-brand junk can't
+   answer a brand query. A smaller set also serves locally when at least three
+   pages pass the gate, or one passing page clears the stronger
+   `LOCAL_PARTIAL_MIN_SIMILARITY` threshold (default `0.55`): **zero provider
+   credits**.
 3. Otherwise the **provider gateway** (`providers/`) tries the providers one
    by one, in the order currently set (a dashboard override via
    `PUT /api/providers/order` when set, else the `SEARCH_PROVIDERS` default),

@@ -94,11 +94,12 @@ async def search_web(
     if search_mode != "provider":
         local_rows, index_ms, index_error = await _search_local_index(query, k, max_age_days)
 
-    # Auto mode: a full set needs both per-row gates. An incomplete set can
-    # also serve if several rows pass, or one row is strongly similar; only
-    # strong rows are returned for the single-page route. This lets indexed
-    # provider hits satisfy repeat queries without trusting a marginal lone match.
-    # Local mode bypasses the gate; provider mode has no local rows.
+    # Auto mode: each row must clear all three per-row gates — coverage, similarity,
+    # and distinctive-term coverage (a page missing every rare / brand query word
+    # cannot serve). A full set of k passing rows serves; an incomplete set can also
+    # serve if several pass or one is strongly similar. This lets indexed provider
+    # hits satisfy repeat queries without trusting a marginal lone match or off-brand
+    # junk. Local mode bypasses the gate; provider mode has no local rows.
     passing = [r for r in local_rows if _passes_local_gate(r)]
     strong = [r for r in passing if _passes_partial_local_gate(r)]
 
@@ -165,12 +166,21 @@ async def search_web(
 # ---------------------------------------------------------------------------
 
 def _passes_local_gate(r: dict) -> bool:
-    """Whether one local row clears both gate conditions (coverage + similarity)."""
+    """Whether one local row clears all three gate conditions: coverage, similarity,
+    and distinctive-term coverage. A page that misses every rare / brand query word
+    cannot serve even if it covers the common words (docs/ranking.md)."""
     s = get_settings()
     if (r.get("coverage") or 0.0) < s.LOCAL_MIN_COVERAGE:
         return False
     sim = r.get("similarity")
-    return sim is not None and sim >= s.LOCAL_MIN_SIMILARITY
+    if sim is None or sim < s.LOCAL_MIN_SIMILARITY:
+        return False
+    # Missing/NULL distinctive_coverage means "no info" (e.g. a hand-built row);
+    # treat it as satisfied rather than penalizing an unknown.
+    dc = r.get("distinctive_coverage")
+    if dc is None:
+        return True
+    return dc >= s.LOCAL_MIN_DISTINCTIVE_COVERAGE
 
 
 def _passes_partial_local_gate(r: dict) -> bool:

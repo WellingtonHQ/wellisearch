@@ -173,24 +173,32 @@ The *relative* ordering — and the fact that X's mass comes from three
 distinct legs at top ranks, not from fifty marginal ones — is what the top-3
 cap enforces.
 
-## Local-hit gate: `coverage` + `similarity`
+## Local-hit gate: `coverage` + `distinctive_coverage` + `similarity`
 
 The score above is **rank-only** (RRF over the legs' ranks). It is an
 arbitrary scale that does not track relevance — off-topic pages can
 outscore on-topic ones — so it must never decide local-vs-gateway. That
-decision is made by two `fn_search_local` columns, both computed in Postgres:
+decision is made by three `fn_search_local` columns, all computed in Postgres:
 
 - **`coverage`** — the fraction of the query's content words (the `words`
   CTE, PG-stemmed, stopwords dropped) that the page's title + body contains,
   computed with `to_tsvector(...) @@ to_tsquery(...)` per lexeme. Answers
   "does this page contain what was asked for?"
+- **`distinctive_coverage`** — the fraction of the query's *rare* words (the
+  `word_rare` CTE: a word in `<1%` of chunks, i.e. brand / product names rather
+  than common words) that the page contains; **1.0 when the query has no rare
+  words** (nothing to require). Answers "does it contain what makes this query
+  *specific*?" A page can cover every common word and still miss the one brand
+  term, so coverage alone cannot catch off-brand junk.
 - **`similarity`** — cosine similarity of the query vector to the page's
   closest chunk (`1 - min(embedding <=> qvec)` over its embedded chunks; NULL
   when there are none). Answers "is it topically about it, or just a body
   that happens to contain those words?"
 
 `search_web` (auto mode) serves a full set when **at least k rows** each clear
-both conditions — `coverage >= LOCAL_MIN_COVERAGE` (default **0.5**) and
+all three conditions — `coverage >= LOCAL_MIN_COVERAGE` (default **0.5**),
+`distinctive_coverage >= LOCAL_MIN_DISTINCTIVE_COVERAGE` (default **1.0**; a
+missing/NULL value is treated as satisfied), and
 `similarity >= LOCAL_MIN_SIMILARITY` (default **0.3**; NULL never passes).
 When fewer than k pass, it serves all the passing rows if at least
 `LOCAL_PARTIAL_MIN_PASSING` (default **3**) pass; otherwise it serves only the
@@ -230,6 +238,50 @@ sits between the clusters with margin on both sides. The regression suite
 dataset: real articles measure 0.80–0.84, a ~2000-word dump measures 0.13 at
 coverage 1.0.
 
+### Distinctive words: brand / product queries
+
+Coverage and similarity both treat every query word as interchangeable, so an
+off-brand page that covers the common words ("baby", "bottle", "review") can
+clear both gates for a branded query. `distinctive_coverage` fixes this by
+making rare words load-bearing: a word is *rare* when it appears in `<1%` of
+chunks (per-word GIN counts), which is exactly what separates brand / product
+names from common vocabulary. The gate requires a page to contain at least
+`LOCAL_MIN_DISTINCTIVE_COVERAGE` (default **1.0**) of the query's rare words;
+queries with no rare words are unaffected (the column is 1.0).
+
+Measured 2026-09-28 on the live index (~178k chunks): "Playtex baby bottles
+reviews" has `playtex` at document frequency **0** — its only rare word, and no
+page contains it. Six off-topic pages cleared the old two-condition gate
+(coverage 0.50–0.75, similarity 0.31–0.48) and were being served locally; with
+the distinctive condition every one scores `distinctive_coverage = 0` and is
+rejected, so the query now defers to the provider gateway instead of serving
+junk. The regression suite pins both directions: an off-brand page that covers
+every common word but misses a rare brand word scores 0.0 (real SQL), and a
+stubbed on-brand row (`distinctive_coverage = 1.0`) serves while off-brand
+companions drop out.
+
+### Distinctive-coverage SQL cost
+
+Measured 2026-09-28 on the live 178,738-chunk index: the pre-change SQL body
+(commit `95beeff`) and this version ran as read-only `SELECT`s against the same
+data, with the same precomputed query vectors and `k = 10`. After one warm-up
+per variant and query, three paired runs alternated which version ran first;
+the table shows median wall-clock time per SQL call, including result fetch.
+
+| Query | Before | With `distinctive_coverage` | Increase |
+|---|---:|---:|---:|
+| Playtex baby bottles reviews | 287 ms | 336 ms | 17% |
+| Costco dishwashers | 280 ms | 289 ms | 3% |
+| bees make honey | 468 ms | 532 ms | 14% |
+| newborn head bobbing … rear facing | 821 ms | 1,039 ms | 27% |
+| Apollo 11 1202 … lunar descent | 471 ms | 612 ms | 30% |
+
+The added check cost 3–30% across these five queries (median increase 17%).
+`EXPLAIN ANALYZE` showed comparable increases in server execution time and no
+disk reads in these warm-cache runs; the extra per-page word checks are likely
+CPU-bound. This measures SQL only, not embedding, HTTP, provider latency, or
+concurrent load.
+
 ### Why conjunctive, and why a partial gate?
 
 - **Score** (the old `SEARCH_MIN_SCORE` gate): rank-only, so it crosses
@@ -249,8 +301,10 @@ coverage 1.0.
   themselves.
 
 So the gate is conjunctive — coverage says "contains what was asked for",
-similarity says "is topically about it". At least three ordinary passing pages
-can serve a partial set; one page needs the stronger 0.55 similarity floor.
+distinctive_coverage says "contains what makes it specific (the brand / product
+term)", and similarity says "is topically about it". At least three ordinary
+passing pages can serve a partial set; one page needs the stronger 0.55
+similarity floor.
 The 2026-09-20 Apollo calibration query has one relevant page at similarity
 0.61 and coverage 0.86, so a small index can answer it locally; the word dump
 is only 0.10 similarity. A longer Apollo query measured four passing production

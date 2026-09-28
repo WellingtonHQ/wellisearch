@@ -8,10 +8,12 @@ are needed:
   python tests/test_search_regression.py
 
 Scenarios pinned to the dataset below:
-  Q1 on-topic query, a full set passes both gate conditions -> served local (zero credits)
+  Q1 on-topic query, a full set passes all gate conditions -> served local (zero credits)
   Q2 first misses, then one strong provider result is indexed -> repeat served local
   Three moderate passing rows, no strong row               -> partial set served local
   Marginal partial row passes ordinary gate but not strong gate -> provider
+  Off-brand pages clear coverage+similarity but miss every distinctive word -> provider
+  An on-brand page (distinctive_coverage 1.0) serves; off-brand companions dropped
   Q3 word dump has coverage 1.0 but no topical similarity  -> deferred to the provider
   Q4 shopping query with a qualifier and a price term:
      the catalog covers 2/4 of {best, costco, dishwash, 700}, the price guide
@@ -179,17 +181,17 @@ async def _seed_dataset() -> None:
 
 
 async def _check_gate_columns() -> None:
-    """fn_search_local exposes both gate columns with the expected separation."""
+    """fn_search_local exposes all three gate columns with the expected separation."""
     s = get_settings()
     qvec = await asyncio.to_thread(embed_one, Q1)
     rows = await db.fetch_all(
-        "SELECT url, coverage, similarity FROM fn_search_local(%s, %s::vector, 10)",
+        "SELECT url, coverage, distinctive_coverage, similarity FROM fn_search_local(%s, %s::vector, 10)",
         (Q1, qvec),
     )
     by_url = {r["url"]: r for r in rows}
     dump = by_url[WORD_DUMP]
     article = by_url[CAR_SEAT_A]
-    print("gate columns:", {u: (round(r["coverage"], 3), round(r["similarity"] or -1, 3)) for u, r in by_url.items()})
+    print("gate columns:", {u: (round(r["coverage"], 3), round(r["distinctive_coverage"] or -1, 3), round(r["similarity"] or -1, 3)) for u, r in by_url.items()})
     # the word dump contains every query word but is not topically similar
     assert dump["coverage"] >= 0.9, f"word dump coverage {dump['coverage']}"
     assert dump["similarity"] is not None and dump["similarity"] < s.LOCAL_MIN_SIMILARITY, (
@@ -200,7 +202,12 @@ async def _check_gate_columns() -> None:
     assert article["similarity"] is not None and article["similarity"] >= s.LOCAL_MIN_SIMILARITY, (
         f"article similarity {article['similarity']} should clear the gate"
     )
-    print("OK gate columns (coverage + similarity separation)")
+    # Q1 has no rare words in this small corpus, so the distinctive gate is vacuous
+    # (distinctive_coverage 1.0) for every row — a wiring check; the brand-word
+    # behavior itself is pinned by _check_distinctive_*.
+    assert dump["distinctive_coverage"] == 1.0, f"word dump distinctive {dump['distinctive_coverage']}"
+    assert article["distinctive_coverage"] == 1.0, f"article distinctive {article['distinctive_coverage']}"
+    print("OK gate columns (coverage + similarity + distinctive separation)")
 
 
 async def _check_local_hit_full_set(stub: StubGateway) -> None:
@@ -311,6 +318,84 @@ async def _check_multiple_partial_serves(stub: StubGateway) -> None:
     print("OK multiple moderate matches serve a partial local set")
 
 
+async def _check_distinctive_coverage_offbrand() -> None:
+    """A page covering every common word but missing a rare brand word scores 0.0."""
+    s = get_settings()
+    # "playtex" is absent from the corpus (rare); newborn/car/seat are in the car-seat pages.
+    qvec = await asyncio.to_thread(embed_one, "Playtex newborn car seat")
+    rows = await db.fetch_all(
+        "SELECT url, coverage, distinctive_coverage FROM fn_search_local(%s, %s::vector, 20)",
+        ("Playtex newborn car seat", qvec),
+    )
+    by_url = {r["url"]: r for r in rows}
+    assert CAR_SEAT_A in by_url, f"car-seat page should rank for the query: {list(by_url)}"
+    row = by_url[CAR_SEAT_A]
+    # covers the common words (would clear the old coverage gate) but has no brand word
+    assert row["coverage"] >= s.LOCAL_MIN_COVERAGE, f"off-brand coverage {row['coverage']}"
+    assert row["distinctive_coverage"] == 0.0, f"off-brand distinctive should be 0: {row['distinctive_coverage']}"
+    print("OK distinctive coverage marks an off-brand page as missing the brand word")
+
+
+async def _check_distinctive_gate_defers(stub: StubGateway) -> None:
+    """Rows that clear coverage+similarity but miss every distinctive term defer."""
+    original_search = sw._search_local_index
+
+    async def offbrand_index(
+        query: str,
+        k: int,
+        max_age_days: float | None,
+    ) -> tuple[list[dict], int, str | None]:
+        """Three pages cover the common words and are topically similar, but none
+        contains the query's rare brand word (distinctive_coverage 0)."""
+        return [
+            {"coverage": 1.0, "similarity": 0.6, "distinctive_coverage": 0.0,
+             "url": f"https://example.com/offbrand-{i}"}
+            for i in range(3)
+        ], 0, None
+
+    sw._search_local_index = offbrand_index
+    calls_before = len(stub.calls)
+    try:
+        out = await sw.search_web("Playtex baby bottles reviews", num_results=5, max_crawl=0)
+        assert out["source"] == "stub", f"off-brand pages must defer to provider: {out}"
+        assert stub.calls[calls_before:] == [("Playtex baby bottles reviews", 5)], stub.calls
+    finally:
+        sw._search_local_index = original_search
+    print("OK distinctive gate defers an off-brand partial set (coverage+similarity pass, brand missing)")
+
+
+async def _check_distinctive_gate_serves(stub: StubGateway) -> None:
+    """A page covering every distinctive term serves; off-brand companions drop out."""
+    s = get_settings()
+    onbrand = "https://example.com/playtex-bottle-reviews"
+    original_search = sw._search_local_index
+
+    async def onbrand_index(
+        query: str,
+        k: int,
+        max_age_days: float | None,
+    ) -> tuple[list[dict], int, str | None]:
+        """One page covers the common words AND the rare brand word; a second is off-brand."""
+        return [
+            {"coverage": 1.0, "similarity": s.LOCAL_PARTIAL_MIN_SIMILARITY + 0.05,
+             "distinctive_coverage": 1.0, "url": onbrand},
+            {"coverage": 1.0, "similarity": 0.6, "distinctive_coverage": 0.0,
+             "url": "https://example.com/offbrand-0"},
+        ], 0, None
+
+    sw._search_local_index = onbrand_index
+    calls_before = len(stub.calls)
+    try:
+        out = await sw.search_web("Playtex baby bottles reviews", num_results=5, max_crawl=0)
+        assert out["source"] == "local" and not out["degraded"], out
+        urls = [r["url"] for r in out["results"]]
+        assert urls == [onbrand], f"only the on-brand page should serve: {urls}"
+        assert stub.calls[calls_before:] == [], f"on-brand hit must avoid provider: {stub.calls}"
+    finally:
+        sw._search_local_index = original_search
+    print("OK distinctive gate serves the on-brand page and drops off-brand companions")
+
+
 async def _check_word_dump_never_serves(stub: StubGateway) -> None:
     """Q3: the word dump tops the index with coverage 1.0 but must not be served."""
     out = await sw.search_web(Q3, num_results=5)
@@ -377,9 +462,12 @@ async def main() -> None:
     try:
         await _check_provider_warms_strong_partial(stub)
         await _check_gate_columns()
+        await _check_distinctive_coverage_offbrand()
         await _check_local_hit_full_set(stub)
         await _check_marginal_partial_defers(stub)
         await _check_multiple_partial_serves(stub)
+        await _check_distinctive_gate_defers(stub)
+        await _check_distinctive_gate_serves(stub)
         await _check_word_dump_never_serves(stub)
         await _check_catalog_reaches_coverage_floor(stub)
         await _check_local_mode_bypasses_gate()

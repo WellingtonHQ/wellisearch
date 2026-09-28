@@ -156,9 +156,10 @@ CREATE TABLE IF NOT EXISTS app_state (
 -- fn_search_local(query, qvec, k) — the hybrid ranking core: FTS + trigram +
 -- vector legs (each top-50), RRF fusion with a per-page top-3 cap, then
 -- prominence/freshness adjustments; disabled pages filtered out. Each row
--- also carries `coverage` (query-word fraction in title+body) and
--- `similarity` (best-chunk cosine to the query vector) — together they are
--- the local-hit gate (search_web.py). Design, formulas, and calibration:
+-- also carries `coverage` (query-word fraction in title+body),
+-- `distinctive_coverage` (rare query-word fraction), and `similarity`
+-- (best-chunk cosine to the query vector) — the local-hit gate (search_web.py).
+-- Design, formulas, and calibration:
 -- docs/ranking.md (trigram leg: docs/trigram-rewrite.md).
 -- ===========================================================================
 -- DROP first: CREATE OR REPLACE cannot change the return type (adding a
@@ -171,6 +172,7 @@ RETURNS TABLE (
   snippet TEXT,
   score DOUBLE PRECISION,
   coverage DOUBLE PRECISION,
+  distinctive_coverage DOUBLE PRECISION,
   similarity DOUBLE PRECISION,
   last_crawled TIMESTAMPTZ,
   fetch_count INT
@@ -198,12 +200,21 @@ AS $$
     FROM q
     WHERE q.tsq_and IS NOT NULL
   ),
+  -- Per-lexeme distinctiveness: a word is "rare" when it appears in < 1% of the
+  -- corpus (per-word GIN index counts). Rare words are what make a query specific
+  -- (brand / product names); common words ("baby", "review") do not. Feeds both
+  -- the trigram candidate pool and the distinctive_coverage gate column.
+  word_rare AS (
+    SELECT lexeme,
+           ((SELECT count(*) FROM chunks c
+             WHERE c.tsv @@ to_tsquery('english', words.lexeme)) * 100
+            < (SELECT nchunks FROM q)) AS is_rare
+    FROM words
+  ),
   rare AS (
     SELECT string_agg(lexeme, ' | ') AS words
-    FROM words
-    WHERE (SELECT count(*) FROM chunks c
-           WHERE c.tsv @@ to_tsquery('english', words.lexeme)) * 100
-          < (SELECT nchunks FROM q)
+    FROM word_rare
+    WHERE is_rare
   ),
   -- url rides along in every leg so the fusion never joins back to chunks.
   -- FTS candidate set: the AND set (every lexeme) when non-empty, else the
@@ -319,6 +330,17 @@ AS $$
          WHERE to_tsvector('english', COALESCE(p.title, '') || ' ' || left(COALESCE(p.fit_markdown, ''), 100000))
                @@ to_tsquery('english', words.lexeme)) * 1.0
       / NULLIF((SELECT count(*) FROM words), 0) AS coverage,
+      -- Distinctive coverage: fraction of the query's RARE (distinctive) words in
+      -- title+body; 1.0 when the query has no rare words (nothing to require). A
+      -- page that misses every distinctive term is not about what was asked even if
+      -- it covers the common words — this stops "baby bottles reviews" junk from
+      -- passing a "Playtex baby bottles reviews" gate (docs/ranking.md).
+      CASE WHEN (SELECT count(*) FROM word_rare WHERE is_rare) = 0 THEN 1.0
+           ELSE (SELECT count(*) FROM word_rare wr
+                  WHERE wr.is_rare AND to_tsvector('english', COALESCE(p.title, '') || ' ' || left(COALESCE(p.fit_markdown, ''), 100000))
+                        @@ to_tsquery('english', wr.lexeme)) * 1.0
+                / (SELECT count(*) FROM word_rare WHERE is_rare)
+      END AS distinctive_coverage,
       p.last_crawled AS last_crawled,
       p.fetch_count AS fetch_count
     FROM pagescore ps
@@ -332,8 +354,9 @@ AS $$
     t.snippet AS snippet,
     t.score AS score,
     t.coverage AS coverage,
+    t.distinctive_coverage AS distinctive_coverage,
     -- Similarity: cosine similarity of the query vector to this page's closest
-    -- chunk (1 - min L2 distance over its embedded chunks). NULL when qvec is
+    -- chunk (1 - min cosine distance over its embedded chunks). NULL when qvec is
     -- absent or the page has no embeddings — the local-hit gate treats NULL as
     -- unverified and defers to the provider gateway.
     CASE WHEN qvec IS NOT NULL THEN 1 - s.min_dist END AS similarity,

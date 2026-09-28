@@ -43,11 +43,12 @@ SELECT * FROM fn_search_local(%s, %s::vector, %s)
 ```
 
 See [ranking.md](ranking.md) for the full algorithm. Returns at most
-`max(k, 10)` rows with `url, title, snippet, score, coverage, similarity,
-last_crawled, fetch_count` (the extra rows let the gate below see past the
-top-k by score). If the function itself errors, `local_rows = []` **and** the failure
-is returned as `index_error`: auto mode continues to the gateway (the error
-stays hidden behind the fallback), local mode surfaces it in the error
+`max(k, 10)` rows with `url, title, snippet, score, coverage,
+distinctive_coverage, similarity, last_crawled, fetch_count` (the extra rows let
+the gate below see past the top-k by score). If the function itself errors,
+`local_rows = []` **and** the failure is returned as `index_error`: auto mode
+continues to the gateway (the error stays hidden behind the fallback), while
+local mode surfaces it in the error
 envelope (`index_error` field in JSON, `Index Error:` header line in
 Markdown) so "the index is empty" and "the index is down" are
 distinguishable.
@@ -58,7 +59,7 @@ kept). This is applied *after* ranking, in Python.
 
 ### 4. Gate: is the local result good enough?
 
-A row passes when it clears both conditions (`fn_search_local` columns,
+A row passes when it clears all three conditions (`fn_search_local` columns,
 computed entirely in Postgres):
 
 ```python
@@ -66,16 +67,25 @@ def _passes_local_gate(r):
     if (r.get("coverage") or 0) < LOCAL_MIN_COVERAGE:      # default 0.5 — low on purpose, see ranking.md
         return False
     sim = r.get("similarity")                              # best-chunk cosine; NULL never passes
-    return sim is not None and sim >= LOCAL_MIN_SIMILARITY # default 0.3
+    if sim is None or sim < LOCAL_MIN_SIMILARITY:          # default 0.3
+        return False
+    dc = r.get("distinctive_coverage")                     # fraction of rare/brand words present
+    if dc is None:                                         # no info (hand-built row) -> satisfied
+        return True
+    return dc >= LOCAL_MIN_DISTINCTIVE_COVERAGE            # default 1.0 — must contain every distinctive term
 ```
 
 `coverage` (the fraction of the query's content words in title+body) answers
-"does this page contain what was asked for?"; `similarity` (cosine of the
-query vector to the page's closest chunk) answers "is it topically about it,
-or just a body that happens to contain those words?" — word lists / vocab
-dumps pass coverage but fail similarity. The RRF `score` is rank-only and does
-not gate (off-topic pages can outscore on-topic ones: 0.134 vs 0.049 on this
-index). See [ranking.md § Local-hit gate](ranking.md#local-hit-gate-coverage--similarity)
+"does this page contain what was asked for?"; `distinctive_coverage` (the
+fraction of the query's *rare* words — those in `<1%` of chunks, i.e. brand /
+product names — present on the page; 1.0 when the query has no rare words)
+answers "does it contain what makes this query specific?"; `similarity` (cosine
+of the query vector to the page's closest chunk) answers "is it topically about
+it, or just a body that happens to contain those words?" — word lists / vocab
+dumps pass coverage but fail similarity, and off-brand pages pass both of those
+but fail distinctive_coverage. The RRF `score` is rank-only and does not gate
+(off-topic pages can outscore on-topic ones: 0.134 vs 0.049 on this index). See
+[ranking.md § Local-hit gate](ranking.md#local-hit-gate-coverage--distinctive_coverage--similarity)
 for the calibration data.
 
 **Auto mode serves local when at least k rows pass**, returning those rows in
@@ -84,7 +94,7 @@ score order. With fewer than k, it also serves all passing rows when at least
 `LOCAL_PARTIAL_MIN_SIMILARITY` threshold (default 0.55) when at least one exists.
 A marginal lone match still defers to the gateway. A strong page or several
 moderate pages indexed after a provider miss can answer the next query without
-requiring a full set. `search_mode="local"` bypasses both gates entirely — the
+requiring a full set. `search_mode="local"` bypasses the gate entirely — the
 caller explicitly chose the index.
 
 ### 5a. Local hit → serve (zero provider credits)

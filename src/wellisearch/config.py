@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     # embeddings / failed query embed) never passes; auto mode then defers to
     # the provider gateway.
     LOCAL_MIN_SIMILARITY: float = 0.3
+    # Local-hit gate (condition 3): a passing row must cover at least this fraction
+    # of the query's DISTINCTIVE words — those in <1% of the corpus, i.e. brand /
+    # product names rather than common words (`distinctive_coverage` column). Default
+    # 1.0: a page that misses every distinctive term is not about what was asked even
+    # if it covers the common words ("baby bottles reviews" junk must not answer
+    # "Playtex baby bottles reviews"). Queries with no rare words are unaffected (the
+    # column is 1.0). See docs/ranking.md.
+    LOCAL_MIN_DISTINCTIVE_COVERAGE: float = 1.0
     # A single strong page can satisfy auto mode even when fewer than SEARCH_K
     # pages pass. Keep this above the ordinary gate's floor so a marginal lone
     # hit still defers to the provider (see docs/ranking.md).

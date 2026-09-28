@@ -102,12 +102,18 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `SEARCH_MAX_CRAWL` | `5` | gateway result URLs to pre-index per miss |
 | `LOCAL_MIN_COVERAGE` | `0.5` | local-hit gate: min fraction of query content words a passing page must cover; low on purpose so qualifier words ("best") don't veto catalog pages (see ranking.md) |
 | `LOCAL_MIN_SIMILARITY` | `0.3` | local-hit gate: min best-chunk cosine similarity for a passing page; NULL never passes |
+| `LOCAL_MIN_DISTINCTIVE_COVERAGE` | `1.0` | local-hit gate: min fraction of the query's rare/brand words (those in <1% of chunks) a passing page must contain; 1.0 = must contain every distinctive term, so off-brand junk can't answer a brand query (see ranking.md) |
 | `LOCAL_PARTIAL_MIN_SIMILARITY` | `0.55` | stronger best-chunk similarity required to serve a partial local set when fewer than k rows pass; the coverage gate still applies |
 | `LOCAL_PARTIAL_MIN_PASSING` | `3` | minimum number of ordinary gate-passing pages that can serve a partial local set without one strong page |
 | `SEARCH_GATE_MIN_K` | `10` | rows fetched so the gate can see near-miss pages that rank just outside top-k by score |
 | `SEARCH_MIN_SCORE` | `0.06` | legacy; now only for ranking (see ranking.md) |
 | `STALE_HOURS` | `72` | staleness hint for stats/dashboard |
 | `MAX_CHUNK_TOKENS` | `500` | chunk token budget; must stay under MiniLM's 512-token input window (est. ~4 chars/token) |
+
+Set `LOCAL_MIN_DISTINCTIVE_COVERAGE` from `0.0` to `1.0` (inclusive):
+`0.0` disables the rare-word requirement, intermediate values allow some rare
+words to be missing, and higher values reject more off-brand local results but
+may increase provider calls; queries with no rare words are unaffected.
 
 ### Fetch (read path)
 | Var | Default | Notes |
