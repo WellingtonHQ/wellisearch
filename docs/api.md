@@ -50,6 +50,15 @@ The search pipeline.
 | `search_mode` | string | `auto` | `auto` (local first, provider on a miss), `local` (index only — an error if the index has nothing), or `provider` (bypass the local index and force a live provider answer) |
 | `format` | string | `markdown` | `markdown` or `json`; wins over the `Accept` header |
 
+`k` is an upper bound, not a minimum. In `auto` mode, pages must pass the
+coverage (default 0.5) and similarity (default 0.3) gates. A full set of `k`
+passing pages serves locally; with fewer than `k`, auto mode also serves at
+least three passing pages by default, or just the passing pages with stronger
+similarity (default 0.55) when at least one exists. A lone marginal page falls
+through to the provider. The partial-set thresholds are configurable as
+`LOCAL_PARTIAL_MIN_PASSING` and `LOCAL_PARTIAL_MIN_SIMILARITY`. An explicit
+`search_mode=local` bypasses these gates; `provider` bypasses the index.
+
 By default returns the Markdown search document (`Content-Type:
 text/markdown`, no JSON envelope — see [search-pipeline.md](search-pipeline.md)):
 a `Source:` / `Degraded:` / `Time:` header (+ `Provider Errors:` when providers

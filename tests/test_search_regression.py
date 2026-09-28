@@ -9,7 +9,9 @@ are needed:
 
 Scenarios pinned to the dataset below:
   Q1 on-topic query, a full set passes both gate conditions -> served local (zero credits)
-  Q2 only one page passes; k=5 not met                     -> deferred to the provider
+  Q2 first misses, then one strong provider result is indexed -> repeat served local
+  Three moderate passing rows, no strong row               -> partial set served local
+  Marginal partial row passes ordinary gate but not strong gate -> provider
   Q3 word dump has coverage 1.0 but no topical similarity  -> deferred to the provider
   Q4 shopping query with a qualifier and a price term:
      the catalog covers 2/4 of {best, costco, dishwash, 700}, the price guide
@@ -137,7 +139,7 @@ class StubGateway:
         return (
             [
                 Result(
-                    url=f"https://provider.example.com/{i}",
+                    url=APOLLO_1202 if query == Q2 and i == 0 else f"https://provider.example.com/{i}",
                     title=f"stub result {i}",
                     snippet="stub",
                 )
@@ -167,11 +169,13 @@ async def _fresh_database() -> None:
 
 
 async def _seed_dataset() -> None:
-    """Store the fixed dataset through the real chunk + embed path."""
+    """Store the fixed dataset except Apollo, which the provider warms later."""
     for url, title, md in DATASET:
+        if url == APOLLO_1202:
+            continue
         status, chunks = await store_page(url, md, title=title)
         assert status == "ok" and chunks >= 1, f"{url}: {status}, {chunks} chunks"
-    print("OK dataset seeded:", len(DATASET), "pages")
+    print("OK dataset seeded:", len(DATASET) - 1, "pages")
 
 
 async def _check_gate_columns() -> None:
@@ -201,22 +205,110 @@ async def _check_gate_columns() -> None:
 
 async def _check_local_hit_full_set(stub: StubGateway) -> None:
     """Q1 with k=2: both car-seat pages pass, so local serves and no provider is called."""
+    calls_before = len(stub.calls)
     out = await sw.search_web(Q1, num_results=2)
     assert out["source"] == "local", f"expected local, got {out['source']}: {out}"
     urls = [r["url"] for r in out["results"]]
     assert set(urls) == {CAR_SEAT_A, CAR_SEAT_B}, urls
-    assert stub.calls == [], f"provider must not be called on a local hit: {stub.calls}"
+    assert stub.calls[calls_before:] == [], f"provider must not be called on a local hit: {stub.calls}"
     print("OK local hit (full passing set served, zero provider credits)")
 
 
-async def _check_defer_when_incomplete(stub: StubGateway) -> None:
-    """Q2 with k=5: only the Apollo page passes, so auto mode defers to the provider."""
-    out = await sw.search_web(Q2, num_results=5)
-    assert out["source"] == "stub", f"expected provider fallback, got {out['source']}: {out}"
-    assert stub.calls and stub.calls[-1] == (Q2, 5), stub.calls
-    urls = [r["url"] for r in out["results"]]
-    assert APOLLO_1202 not in urls, "provider results should be served, not local rows"
-    print("OK defer when incomplete (<k passing rows -> provider)")
+async def _check_provider_warms_strong_partial(stub: StubGateway) -> None:
+    """A provider miss enqueues Apollo; after indexing it, repeat Q2 serves local."""
+    enqueued: list[str] = []
+
+    async def record_enqueue(url: str, source: str = "search") -> bool:
+        """Record the background job without crawling on the live network."""
+        assert source == "search", source
+        enqueued.append(url)
+        return True
+
+    original_enqueue = sw.queue.enqueue
+    sw.queue.enqueue = record_enqueue
+    try:
+        first = await sw.search_web(Q2, num_results=5, max_crawl=5)
+        assert first["source"] == "stub", f"first search must miss locally: {first}"
+        assert stub.calls == [(Q2, 5)], stub.calls
+        assert APOLLO_1202 in enqueued, f"provider URL must be queued for indexing: {enqueued}"
+
+        status, chunks = await store_page(APOLLO_1202, APOLLO_1202_MD, title="Apollo 11 alarm")
+        assert status == "ok" and chunks >= 1, f"provider URL not indexed: {status}, {chunks}"
+        qvec = await asyncio.to_thread(embed_one, Q2)
+        rows = await db.fetch_all(
+            "SELECT url, coverage, similarity FROM fn_search_local(%s, %s::vector, 10)",
+            (Q2, qvec),
+        )
+        apollo = next(r for r in rows if r["url"] == APOLLO_1202)
+        s = get_settings()
+        assert apollo["coverage"] >= s.LOCAL_MIN_COVERAGE, apollo
+        assert apollo["similarity"] >= s.LOCAL_PARTIAL_MIN_SIMILARITY, apollo
+
+        second = await sw.search_web(Q2, num_results=5)
+        assert second["source"] == "local" and not second["degraded"], second
+        assert [r["url"] for r in second["results"]] == [APOLLO_1202], second
+        assert stub.calls == [(Q2, 5)], f"repeat search must spend no provider credit: {stub.calls}"
+    finally:
+        sw.queue.enqueue = original_enqueue
+    print("OK provider miss -> indexed strong page -> repeat query served locally")
+
+
+async def _check_marginal_partial_defers(stub: StubGateway) -> None:
+    """One row at the ordinary gate's floor is not a confident local answer."""
+    s = get_settings()
+    similarity = (s.LOCAL_MIN_SIMILARITY + s.LOCAL_PARTIAL_MIN_SIMILARITY) / 2
+    assert s.LOCAL_MIN_SIMILARITY < similarity < s.LOCAL_PARTIAL_MIN_SIMILARITY
+    original_search = sw._search_local_index
+
+    async def marginal_index(
+        query: str,
+        k: int,
+        max_age_days: float | None,
+    ) -> tuple[list[dict], int, str | None]:
+        """Return one candidate that passes the ordinary gate but is marginal."""
+        return [{"coverage": s.LOCAL_MIN_COVERAGE, "similarity": similarity,
+                 "url": APOLLO_1202}], 0, None
+
+    sw._search_local_index = marginal_index
+    calls_before = len(stub.calls)
+    try:
+        out = await sw.search_web("marginal single result", num_results=5, max_crawl=0)
+        assert out["source"] == "stub", out
+        assert stub.calls[calls_before:] == [("marginal single result", 5)], stub.calls
+    finally:
+        sw._search_local_index = original_search
+    print("OK marginal partial match defers to provider")
+
+
+async def _check_multiple_partial_serves(stub: StubGateway) -> None:
+    """Several ordinary matches can serve locally even when none is strong."""
+    s = get_settings()
+    assert s.LOCAL_PARTIAL_MIN_PASSING < 5
+    similarity = (s.LOCAL_MIN_SIMILARITY + s.LOCAL_PARTIAL_MIN_SIMILARITY) / 2
+    original_search = sw._search_local_index
+    urls = [APOLLO_1202, CAR_SEAT_A, CAR_SEAT_B]
+
+    async def moderate_index(
+        query: str,
+        k: int,
+        max_age_days: float | None,
+    ) -> tuple[list[dict], int, str | None]:
+        """Return three separate pages passing the ordinary relevance gate."""
+        return [
+            {"coverage": s.LOCAL_MIN_COVERAGE, "similarity": similarity, "url": url}
+            for url in urls
+        ], 0, None
+
+    sw._search_local_index = moderate_index
+    calls_before = len(stub.calls)
+    try:
+        out = await sw.search_web("multiple moderate matches", num_results=5)
+        assert out["source"] == "local" and not out["degraded"], out
+        assert [r["url"] for r in out["results"]] == urls, out
+        assert stub.calls[calls_before:] == [], f"partial hit must avoid provider: {stub.calls}"
+    finally:
+        sw._search_local_index = original_search
+    print("OK multiple moderate matches serve a partial local set")
 
 
 async def _check_word_dump_never_serves(stub: StubGateway) -> None:
@@ -283,9 +375,11 @@ async def main() -> None:
     stub = StubGateway()
     sw.get_gateway = lambda: stub  # no network: the gateway is canned
     try:
+        await _check_provider_warms_strong_partial(stub)
         await _check_gate_columns()
         await _check_local_hit_full_set(stub)
-        await _check_defer_when_incomplete(stub)
+        await _check_marginal_partial_defers(stub)
+        await _check_multiple_partial_serves(stub)
         await _check_word_dump_never_serves(stub)
         await _check_catalog_reaches_coverage_floor(stub)
         await _check_local_mode_bypasses_gate()

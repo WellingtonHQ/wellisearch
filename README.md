@@ -6,15 +6,15 @@
 [![python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-wellisearch gives your AI agent a **self-hosted way to search the web and read web pages** — and it keeps a growing library of every page it has seen, so the second time you ask about the same topic, the answer comes from your own shelf: **instant, and it costs zero API credits**.
+wellisearch gives your AI agent a **self-hosted way to search the web and read web pages** — and it grows a library of successfully indexed pages. When that library has relevant results, repeat searches are served locally: **fast, with zero provider credits**.
 
-Think of it as a personal, always-learning search box for your LLM. Ask a question, it answers from its own library if it can; otherwise it goes out to the search providers (Tavily, Brave, EXA, You.com) — and quietly files the results away so next time it's free.
+Think of it as a personal, always-learning search box for your LLM. Ask a question, it answers from its own library if it can; otherwise it goes out to the search providers (Tavily, Brave, EXA, You.com) — and queues their results for background indexing. Once relevant pages are indexed, a later query can be free.
 
 ![wellisearch dashboard — live index, hit-rate, provider quotas, and recent activity](docs/images/dashboard.png)
 
 ## Why wellisearch?
 
-- **Free repeat searches.** Pages your agent reads get stored locally. The next search on the same topic is answered by your own index — no provider credits burned.
+- **Free local searches.** Successfully indexed pages that pass the relevance gate can answer later searches without provider credits, even when fewer than five results are available.
 - **One pipeline, several doors.** The same search is exposed as **MCP tools** (for your LLM), a **REST API** (for scripts), and a **search UI** (for you). The live dashboard shows activity and controls.
 - **LLM-friendly output.** Results come back as clean, readable Markdown — not raw HTML soup or a wall of JSON.
 - **Self-hosted & private.** Your index, your data, your machine. No third-party SaaS in the loop.
@@ -25,7 +25,7 @@ Think of it as a personal, always-learning search box for your LLM. Ask a questi
 1. **You ask a question.** Your LLM calls `search_web`.
 2. **Local first.** If the answer is already in the library, it's served instantly — free.
 3. **Otherwise, out to the providers.** It walks them in the configured priority order until one answers — and you can reorder that priority at runtime from the dashboard.
-4. **It files the results away.** In the background, the pages it just found are saved into the library, so the next similar question is free.
+4. **It files the results away.** In the background, the pages it just found are crawled and indexed; if relevant pages pass the local gate, the next similar question is free.
 5. **Read the pages.** `fetch_page` / `fetch_pages` hand the LLM the page content as clean Markdown.
 
 ## What you get
@@ -101,7 +101,7 @@ URL: https://www.postgresql.org/docs/current/
 Snippet: ...
 ```
 
-The header tells the story: `Source: local` means it came from the library (free); `Source: tavily` (or `brave` / `exa` / `youcom`) means a provider answered and the pages are being filed away for next time.
+The header tells the story: `Source: local` means it came from the library (free); `Source: tavily` (or `brave` / `exa` / `youcom`) means a provider answered and its result URLs were queued for indexing. A local answer can contain fewer than the requested `k` results when the indexed pages are relevant enough; if a crawl fails or the gate rejects them, a later query may still need a provider.
 
 **Examples:** opencode / Claude Desktop (Streamable HTTP) — `http://wellisearch:8780/mcp/http` (or `http://127.0.0.1:8780/mcp/http`). Open WebUI — use wellisearch's OpenAPI tool server: add wellisearch as an OpenAPI tool server with URL `http://wellisearch:8780/owui/openapi.json` (or `http://127.0.0.1:8780/owui/openapi.json` from the host), sending the same API key as the bearer token.
 

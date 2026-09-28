@@ -13,9 +13,10 @@ computing their best-chunk similarity. Coverage counts distinct PostgreSQL
 English lexemes in the page's title and body. In auto mode,
 [`search_web`](src/wellisearch/search_web.py) fetches at least ten ranked URLs,
 filters by age if requested, and serves local when at least `k` rows (default
-five) have coverage >= 0.5 and similarity >= 0.3. A miss calls the provider;
-an explicit local request bypasses the gate. The score ranks rows, but does
-not qualify them.
+five) have coverage >= 0.5 and similarity >= 0.3. Partial sets now also serve
+when at least three rows pass those gates, or when one row additionally clears
+similarity >= 0.55. A miss calls the provider; an explicit local request
+bypasses the gate. The score ranks rows, but does not qualify them.
 
 ## Confirmed cases
 
@@ -40,7 +41,7 @@ not qualify them.
    hashes; nine indexed catalog URL variants share the first hash. The gate
    counts rows by full URL, so `k=5` can mean five copies of one page. See
    [`schema.sql:278-292`](src/wellisearch/schema.sql) and
-   [`search_web.py:104-122`](src/wellisearch/search_web.py).
+   [`search_web.py:102-127`](src/wellisearch/search_web.py).
 
 3. **Page-wide words and an unrelated best chunk can pass together.** For
    `bees make honey`, the first ten include six passing rows, among them a
@@ -53,17 +54,17 @@ not qualify them.
 
 4. **Filtering after the small result window misses eligible pages.** With
    `Costco dishwashers` and a one-day age cutoff, four qualified fresh rows
-   occur in the first ten versus nineteen in the first fifty. The default
-   window of ten would defer for `k=5` even though more fresh matches exist.
-   Rows with no crawl timestamp are currently retained by the age filter.
-   See [`search_web.py:194-214`](src/wellisearch/search_web.py).
+   occur in the first ten versus nineteen in the first fifty. The partial
+   gate now serves four, but still misses many eligible results outside its
+   window. Rows with no crawl timestamp are currently retained by the age
+   filter. See [`search_web.py:205-224`](src/wellisearch/search_web.py).
 
-5. **The regression corpus does not exercise the default decision.** The
-   shopping regression uses `k=2`; it cannot detect duplicate-only `k=5`
-   serving, price or negation inversions, off-topic pages mixed among five
-   answers, or the age-window miss. It now asserts its two fixture coverage
-   values, 0.5 and 0.75, for the literal `$700` query; the price guide's
-   mention of 700 is not proof of an under-$700 product. See
+5. **The regression corpus does not cover all default-k quality failures.**
+   It now tests `k=5` strong and moderate partial serving, but the shopping
+   case uses `k=2`; it cannot detect duplicate-only `k=5` serving, price or
+   negation inversions, off-topic pages mixed among five answers, or the
+   age-window miss. Its fixture coverage values, 0.5 and 0.75, for the literal
+   `$700` query do not prove an under-$700 product. See
    [`tests/test_search_regression.py`](tests/test_search_regression.py).
 
 ## Recommended order
@@ -73,7 +74,7 @@ not qualify them.
    normalization and matching content hashes. Do not drop every query string:
    some filter parameters identify genuinely different pages. Look past
    duplicates for additional candidates. This may increase provider calls
-   when the index has fewer than five independent answers.
+   when fewer than three independent passing pages remain and none is strong.
 
 2. **Respect decisive constraints.** Detect clear exclusions, retailer/site
    intent, and numeric relationships such as a price ceiling or units. Require

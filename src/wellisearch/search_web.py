@@ -94,14 +94,13 @@ async def search_web(
     if search_mode != "provider":
         local_rows, index_ms, index_error = await _search_local_index(query, k, max_age_days)
 
-    # Gate (auto mode): serve local only when the index can supply a full set
-    # of k results that each clear both conditions — coverage >=
-    # LOCAL_MIN_COVERAGE and best-chunk similarity >= LOCAL_MIN_SIMILARITY
-    # (fn_search_local columns, see docs/ranking.md). Fewer passing rows means
-    # the corpus does not really answer this query, so the provider gateway
-    # serves instead. In provider mode the row set is empty and nothing passes;
-    # in local mode the gate is bypassed entirely.
+    # Auto mode: a full set needs both per-row gates. An incomplete set can
+    # also serve if several rows pass, or one row is strongly similar; only
+    # strong rows are returned for the single-page route. This lets indexed
+    # provider hits satisfy repeat queries without trusting a marginal lone match.
+    # Local mode bypasses the gate; provider mode has no local rows.
     passing = [r for r in local_rows if _passes_local_gate(r)]
+    strong = [r for r in passing if _passes_partial_local_gate(r)]
 
     source: str
     results: list[dict]
@@ -120,8 +119,14 @@ async def search_web(
     elif len(passing) >= k:
         # local hit — zero provider credits (the quota-preservation layer)
         source, results = await _serve_local(passing, k)
+    elif passing and len(passing) >= s.LOCAL_PARTIAL_MIN_PASSING:
+        # Several qualifying pages are evidence of a useful partial answer.
+        source, results = await _serve_local(passing, k)
+    elif strong:
+        # One unusually strong page is enough; omit marginal companions.
+        source, results = await _serve_local(strong, k)
     else:
-        # ---- provider gateway (auto: no full local set; provider: always)
+        # ---- provider gateway (auto: no qualifying local set; provider: always)
         source, results, degraded, errors, provider_ms = await _provider_search(
             query, k, crawl_n, search_mode, local_rows
         )
@@ -166,6 +171,12 @@ def _passes_local_gate(r: dict) -> bool:
         return False
     sim = r.get("similarity")
     return sim is not None and sim >= s.LOCAL_MIN_SIMILARITY
+
+
+def _passes_partial_local_gate(r: dict) -> bool:
+    """Whether a passing row is strong enough to serve without a full set."""
+    sim = r.get("similarity")
+    return sim is not None and sim >= get_settings().LOCAL_PARTIAL_MIN_SIMILARITY
 
 
 async def _search_local_index(

@@ -189,14 +189,17 @@ decision is made by two `fn_search_local` columns, both computed in Postgres:
   when there are none). Answers "is it topically about it, or just a body
   that happens to contain those words?"
 
-`search_web` (auto mode) serves local only when **at least k rows** each clear
+`search_web` (auto mode) serves a full set when **at least k rows** each clear
 both conditions — `coverage >= LOCAL_MIN_COVERAGE` (default **0.5**) and
-`similarity >= LOCAL_MIN_SIMILARITY` (default **0.3**; NULL never passes);
-otherwise it falls through to the provider gateway (local rows stay available
-as the degraded-mode fallback). Requiring a full set of k means one marginal
-page can no longer trigger local serving — the corpus has to actually answer
-the query, not just touch on it. `search_mode="local"` bypasses the gate
-entirely; `provider` never consults it.
+`similarity >= LOCAL_MIN_SIMILARITY` (default **0.3**; NULL never passes).
+When fewer than k pass, it serves all the passing rows if at least
+`LOCAL_PARTIAL_MIN_PASSING` (default **3**) pass; otherwise it serves only the
+rows that also clear `LOCAL_PARTIAL_MIN_SIMILARITY` (default **0.55**), if any.
+With no qualifying partial set it falls through to the provider gateway (local
+rows stay available as the degraded-mode fallback). This allows one strong page
+or several moderate pages indexed after a provider miss to satisfy a repeat
+query, without serving a marginal lone match. `search_mode="local"` bypasses
+the gates entirely; `provider` never consults them.
 
 The coverage threshold is deliberately low (0.5, "at least half the content
 words"): similarity is the primary topical filter, and a high coverage bar
@@ -227,7 +230,7 @@ sits between the clusters with margin on both sides. The regression suite
 dataset: real articles measure 0.80–0.84, a ~2000-word dump measures 0.13 at
 coverage 1.0.
 
-### Why conjunctive, and why a full set of k?
+### Why conjunctive, and why a partial gate?
 
 - **Score** (the old `SEARCH_MIN_SCORE` gate): rank-only, so it crosses
   clusters — measured 2026-08-24: off-topic "flavor of autumn 1847" tops at
@@ -246,12 +249,16 @@ coverage 1.0.
   themselves.
 
 So the gate is conjunctive — coverage says "contains what was asked for",
-similarity says "is topically about it" — and serving requires a full set of k
-passing rows, so one marginal page that slips through both conditions cannot
-serve alone. This once prevented a lone mine-clearance hit for "bees make
-honey", but the growing index now has enough passing rows to serve locally,
-including an off-topic wasp-removal page. A full set alone is not a guarantee
-of relevance (see [problematic-searches.md](../problematic-searches.md)).
+similarity says "is topically about it". At least three ordinary passing pages
+can serve a partial set; one page needs the stronger 0.55 similarity floor.
+The 2026-09-20 Apollo calibration query has one relevant page at similarity
+0.61 and coverage 0.86, so a small index can answer it locally; the word dump
+is only 0.10 similarity. A longer Apollo query measured four passing production
+pages at 0.46–0.55 similarity, none above the single-page floor; those pages
+can also serve locally as a partial set. An off-topic result once measured
+0.503 similarity for "bees make honey", so a marginal lone page should still
+defer. No fixed threshold guarantees relevance (see
+[problematic-searches.md](../problematic-searches.md)).
 
 ### Re-measuring after a big index change
 

@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     # embeddings / failed query embed) never passes; auto mode then defers to
     # the provider gateway.
     LOCAL_MIN_SIMILARITY: float = 0.3
+    # A single strong page can satisfy auto mode even when fewer than SEARCH_K
+    # pages pass. Keep this above the ordinary gate's floor so a marginal lone
+    # hit still defers to the provider (see docs/ranking.md).
+    LOCAL_PARTIAL_MIN_SIMILARITY: float = 0.55
+    # Several ordinary gate-passing pages can also serve a partial answer,
+    # even when no single chunk meets the stronger similarity threshold.
+    LOCAL_PARTIAL_MIN_PASSING: int = 3
     # Legacy local-hit cutoff; now only for ranking (see docs/ranking.md).
     SEARCH_MIN_SCORE: float = 0.06
     STALE_HOURS: int = 72

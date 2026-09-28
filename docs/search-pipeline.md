@@ -20,6 +20,9 @@ k       = max(1, num_results or SEARCH_K)  # default 5; clamped so negative k ca
 crawl_n = SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)  # default 5
 ```
 
+`k` caps the number of returned results. A qualifying partial local answer can
+contain fewer than `k` pages without calling a provider.
+
 > **`search_mode`** selects the source (default `auto`): `auto` — the default
 > flow below; `local` — steps 2–4 only, no provider; `provider` — bypasses
 > steps 2–4, the local index is not touched. Full semantics (degraded
@@ -75,10 +78,14 @@ not gate (off-topic pages can outscore on-topic ones: 0.134 vs 0.049 on this
 index). See [ranking.md § Local-hit gate](ranking.md#local-hit-gate-coverage--similarity)
 for the calibration data.
 
-**Auto mode serves local only when at least k rows pass**; fewer passing rows
-means the corpus does not really answer the query, so the gateway serves
-instead (the served set is the passing rows, in score order). `search_mode=
-"local"` bypasses the gate entirely — the caller explicitly chose the index.
+**Auto mode serves local when at least k rows pass**, returning those rows in
+score order. With fewer than k, it also serves all passing rows when at least
+`LOCAL_PARTIAL_MIN_PASSING` (default 3) pass; or just the rows above the stronger
+`LOCAL_PARTIAL_MIN_SIMILARITY` threshold (default 0.55) when at least one exists.
+A marginal lone match still defers to the gateway. A strong page or several
+moderate pages indexed after a provider miss can answer the next query without
+requiring a full set. `search_mode="local"` bypasses both gates entirely — the
+caller explicitly chose the index.
 
 ### 5a. Local hit → serve (zero provider credits)
 
@@ -130,9 +137,12 @@ await queue.enqueue(r.url, source="search")   # + debounced kick
 ```
 
 This is the cache-warming loop: the pages the provider just found are
-crawled, chunked, and embedded in the background, so the *next* query for
-the same topic is a free local hit. Enqueue is deduped (partial unique index
-on `url` for `pending`/`in_flight`), so repeated misses don't pile up work.
+crawled, chunked, and embedded in the background. Once indexed, results that
+satisfy the full-set or partial-set local gate can answer a later query for
+the same topic without provider credits. Crawls can fail, and a page that
+doesn't pass the gate still defers to providers. Enqueue is deduped (partial
+unique index on `url` for `pending`/`in_flight`), so repeated misses don't pile
+up work.
 
 ### 8. Log + respond
 
