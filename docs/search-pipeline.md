@@ -64,15 +64,15 @@ computed entirely in Postgres):
 
 ```python
 def _passes_local_gate(r):
-    if (r.get("coverage") or 0) < LOCAL_MIN_COVERAGE:      # default 0.5 — low on purpose, see ranking.md
+    if (r.get("coverage") or 0) < LOCAL_MIN_COVERAGE:
         return False
-    sim = r.get("similarity")                              # best-chunk cosine; NULL never passes
-    if sim is None or sim < LOCAL_MIN_SIMILARITY:          # default 0.3
+    sim = r.get("similarity")
+    if sim is None or sim < LOCAL_MIN_SIMILARITY:
         return False
-    dc = r.get("distinctive_coverage")                     # fraction of rare/brand words present
-    if dc is None:                                         # no info (hand-built row) -> satisfied
+    dc = r.get("distinctive_coverage")
+    if dc is None:
         return True
-    return dc >= LOCAL_MIN_DISTINCTIVE_COVERAGE            # default 1.0 — must contain every distinctive term
+    return dc >= LOCAL_MIN_DISTINCTIVE_COVERAGE
 ```
 
 `coverage` (the fraction of the query's content words in title+body) answers
