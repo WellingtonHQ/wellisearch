@@ -22,6 +22,11 @@ services:
     restart: unless-stopped
     mem_limit: 16G
     env_file: .env
+    environment:
+      # Cap glibc per-thread arenas so the uvicorn process's RSS plateau stays
+      # bounded under crawl load; multi-threaded C extensions otherwise retain
+      # freed memory in up to 8 x core count (160 on a 20-core host) arenas.
+      MALLOC_ARENA_MAX: "2"
     ports:
       - "8780:8780"
     volumes:
