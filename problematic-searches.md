@@ -11,13 +11,16 @@ not implemented behavior.
 trigram, and vector matches at the chunk level; it orders pages by score before
 computing their best-chunk similarity. Coverage counts distinct PostgreSQL
 English lexemes in the page's title and body. In auto mode,
-[`search_web`](src/wellisearch/search_web.py) fetches at least ten ranked URLs,
-filters by age if requested, and serves local when at least `k` rows (default
-five) have coverage >= 0.5, distinctive_coverage >= 1.0 (every rare/brand query
-word present — a word in <1% of chunks), and similarity >= 0.3. Partial sets now
-also serve when at least three rows pass those gates, or when one row
-additionally clears similarity >= 0.55. A miss calls the provider; an explicit
-local request bypasses the gate. The score ranks rows, but does not qualify them.
+[`search_web`](src/wellisearch/search_web.py) fetches at least `SEARCH_GATE_MIN_K`
+(default fifty) ranked URLs, filters by age if requested, and serves local when
+at least `k` rows (default five) have coverage >= 0.5, distinctive_coverage >=
+1.0 (every rare/brand query word present — a word in <1% of chunks), and
+similarity >= 0.3. Partial sets now also serve when at least three rows pass
+those gates, or when one row additionally clears similarity >= 0.55. A miss
+calls the provider; an explicit local request bypasses the gate. The score
+ranks rows, but does not qualify them. Among passing rows, serving order is
+similarity desc with score as tie-break (2026-09-29), so a semantically strong
+page leads even when lexically matching pages hold more RRF mass.
 
 ## Confirmed cases
 
@@ -59,6 +62,9 @@ local request bypasses the gate. The score ranks rows, but does not qualify them
    gate now serves four, but still misses many eligible results outside its
    window. Rows with no crawl timestamp are currently retained by the age
    filter. See [`search_web.py:205-224`](src/wellisearch/search_web.py).
+   (Partially addressed 2026-09-29: the default gate window widened from ten
+   to fifty rows and passing rows serve in similarity order; applying the age
+   filter before the window remains open.)
 
 5. **The regression corpus does not cover all default-k quality failures.**
    It now tests `k=5` strong and moderate partial serving, but the shopping

@@ -105,7 +105,7 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `LOCAL_MIN_DISTINCTIVE_COVERAGE` | `1.0` | local-hit gate: min fraction of the query's rare/brand words (those in <1% of chunks) a passing page must contain; 1.0 = must contain every distinctive term, so off-brand junk can't answer a brand query (see ranking.md) |
 | `LOCAL_PARTIAL_MIN_SIMILARITY` | `0.55` | stronger best-chunk similarity required to serve a partial local set when fewer than k rows pass; the coverage gate still applies |
 | `LOCAL_PARTIAL_MIN_PASSING` | `3` | minimum number of ordinary gate-passing pages that can serve a partial local set without one strong page |
-| `SEARCH_GATE_MIN_K` | `10` | rows fetched so the gate can see near-miss pages that rank just outside top-k by score |
+| `SEARCH_GATE_MIN_K` | `50` | rows fetched so the gate can see passing pages that rank well outside top-k (score is rank-only; semantically strong pages often sit far down it — see ranking.md) |
 | `SEARCH_MIN_SCORE` | `0.06` | legacy; now only for ranking (see ranking.md) |
 | `STALE_HOURS` | `72` | staleness hint for stats/dashboard |
 | `MAX_CHUNK_TOKENS` | `500` | chunk token budget; must stay under MiniLM's 512-token input window (est. ~4 chars/token) |

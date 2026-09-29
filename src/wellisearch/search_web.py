@@ -101,6 +101,11 @@ async def search_web(
     # hits satisfy repeat queries without trusting a marginal lone match or off-brand
     # junk. Local mode bypasses the gate; provider mode has no local rows.
     passing = [r for r in local_rows if _passes_local_gate(r)]
+    # Among gate-passing rows, similarity is the primary topical signal and score
+    # is rank-only (docs/ranking.md) — serve the most topically similar first, with
+    # score as the tie-break. This keeps a semantically strong page ahead of pages
+    # that only accumulate RRF mass from many lexically matching chunks.
+    passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
     strong = [r for r in passing if _passes_partial_local_gate(r)]
 
     source: str

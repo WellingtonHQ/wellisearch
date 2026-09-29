@@ -59,8 +59,12 @@ class Settings(BaseSettings):
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
     # Local-hit gate: fetch at least this many rows so the gate can see a
-    # passing page that ranks just outside the top-k by score.
-    SEARCH_GATE_MIN_K: int = 10
+    # passing page that ranks well outside the top-k by score (score is
+    # rank-only; semantically strong pages often sit far down it — e.g. a
+    # vec-leg-only article behind dozens of lexically matching job postings).
+    # Cost: only the final LIMIT and per-row gate columns grow (~+160 ms at 50
+    # rows on the ~178k-chunk index, well inside SEARCH_STATEMENT_TIMEOUT_MS).
+    SEARCH_GATE_MIN_K: int = 50
     # Local-hit gate (condition 1): a passing row must cover at least this
     # fraction of the query's content words (`coverage` column, see
     # docs/ranking.md). Kept deliberately low: generic qualifier words ("best",

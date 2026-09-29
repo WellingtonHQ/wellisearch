@@ -195,6 +195,23 @@ decision is made by three `fn_search_local` columns, all computed in Postgres:
   when there are none). Answers "is it topically about it, or just a body
   that happens to contain those words?"
 
+The gate only sees what `fn_search_local` returns, so `search_web` calls it
+with `max(k, SEARCH_GATE_MIN_K)` rows — default **50**, not 10. Score is
+rank-only, and a semantically strong page can sit far down the score order
+behind pages that accumulate RRF mass from many lexically matching chunks
+(measured 2026-09-29: on-topic articles ranked 17–44 behind LinkedIn job
+postings for "Transitioning from Staff to Principal Software Engineer"). The
+extra rows cost only the final `LIMIT` and per-row gate columns (~+160 ms at
+50 rows on the ~178k-chunk index, well inside the statement timeout).
+
+Among passing rows, serving order is **similarity desc, score as tie-break** —
+not raw score. Every served row already clears the three topical conditions;
+within that set the primary topical signal (similarity) decides which answers
+lead, and rank-only score only breaks ties. This also demotes pages like the
+wasp-removal article in [problematic-searches.md](../problematic-searches.md)
+case 3, whose best-chunk similarity (0.417) sits below the on-topic honey
+pages (0.59–0.71).
+
 `search_web` (auto mode) serves a full set when **at least k rows** each clear
 all three conditions — `coverage >= LOCAL_MIN_COVERAGE` (default **0.5**),
 `distinctive_coverage >= LOCAL_MIN_DISTINCTIVE_COVERAGE` (default **1.0**; a
