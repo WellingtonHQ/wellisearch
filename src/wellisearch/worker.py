@@ -38,6 +38,7 @@ from .crawl.lane import CF, FAST, reset_lane, set_lane
 from .crawl.results import ChallengeDetected
 from .db import db
 from .index import store_page
+from .urlnorm import normalize_url
 
 log = logging.getLogger("wellisearch.worker")
 
@@ -176,7 +177,9 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     # priority order — fresh <title> > previously stored title > derived from the
     # markdown. Re-crawls that miss <title> then only backfill pages whose title
     # is still NULL, while a genuine new <title> always wins over the old one.
-    old_title = ((await db.page_get(url)) or {}).get("title")
+    # store_page canonicalizes the URL, so look up the old title by the
+    # canonical form too (a variant URL would miss its own stored row).
+    old_title = ((await db.page_get(normalize_url(url))) or {}).get("title")
     resolved_title = title or old_title or title_from_markdown(md)
 
     try:

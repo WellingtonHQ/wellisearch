@@ -99,6 +99,14 @@ source** (unless a site extractor already emitted it), so title words feed
 the trigram + vector legs. fit_markdown stays body-only, and the gates read
 pages.title separately.
 
+The URL is canonicalized first (`urlnorm.normalize_url`): HTML entities are
+unescaped (`&amp;` → `&`), tracking query parameters (utm_*, refId, …) are
+dropped, fragments are removed, and site-specific rules apply (LinkedIn job
+postings collapse to `www.linkedin.com/jobs/view/<id>` regardless of slug or
+locale subdomain). One page = one row. `queue_enqueue` applies the same
+normalization so variants dedupe in the queue too;
+`python -m wellisearch.merge_dupes` collapses rows stored before this change.
+
 ### 1. Unchanged short-circuit
 
 ```python

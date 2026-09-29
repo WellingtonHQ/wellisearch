@@ -35,6 +35,7 @@ from .truncation import (
     truncate_page,
     truncation_marker,
 )
+from .urlnorm import normalize_url
 from .worker import crawl_url
 
 log = logging.getLogger("wellisearch.fetch")
@@ -314,7 +315,9 @@ async def _resolve_page(url: str) -> dict:
     every fetch."""
     s = get_settings()
     t_index = time.monotonic()
-    page = await db.page_get(url)
+    # Look up by canonical URL: a tracking-param variant of an indexed page
+    # must hit the stored row instead of triggering a re-crawl.
+    page = await db.page_get(normalize_url(url))
     index_ms = int((time.monotonic() - t_index) * 1000)
     stored_md = page.get("fit_markdown") if page and not page.get("disabled") else None
     needs_refresh = bool(stored_md) and reddit_needs_refresh(url, stored_md)
@@ -370,7 +373,8 @@ async def _resolve_page(url: str) -> dict:
         # backoff bump the next fetch would run the same full browser crawl.
         await _record_failed_refresh(url, needs_refresh)
         raise
-    page = await db.page_get(url)
+    # store_page canonicalized the URL, so read back by the canonical form.
+    page = await db.page_get(normalize_url(url))
     crawl_ms = int((time.monotonic() - t_crawl) * 1000)
     md = (page or {}).get("fit_markdown") or ""
     if not md:

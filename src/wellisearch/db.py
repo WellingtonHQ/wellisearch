@@ -24,6 +24,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from .config import Settings, get_settings
 from .url_filter import garbage_reason
+from .urlnorm import normalize_url
 
 log = logging.getLogger("wellisearch.db")
 
@@ -490,10 +491,12 @@ class Database:
 
         ``lane`` defaults to 'fast'; pass 'cf' to enqueue straight onto the
         challenge lane (e.g. when an on-demand fetch probe hits a bot-wall).
-        Known-garbage URLs (binary media, archives, executables, HLS segments)
-        are rejected here — the single choke point every enqueue path goes
-        through — so they never enter the queue.
+        The URL is canonicalized first (urlnorm) so variant URLs of one page
+        dedupe into a single row. Known-garbage URLs (binary media, archives,
+        executables, HLS segments) are rejected here — the single choke point
+        every enqueue path goes through — so they never enter the queue.
         """
+        url = normalize_url(url)
         reason = garbage_reason(url)
         if reason is not None:
             log.info("rejected garbage URL %s: %s", url, reason)

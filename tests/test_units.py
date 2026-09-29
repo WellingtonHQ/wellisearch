@@ -13,6 +13,7 @@ from wellisearch.truncation import (
     truncate_page,
 )
 from wellisearch.url_filter import garbage_reason, is_garbage_url
+from wellisearch.urlnorm import normalize_url
 
 # ---------------------------------------------------------------------------
 # Chunker
@@ -49,6 +50,30 @@ md_other = "# Other Heading\n\nbody"
 assert _with_title(md_other, "My Title") == "# My Title\n\n" + md_other, \
     "different H1 -> prepended above it"
 print("OK title prepend")
+
+# ---------------------------------------------------------------------------
+# URL Normalization (urlnorm.normalize_url)
+# ---------------------------------------------------------------------------
+
+assert normalize_url("https://ex.com/a?x=1") == "https://ex.com/a?x=1", \
+    "content params kept"
+assert normalize_url(
+    "https://ex.com/a?utm_source=x&utm_medium=y&refId=abc&trackingId=z&gi=h&mode=location"
+) == "https://ex.com/a?mode=location", "tracking params dropped, content kept"
+assert normalize_url("https://ex.com/a?x=1&amp;y=2") == "https://ex.com/a?x=1&y=2", \
+    "&amp; unescaped"
+assert normalize_url("https://ex.com/a#frag") == "https://ex.com/a", "fragment dropped"
+assert normalize_url("https://EX.com/A") == "https://ex.com/A", "host lowercased"
+li = "https://in.linkedin.com/jobs/view/principal-software-engineer-at-gm-4446858972?refId=x&trackingId=y"
+assert normalize_url(li) == "https://www.linkedin.com/jobs/view/4446858972", \
+    "linkedin slug + locale + tracking -> canonical"
+assert normalize_url("https://www.linkedin.com/jobs/view/4446858972/") == \
+    "https://www.linkedin.com/jobs/view/4446858972", "trailing slash dropped on linkedin jobs"
+assert normalize_url("https://ex.com/jobs/view/123") == "https://ex.com/jobs/view/123", \
+    "non-linkedin /jobs/view untouched"
+once = normalize_url(li)
+assert normalize_url(once) == once, "idempotent"
+print("OK url normalization")
 
 # ---------------------------------------------------------------------------
 # Boundary Cuts

@@ -22,6 +22,7 @@ from .chunk import chunk_markdown
 from .config import get_settings
 from .db import db
 from .embed import embed
+from .urlnorm import normalize_url
 
 log = logging.getLogger("wellisearch.index")
 
@@ -43,10 +44,13 @@ async def store_page(
 ) -> tuple[str, int]:
     """Store one crawled page. Returns (status, chunks_written).
 
-    status ∈ {'ok', 'unchanged'}. The title is prepended as an H1 to the
-    chunk source (see _with_title) so it feeds the trigram + vector legs;
-    fit_markdown stays body-only and the hash covers the chunk source.
+    status ∈ {'ok', 'unchanged'}. The URL is canonicalized first (urlnorm) so
+    tracking-param / slug variants of one page share a row; the title is
+    prepended as an H1 to the chunk source (see _with_title) so it feeds the
+    trigram + vector legs. fit_markdown stays body-only and the hash covers
+    the chunk source.
     """
+    url = normalize_url(url)
     s = get_settings()
     chunk_source = _with_title(markdown, title)
     digest = hashlib.sha256(chunk_source.encode("utf-8")).hexdigest()
