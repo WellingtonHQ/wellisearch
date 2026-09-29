@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 from wellisearch.chunk import chunk_markdown
+from wellisearch.config import get_settings
 from wellisearch.crawl.tiers.http import _extract_title as http_extract_title
 from wellisearch.crawl.tiers.stealth import _extract_title as stealth_extract_title
 from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_markdown
 from wellisearch.index import _with_title
-from wellisearch.search_web import render_search_markdown
+from wellisearch.search_web import (
+    _apply_job_board_penalty,
+    _cap_per_domain,
+    _candidate_rows,
+    _is_job_board,
+    _job_intent,
+    _registrable_domain,
+    render_search_markdown,
+)
 from wellisearch.serialize import format_timing
 from wellisearch.truncation import (
     allocate_budgets,
@@ -365,6 +374,73 @@ assert "ReadTimeout" in d and "CRAWL_IGNORE_SSL_ERRORS" not in d, d
 
 assert failure_detail(_result([])) == "all tiers failed or empty markdown"
 print("OK failure detail")
+
+# ---------------------------------------------------------------------------
+# Search Serving Policies (search_web auto-mode helpers)
+# ---------------------------------------------------------------------------
+
+# _registrable_domain: www stripping, plain host, two-part TLDs, garbage in
+assert _registrable_domain("https://www.linkedin.com/jobs/view/1") == "linkedin.com"
+assert _registrable_domain("graphapp.dev/blog/post") == "graphapp.dev"
+assert _registrable_domain("HTTPS://WWW.Example.COM/a") == "example.com", \
+    "host lowercased"
+assert _registrable_domain("https://shop.example.co.uk/page") == "example.co.uk", \
+    "two-part TLD -> three labels"
+assert _registrable_domain("not a url") == ""
+assert _registrable_domain("") == ""
+
+# _is_job_board: host[/path] prefix matching, subdomains, path boundaries
+boards = ("linkedin.com/jobs", "indeed.com")
+assert _is_job_board("https://www.linkedin.com/jobs/view/123?refId=x", boards)
+assert _is_job_board("https://uk.linkedin.com/jobs/search?keywords=a", boards), \
+    "subdomain of listed host matches"
+assert not _is_job_board("https://www.linkedin.com/company/foo", boards), \
+    "path outside the /jobs prefix must not match"
+assert not _is_job_board("https://www.linkedin.com/jobsearch", boards), \
+    "/jobsearch is not under /jobs/"
+assert _is_job_board("https://www.indeed.com/jobs/123", boards)
+assert not _is_job_board("https://graphapp.dev/blog/post", boards)
+
+# _job_intent: word-boundary match on the configured terms
+terms = ("job", "jobs", "hiring", "open roles", "careers")
+assert _job_intent("principal software engineer jobs", terms)
+assert not _job_intent("Transitioning from Staff to Principal Software Engineer", terms), \
+    "career-advice query is not job intent"
+assert _job_intent("Hiring senior engineers in Austin", terms)
+assert not _job_intent("career transition advice", terms), \
+    "'career' singular must not match 'careers'"
+
+# _apply_job_board_penalty: score+sim halved for boards, coverage untouched
+rows = [
+    {"url": "https://www.linkedin.com/jobs/view/1", "score": 0.2, "similarity": 0.8, "coverage": 0.9},
+    {"url": "https://graphapp.dev/blog/post", "score": 0.15, "similarity": 0.76, "coverage": 0.8},
+]
+pen = _apply_job_board_penalty(rows, ("linkedin.com/jobs",), 0.5)
+assert pen[0]["score"] == 0.1 and pen[0]["similarity"] == 0.4, "board row de-ranked"
+assert pen[0]["coverage"] == 0.9, "coverage must stay untouched"
+assert pen[1] is rows[1], "non-board row passes through unchanged"
+
+# _cap_per_domain: first N per registrable domain kept in order
+rows = [{"url": f"https://www.linkedin.com/jobs/view/{i}"} for i in range(5)] + [
+    {"url": f"https://{d}/a"} for d in ("graphapp.dev", "byjlw.com", "reddit.com")
+]
+capped = _cap_per_domain(rows, 2)
+assert len(capped) == 5, [r["url"] for r in capped]
+assert [r["url"] for r in capped[:2]] == [u["url"] for u in rows[0:2]], \
+    "first two linkedin kept in order"
+assert all("linkedin.com" not in r["url"] for r in capped[2:])
+
+# _candidate_rows: a high-similarity row buried by lexical mass is still included
+rows = [
+    {"url": f"https://row{i}.example.com", "score": 1.0 - i * 0.001, "similarity": None}
+    for i in range(130)
+]
+rows[119]["similarity"] = 0.9  # score rank #120 — beyond the default gate window
+cands = _candidate_rows(rows)
+assert rows[119] in cands, "high-sim row outside the score window must be admitted"
+_s = get_settings()
+assert len(cands) <= min(len(rows), _s.SEARCH_GATE_MIN_K + _s.SEARCH_TOP_BY_SIM)
+print("OK search serving policies")
 
 # ---------------------------------------------------------------------------
 # Version Single-Source-Of-Truth

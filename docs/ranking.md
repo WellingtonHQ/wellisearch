@@ -347,6 +347,45 @@ similarity. Keep `LOCAL_MIN_COVERAGE` at its weak lexical floor (0.5) — do not
 raise it to separate clusters: qualifier words ("best", "top") that catalog
 pages omit would veto the most relevant results (see above).
 
+## Auto-mode serving policies (`search_web`)
+
+`fn_search_local` returns raw hybrid scores; auto mode applies three serving
+policies before gating/serving. Local mode serves the raw index order
+untouched — no window, penalty, or cap.
+
+### Union candidate window
+
+Auto mode considers the top `SEARCH_GATE_MIN_K` rows by score **plus** the
+`SEARCH_TOP_BY_SIM` most similar (non-NULL similarity) rows not already in it;
+the index fetches `SEARCH_GATE_MIN_K + SEARCH_TOP_BY_SIM` rows in one call. A
+semantically close page whose score is buried by lexical mass (a vec-leg-only
+article behind dozens of verbatim job postings) always reaches the gate this
+way, instead of needing an ever-larger fixed window.
+
+### Job-board de-rank (with intent bypass)
+
+Rows whose URL matches `SEARCH_JOB_BOARDS` (comma-separated host[/path]
+prefixes; hosts match by suffix so subdomains count) get score and similarity
+multiplied by `SEARCH_JOB_BOARD_PENALTY`. Coverage is untouched, so the gate
+still sees them. A query matching any `SEARCH_JOB_INTENT_TERMS` term
+(word-boundary, case-insensitive) skips the penalty entirely — "principal
+software engineer jobs" should surface job postings.
+
+### Per-domain cap
+
+The final auto-mode serving list keeps at most `SEARCH_MAX_PER_DOMAIN` results
+per registrable domain (last two host labels; three for common two-part TLDs
+like co.uk), so one site's many near-duplicate pages cannot flood the answer
+set. Rows with unparseable domains always pass.
+
+### Widened vector leg
+
+`fn_search_local`'s `vec_limit` parameter (default 50; auto mode passes
+`SEARCH_VECTOR_LEG_LIMIT`, default 200) widens the vector-leg row cap so
+semantically close but lexically thin pages enter the fusion at all. Rows past
+rank 50 earn only small RRF credit (`1/(60+rank)`), and HNSW early-stop keeps
+the cost low.
+
 ## Changing the ranking
 
 1. Edit `fn_search_local` in `src/wellisearch/schema.sql`.

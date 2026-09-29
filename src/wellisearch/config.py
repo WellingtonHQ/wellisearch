@@ -66,9 +66,11 @@ class Settings(BaseSettings):
     # passing page that ranks well outside the top-k by score (score is
     # rank-only; semantically strong pages often sit far down it — e.g. a
     # vec-leg-only article behind dozens of lexically matching job postings).
-    # Cost: only the final LIMIT and per-row gate columns grow (~+160 ms at 50
-    # rows on the ~178k-chunk index, well inside SEARCH_STATEMENT_TIMEOUT_MS).
-    SEARCH_GATE_MIN_K: int = 50
+    # Auto mode fetches SEARCH_GATE_MIN_K + SEARCH_TOP_BY_SIM rows so the union
+    # candidate window has its full pool (docs/ranking.md). Cost: only the final
+    # LIMIT and per-row gate columns grow (~+160 ms per 50 rows on the ~178k-chunk
+    # index, well inside SEARCH_STATEMENT_TIMEOUT_MS).
+    SEARCH_GATE_MIN_K: int = 100
     # Local-hit gate (condition 1): a passing row must cover at least this
     # fraction of the query's content words (`coverage` column, see
     # docs/ranking.md). Kept deliberately low: generic qualifier words ("best",
@@ -97,6 +99,27 @@ class Settings(BaseSettings):
     # Several ordinary gate-passing pages can also serve a partial answer,
     # even when no single chunk meets the stronger similarity threshold.
     LOCAL_PARTIAL_MIN_PASSING: int = 3
+    # Auto-mode serving policies (docs/ranking.md): a union candidate window —
+    # top-SEARCH_GATE_MIN_K by score plus the SEARCH_TOP_BY_SIM most similar
+    # rows not already in it — so a semantically close page is always
+    # considered even when lexical mass buries its score. Local mode serves
+    # the raw index order untouched.
+    SEARCH_TOP_BY_SIM: int = 20
+    # Max results per registrable domain in auto-mode serving, so one site's
+    # many near-duplicate pages (e.g. job-board postings) cannot flood the
+    # answer set; local mode is uncapped.
+    SEARCH_MAX_PER_DOMAIN: int = 2
+    # Job-board de-rank for non-job-intent queries: rows whose URL matches a
+    # SEARCH_JOB_BOARDS entry get score AND similarity multiplied by this
+    # (coverage untouched, so the gate still sees them). A query matching any
+    # SEARCH_JOB_INTENT_TERMS skips the penalty entirely.
+    SEARCH_JOB_BOARD_PENALTY: float = 0.5
+    SEARCH_JOB_BOARDS: str = "linkedin.com/jobs,indeed.com,glassdoor.com/Job,ziprecruiter.com/Jobs,monster.com,naukri.com,jobs.lever.co,boards.greenhouse.io"
+    SEARCH_JOB_INTENT_TERMS: str = "job, jobs, hiring, open roles, careers"
+    # Vector-leg row cap for fn_search_local (HNSW early-stop keeps it cheap);
+    # a wider leg lets semantically close but lexically thin pages enter the
+    # fusion at all instead of missing the pool entirely.
+    SEARCH_VECTOR_LEG_LIMIT: int = 200
     # Legacy local-hit cutoff; now only for ranking (see docs/ranking.md).
     SEARCH_MIN_SCORE: float = 0.06
     STALE_HOURS: int = 72
@@ -175,6 +198,16 @@ class Settings(BaseSettings):
         """Provider failover order from SEARCH_PROVIDERS (comma list, lowercased)."""
         names = [p.strip().lower() for p in self.SEARCH_PROVIDERS.split(",")]
         return [n for n in names if n]
+
+    @property
+    def job_boards(self) -> tuple[str, ...]:
+        """Job-board host[/path] prefixes from SEARCH_JOB_BOARDS (comma list)."""
+        return tuple(e.strip() for e in self.SEARCH_JOB_BOARDS.split(",") if e.strip())
+
+    @property
+    def job_intent_terms(self) -> tuple[str, ...]:
+        """Job-intent terms from SEARCH_JOB_INTENT_TERMS (comma list)."""
+        return tuple(t.strip() for t in self.SEARCH_JOB_INTENT_TERMS.split(",") if t.strip())
 
     def env_quota_limit(self, provider: str) -> int | None:
         """Default monthly quota for a provider (env-backed). None = unknown."""
