@@ -531,7 +531,10 @@ function stepSearchesPage(dir) {
   refresh();
 }
 
-function toggleSearchesRow(id) {
+function toggleSearchesRow(id, ev) {
+  if (ev && ev.detail > 1) return; // double-click is selecting text, not toggling
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed && String(sel).trim()) return; // drag-select to copy — don't toggle
   const k = String(id);
   if (sqExpanded.has(k)) sqExpanded.delete(k); else sqExpanded.add(k);
   renderRecentQueries(sqLast, sqTotal); // local re-render only — no fetch
@@ -560,7 +563,7 @@ function renderRecentQueries(searches, total) {
             `style="display:block;max-width:860px;overflow:hidden;text-overflow:ellipsis">${esc(u)}</a>`).join("") +
         `</td></tr>`
       : "";
-    return `<tr onclick="toggleSearchesRow(${s.id})" style="cursor:pointer">
+    return `<tr onclick="toggleSearchesRow(${s.id}, event)" style="cursor:pointer">
       <td class="muted">${open ? "▾" : "▸"}</td>
       <td style="white-space:nowrap">${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></td>
       <td style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(s.query)}">${esc(s.query)}</td>
