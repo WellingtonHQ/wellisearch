@@ -94,6 +94,7 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 |---|---|---|
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | worker + server **must** match; changing it invalidates all vectors |
 | `EMBED_DIMS` | `384` | guarded at load time against the model's real size |
+| `REINDEX_BATCH_SIZE` | `200` | reindex url-keyset batch — only one batch of fit_markdown is resident at a time, keeping RSS flat on large indexes |
 
 ### Search
 | Var | Default | Notes |

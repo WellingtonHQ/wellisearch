@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # cores) × 3-4 concurrent sessions oversubscribes the host and starves
     # Postgres. MiniLM is small — a couple of threads per session is plenty.
     EMBED_THREADS: int = 2
+    # Reindex batch size (url-keyset pages): only one batch of fit_markdown is
+    # resident at a time, so peak RSS stays flat regardless of index size
+    # (loading the whole stale set up front OOM-killed long reindexes).
+    REINDEX_BATCH_SIZE: int = 200
 
     # --- search ---
     SEARCH_K: int = 5
