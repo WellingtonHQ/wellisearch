@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     # Reindex batch size (url-keyset pages): only one batch of fit_markdown is
     # resident at a time, so peak RSS stays flat regardless of index size
     # (loading the whole stale set up front OOM-killed long reindexes).
-    REINDEX_BATCH_SIZE: int = 200
+    REINDEX_BATCH_SIZE: int = 1000
 
     # --- search ---
     SEARCH_K: int = 5
