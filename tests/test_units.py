@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from wellisearch.chunk import chunk_markdown
+from wellisearch.crawl.tiers.http import _extract_title as http_extract_title
+from wellisearch.crawl.tiers.stealth import _extract_title as stealth_extract_title
 from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_markdown
 from wellisearch.index import _with_title
 from wellisearch.search_web import render_search_markdown
@@ -74,6 +76,46 @@ assert normalize_url("https://ex.com/jobs/view/123") == "https://ex.com/jobs/vie
 once = normalize_url(li)
 assert normalize_url(once) == once, "idempotent"
 print("OK url normalization")
+
+# ---------------------------------------------------------------------------
+# Tier Title Extraction (last <title> wins, matching browser document.title)
+# ---------------------------------------------------------------------------
+
+
+class _FakeTitleEl:
+    def __init__(self, text):
+        self._text = text
+
+    def get_all_text(self):
+        return self._text
+
+
+class _FakeStealthPage:
+    def __init__(self, texts):
+        self._texts = texts
+
+    def css(self, selector):
+        assert selector == "title"
+        return [_FakeTitleEl(t) for t in self._texts]
+
+
+assert http_extract_title("<html><head><title>Only</title></head></html>") == "Only", \
+    "single title extracted"
+two = "<head><title>Medium</title><meta x='1'><title>Real Article | by Author</title></head>"
+assert http_extract_title(two) == "Real Article | by Author", "last of two titles wins"
+assert http_extract_title("<html><body>no title here</body></html>") is None, \
+    "absent -> None"
+empty_first = "<head><title>   </title><title>Second</title></head>"
+assert http_extract_title(empty_first) == "Second", "blank first skipped"
+empty_last = "<head><title>First</title><title>  </title></head>"
+assert http_extract_title(empty_last) == "First", "trailing blank falls back to earlier"
+
+assert stealth_extract_title(_FakeStealthPage(["Medium", "Real Article"])) == \
+    "Real Article", "stealth: last of two titles wins"
+assert stealth_extract_title(_FakeStealthPage([])) is None, "stealth: no title -> None"
+assert stealth_extract_title(_FakeStealthPage(["  ", "Second"])) == "Second", \
+    "stealth: blank first skipped"
+print("OK tier title extraction")
 
 # ---------------------------------------------------------------------------
 # Boundary Cuts
