@@ -1,4 +1,4 @@
-# Problematic local searches
+# Search optimizations
 
 Read-only audit on 2026-09-27. The aim is to serve the local index when it has
 **distinct, relevant answers that satisfy the query**, and use the provider
@@ -74,6 +74,8 @@ page leads even when lexically matching pages hold more RRF mass.
    `$700` query do not prove an under-$700 product. See
    [`tests/test_search_regression.py`](tests/test_search_regression.py).
 
+6. **Lexical mass outranks semantic closeness.** For `Transitioning from Staff to Principal Software Engineer` (2026-09-29), a Reddit career-advice thread carries the second-highest similarity in the index (0.732, coverage 1.0) yet ranks #53 by score — outside the default gate window of fifty rows. Its score is almost entirely its vector-leg contribution alone (~1/62 ≈ 0.016): no single chunk contains all five query lexemes (zero FTS-AND credit), and it misses the bounded trigram pool, which LinkedIn postings dominate via verbatim "Principal Software Engineer" titles. Those postings collect two to three legs at strong ranks (up to three chunks per page counted per leg) plus a `fetch_count` bonus (+0.007 at fc=4–5 vs 0), so their RRF mass is ~3× the thread's; freshness was equal (all rows crawled the same morning). A single excellent semantic leg cannot beat several strong lexical legs plus prominence. See [Meaning over words](#meaning-over-words) for fix options and the job-board de-rank / per-domain cap shipped alongside.
+
 ## Recommended order
 
 1. **Count distinct qualified pages.** Collapse verified-equivalent URL
@@ -100,6 +102,24 @@ page leads even when lexically matching pages hold more RRF mass.
    and other eligibility before the final `k`-result window, or progressively
    widen a bounded window. Benchmark SQL latency against the configured
    statement timeout; wider windows are not free.
+
+## Meaning over words
+
+The ranking core fuses three legs with equal rank-based credit (`1/(60+rank)`), so a page's semantic closeness earns at most ~1/61 per leg while lexical pages stack up to six chunk-leg credits. Similarity currently drives only the gate and auto-mode sort order, never the score or candidate selection. Options, cheapest first:
+
+1. **Widen the vector leg.** `fn_search_local` caps the vector leg at fifty rows (schema.sql); a semantically close but lexically thin page can miss the pool entirely. Make the cap configurable (`vec_limit`, default two hundred) — HNSW early-stop keeps it cheap.
+2. **Semantic-aware candidate window.** Candidates = top-N by score ∪ top-M by similarity (fetch ~150 rows, union in Python). A sim-0.73 page is then always considered regardless of lexical rank; removes the arbitrary fixed window.
+3. **Blend similarity into the score.** `score' = rrf_mass × (w + (1−w)·sim)` with configurable w makes local mode and tie-breaks meaning-aware too. Needs calibration against the regression corpus so exact-phrase queries don't regress.
+4. **Cross-encoder rerank of gated candidates.** Rerank passing rows with a local MiniLM passage-reranker (~100–300 ms) — true semantic precision ranking over hybrid recall, Google-style ranker. Adds another model to keep in sync with the EMBED_MODEL invariant.
+5. **Query-type-aware weighting.** Informational queries ("how to transition X→Y") weight semantics up; exact-phrase/product queries stay lexical-first. Reuses the job-intent detection machinery (`SEARCH_JOB_INTENT_TERMS`).
+
+## Other ranking-quality improvements
+
+1. **Query-aware snippets.** `fn_search_local` returns the first 400 chars of the best-RRF chunk as the snippet; pick instead the 400-char window inside that chunk with the most query-term hits (SQL in the `bestchunk` CTE). Visible on every result.
+2. **Title-match boost.** Small additive score bonus when query content words appear in the page title — titles already ride along via H1 prepend, so this sharpens exact-title matches further. Requires a schema change to `fn_search_local`.
+3. **Freshness curve redesign.** The current decay is `exp(-age_days/14)` (schema.sql) — aggressive for evergreen content (~9.7-day half-life). A 30-day grace + 90-day half-life curve is designed in docs/adaptive-refresh.md; implement as a separate task.
+4. **Cross-domain duplicate suppression.** Syndicated copies of the same article (e.g., a Medium mirror on a personal domain) rank as independent answers. Same-URL variants are already collapsed by content hash; cross-domain needs content-similarity dedup — design first.
+5. **Dead config cleanup.** `SEARCH_MIN_SCORE` and `STALE_HOURS` are unreferenced in src/ — remove or wire up.
 
 ## How to evaluate changes
 
