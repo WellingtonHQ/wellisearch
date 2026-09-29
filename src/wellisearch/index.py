@@ -2,14 +2,20 @@
 
 Transactional. The `unchanged` short-circuit (same content hash AND same
 embedding model) skips chunking/embedding entirely. A model change
-invalidates vectors even for identical content — that's why the model name
-is stored per page (plan §15) and `python -m wellisearch.reindex` exists.
+invalidates vectors even for identical content — that's why the model name is
+stored per page (plan §15) and `python -m wellisearch.reindex` exists.
+
+The page title is prepended as an H1 to the chunk source (unless a site
+extractor already emitted it), so title words participate in the trigram and
+vector legs; fit_markdown itself stays body-only, and the gates read
+pages.title separately.
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import logging
+import re
 from urllib.parse import urlparse
 
 from .chunk import chunk_markdown
@@ -18,6 +24,8 @@ from .db import db
 from .embed import embed
 
 log = logging.getLogger("wellisearch.index")
+
+_H1_RE = re.compile(r"^#\s+(\S.*?)\s*$")
 
 
 def domain_of(url: str) -> str:
@@ -35,10 +43,13 @@ async def store_page(
 ) -> tuple[str, int]:
     """Store one crawled page. Returns (status, chunks_written).
 
-    status ∈ {'ok', 'unchanged'}.
+    status ∈ {'ok', 'unchanged'}. The title is prepended as an H1 to the
+    chunk source (see _with_title) so it feeds the trigram + vector legs;
+    fit_markdown stays body-only and the hash covers the chunk source.
     """
     s = get_settings()
-    digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+    chunk_source = _with_title(markdown, title)
+    digest = hashlib.sha256(chunk_source.encode("utf-8")).hexdigest()
 
     # unchanged? (hash + model must both match, else re-embed is required)
     existing = await db.page_get(url)
@@ -60,7 +71,7 @@ async def store_page(
 
     # chunk + embed (CPU-bound → both off the event loop; chunking on the
     # loop stalls every request handler while a page stores)
-    chunks = await asyncio.to_thread(chunk_markdown, markdown, s.MAX_CHUNK_TOKENS)
+    chunks = await asyncio.to_thread(chunk_markdown, chunk_source, s.MAX_CHUNK_TOKENS)
     vectors = await asyncio.to_thread(embed, chunks) if chunks else []
     if chunks and len(vectors) != len(chunks):
         raise RuntimeError(f"embed returned {len(vectors)} vectors for {len(chunks)} chunks")
@@ -96,3 +107,20 @@ async def store_page(
                 [(url, i, text, vec) for i, (text, vec) in enumerate(zip(chunks, vectors))],
             )
     return "ok", len(chunks)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _with_title(markdown: str, title: str | None) -> str:
+    """Prepend the page title as an H1 so it participates in chunking and
+    embedding. Skipped when absent or already present (site extractors emit
+    their own `# {title}` heading)."""
+    if not title or not markdown.strip():
+        return markdown
+    first = next((ln for ln in markdown.lstrip().splitlines() if ln.strip()), "")
+    m = _H1_RE.match(first)
+    if m and " ".join(m.group(1).split()).casefold() == " ".join(title.split()).casefold():
+        return markdown
+    return f"# {title}\n\n{markdown}"

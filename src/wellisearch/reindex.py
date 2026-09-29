@@ -67,7 +67,7 @@ async def _run(force: bool, dry_run: bool) -> None:
             "FROM pages WHERE fit_markdown IS NOT NULL "
             "AND (%s OR embedding_model IS DISTINCT FROM %s) "
             "ORDER BY fetch_count DESC",
-            (force, s.EMBED_MODEL, s.EMBED_MODEL),
+            (force, s.EMBED_MODEL),
         )
         print(
             f"index: {total['n']} pages; to (re)embed: {len(stale)} "

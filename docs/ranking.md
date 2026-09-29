@@ -16,7 +16,8 @@ images/ranking.svg
 
 Each leg returns the **top 50 chunks** (by its own relevance order) for the
 query. Chunks are the unit of ranking; pages are then built from their
-chunks.
+chunks. Chunk text includes the page title as an H1 (`store_page` prepends
+it — see indexing.md), so titles participate in all three legs.
 
 ### Leg 1 — Full-text (tsvector)
 

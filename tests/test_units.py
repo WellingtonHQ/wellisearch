@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from wellisearch.chunk import chunk_markdown
 from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_markdown
+from wellisearch.index import _with_title
 from wellisearch.search_web import render_search_markdown
 from wellisearch.serialize import format_timing
 from wellisearch.truncation import (
@@ -29,6 +30,25 @@ for c in chunks:
     assert c.count("```") % 2 == 0, "unbalanced fence in: " + c[:80]
 print("chunks:", len(chunks))
 print("OK chunker")
+
+# ---------------------------------------------------------------------------
+# Title Prepend (index._with_title)
+# ---------------------------------------------------------------------------
+
+body = "para one\n\npara two"
+assert _with_title(body, None) == body, "no title -> unchanged"
+assert _with_title(body, "") == body, "empty title -> unchanged"
+assert _with_title("", "T") == "", "empty markdown -> unchanged"
+out = _with_title(body, "My Title")
+assert out == "# My Title\n\n" + body, out[:40]
+md_h1 = "# My Title\n\nbody"
+assert _with_title(md_h1, "My Title") == md_h1, "extractor-emitted H1 -> no double prepend"
+md_ci = "# my  title \n\nbody"
+assert _with_title(md_ci, "My Title") == md_ci, "case/whitespace-insensitive match -> no double prepend"
+md_other = "# Other Heading\n\nbody"
+assert _with_title(md_other, "My Title") == "# My Title\n\n" + md_other, \
+    "different H1 -> prepended above it"
+print("OK title prepend")
 
 # ---------------------------------------------------------------------------
 # Boundary Cuts

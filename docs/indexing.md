@@ -94,12 +94,15 @@ has none) plus clean "fit" markdown (main content, no chrome). Details:
 
 `index.store_page(url, markdown, title=None)` returns `(status,
 chunks_written)` where `status ∈ {'ok','unchanged'}`; `title` is the crawled
-page title persisted onto the page row.
+page title persisted onto the page row **and prepended as an H1 to the chunk
+source** (unless a site extractor already emitted it), so title words feed
+the trigram + vector legs. fit_markdown stays body-only, and the gates read
+pages.title separately.
 
 ### 1. Unchanged short-circuit
 
 ```python
-digest = sha256(markdown)
+digest = sha256(title-as-H1 + markdown)   # the chunk source (see _with_title)
 if existing and existing.content_hash == digest and existing.embedding_model == EMBED_MODEL:
     → bump crawl_count, set last_status='unchanged', last_crawled=now()
     → return ("unchanged", 0)
@@ -113,7 +116,11 @@ requires `python -m wellisearch.reindex` (see deployment.md).
 
 ### 2. Chunk
 
-`chunk_markdown(markdown, MAX_CHUNK_TOKENS)` (`chunk.py`):
+The chunk source is the page title as an H1 prepended to the body —
+`_with_title(markdown, title)` skips the prepend when the markdown already
+starts with that exact heading (Amazon/Greenhouse extractors emit their own),
+so no page carries a doubled title. `chunk_markdown(chunk_source,
+MAX_CHUNK_TOKENS)` (`chunk.py`) then:
 
 - Budget ≈ `MAX_CHUNK_TOKENS` (500) tokens, estimated at **4 chars/token**
   (kept under MiniLM's hard 512-token input cap so no chunk tail is truncated on embed).
