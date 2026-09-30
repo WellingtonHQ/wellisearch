@@ -22,11 +22,16 @@ Tick triggers:
   - debounced kick whenever the queue receives items (queue.kick_worker)
   - per-tick wall-clock budget WORKER_TICK_BUDGET_MIN
 
+At the end of every tick, freed glibc arena memory is returned to the OS
+(malloc_trim) so consecutive crawl bursts don't ratchet RSS upward.
+
 `python -m wellisearch.worker --once` runs one tick and exits (manual runs).
 """
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+import ctypes
 import datetime as dt
 import logging
 import time
@@ -45,6 +50,7 @@ log = logging.getLogger("wellisearch.worker")
 ERROR_DETAIL_MAX_LEN = 1000    # max chars kept in a crawl error detail (crawl_log)
 ERROR_REPR_MAX_LEN = 500       # max chars kept in a crash repr (crawl_log)
 REFRESH_ERROR_MAX_LEN = 200    # max chars kept in a refresh-stats error entry
+TRIM_THRESHOLD = 0             # malloc_trim threshold: 0 releases all returnable memory
 
 # runtime state for the dashboard "Now" panel
 STATE: dict = {
@@ -57,6 +63,9 @@ STATE: dict = {
 # (queue.kick_worker) can otherwise run tick() concurrently, doubling crawl
 # load. Claims are atomic either way, so the lock is about load, not races.
 _tick_lock = asyncio.Lock()
+
+# Resolved glibc malloc_trim callable; None = not yet resolved, False = unavailable.
+_malloc_trim: Callable[[int], int] | bool | None = None
 
 
 async def crawl_url(url: str, trigger: str) -> dict:
@@ -94,6 +103,7 @@ async def tick() -> dict:
         log.info("tick done: %s", stats)
         await _log_event("worker tick", stats)
         await _retention_sweep()
+        _trim_memory()
         return stats
 
 
@@ -390,6 +400,47 @@ async def _retention_sweep() -> None:
             log.info("pruned %d old log rows", total)
     except Exception as e:
         log.warning("retention sweep failed: %s", e)
+
+
+def _trim_memory() -> None:
+    """Return freed glibc arena memory to the OS (malloc_trim(0)).
+
+    Called once at the end of every worker tick so a crawl burst's released
+    memory is not retained between bursts — glibc keeps freed chunks in its
+    arenas and never returns them on its own. No-op when malloc_trim is
+    unavailable (e.g. Windows dev machines); never raises."""
+    global _malloc_trim
+    if _malloc_trim is None:
+        _malloc_trim = _resolve_malloc_trim()
+    if not _malloc_trim:
+        return
+    try:
+        _malloc_trim(TRIM_THRESHOLD)
+    except Exception as e:  # defensive: trimming must never break a tick
+        log.debug("malloc_trim failed: %s", e)
+        return
+    log.debug("returned freed memory to OS after tick")
+
+
+def _resolve_malloc_trim() -> Callable[[int], int] | bool:
+    """Resolve glibc malloc_trim via ctypes; False when unavailable (no-op mode).
+
+    Tries libc.so.6 first, then the process's own symbol table (CDLL(None));
+    logs at debug level and gives up if neither exposes the symbol. CDLL(None)
+    raises TypeError on Windows (LoadLibrary needs a path), so both load
+    failures are caught."""
+    for lib_name in ("libc.so.6", None):
+        try:
+            fn = getattr(ctypes.CDLL(lib_name), "malloc_trim", None)
+        except (OSError, TypeError) as e:
+            log.debug("malloc_trim unavailable (CDLL %s failed): %s", lib_name, e)
+            continue
+        if fn is not None:
+            fn.argtypes = [ctypes.c_size_t]
+            fn.restype = ctypes.c_int
+            return fn
+    log.debug("malloc_trim symbol not found; memory trim disabled")
+    return False
 
 
 async def _once() -> dict:
