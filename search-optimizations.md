@@ -2,8 +2,8 @@
 
 Read-only audit on 2026-09-27. The aim is to serve the local index when it has
 **distinct, relevant answers that satisfy the query**, and use the provider
-gateway otherwise. These are observed failure modes and proposed improvements,
-not implemented behavior.
+gateway otherwise. These are observed failure modes and proposed improvements;
+items marked (shipped) below are live as of their date.
 
 ## How the current decision works
 
@@ -62,9 +62,11 @@ page leads even when lexically matching pages hold more RRF mass.
    gate now serves four, but still misses many eligible results outside its
    window. Rows with no crawl timestamp are currently retained by the age
    filter. See [`search_web.py:205-224`](src/wellisearch/search_web.py).
-   (Partially addressed 2026-09-29: the default gate window widened from ten
-   to fifty rows and passing rows serve in similarity order; applying the age
-   filter before the window remains open.)
+    (Partially addressed 2026-09-29: auto mode fetches `SEARCH_GATE_MIN_K`
+    (default one hundred) score-ranked rows unioned with the
+    `SEARCH_TOP_BY_SIM` (default twenty) most similar, and passing rows serve
+    in similarity order; applying the age filter before the window remains
+    open.)
 
 5. **The regression corpus does not cover all default-k quality failures.**
    It now tests `k=5` strong and moderate partial serving, but the shopping
@@ -107,8 +109,8 @@ page leads even when lexically matching pages hold more RRF mass.
 
 The ranking core fuses three legs with equal rank-based credit (`1/(60+rank)`), so a page's semantic closeness earns at most ~1/61 per leg while lexical pages stack up to six chunk-leg credits. Similarity currently drives only the gate and auto-mode sort order, never the score or candidate selection. Options, cheapest first:
 
-1. **Widen the vector leg.** `fn_search_local` caps the vector leg at fifty rows (schema.sql); a semantically close but lexically thin page can miss the pool entirely. Make the cap configurable (`vec_limit`, default two hundred) — HNSW early-stop keeps it cheap.
-2. **Semantic-aware candidate window.** Candidates = top-N by score ∪ top-M by similarity (fetch ~150 rows, union in Python). A sim-0.73 page is then always considered regardless of lexical rank; removes the arbitrary fixed window.
+1. **Widen the vector leg.** `fn_search_local` caps the vector leg at fifty rows (schema.sql); a semantically close but lexically thin page can miss the pool entirely. Make the cap configurable (`vec_limit`, default two hundred) — HNSW early-stop keeps it cheap. (Shipped 2026-09-29: `fn_search_local` takes a `vec_limit` argument and auto mode passes `SEARCH_VECTOR_LEG_LIMIT`, default two hundred.)
+2. **Semantic-aware candidate window.** Candidates = top-N by score ∪ top-M by similarity (fetch ~150 rows, union in Python). A sim-0.73 page is then always considered regardless of lexical rank; removes the arbitrary fixed window. (Shipped 2026-09-29: `_candidate_rows` unions the top-by-score rows with the `SEARCH_TOP_BY_SIM` most similar rows not already included.)
 3. **Blend similarity into the score.** `score' = rrf_mass × (w + (1−w)·sim)` with configurable w makes local mode and tie-breaks meaning-aware too. Needs calibration against the regression corpus so exact-phrase queries don't regress.
 4. **Cross-encoder rerank of gated candidates.** Rerank passing rows with a local MiniLM passage-reranker (~100–300 ms) — true semantic precision ranking over hybrid recall, Google-style ranker. Adds another model to keep in sync with the EMBED_MODEL invariant.
 5. **Query-type-aware weighting.** Informational queries ("how to transition X→Y") weight semantics up; exact-phrase/product queries stay lexical-first. Reuses the job-intent detection machinery (`SEARCH_JOB_INTENT_TERMS`).
