@@ -92,12 +92,18 @@ has none) plus clean "fit" markdown (main content, no chrome). Details:
 
 ## store_page (hash → chunk → embed → upsert)
 
-`index.store_page(url, markdown, title=None)` returns `(status,
+`index.store_page(url, markdown, title=None, crawled=True)` returns `(status,
 chunks_written)` where `status ∈ {'ok','unchanged'}`; `title` is the crawled
 page title persisted onto the page row **and prepended as an H1 to the chunk
 source** (unless a site extractor already emitted it), so title words feed
 the trigram + vector legs. fit_markdown stays body-only, and the gates read
 pages.title separately.
+
+`crawled=True` marks that the content came from a fresh fetch of the URL —
+only then are crawl-time values stamped (`last_crawled`, `last_status`,
+`crawl_count`). Re-embedding already-stored content
+(`python -m wellisearch.reindex`) passes `crawled=False`, so page freshness
+stays untouched and the watchlist refresh keeps working off real crawl times.
 
 The URL is canonicalized first (`urlnorm.normalize_url`): HTML entities are
 unescaped (`&amp;` → `&`), tracking query parameters (utm_*, refId, …) are
@@ -112,6 +118,7 @@ normalization so variants dedupe in the queue too;
 ```python
 digest = sha256(title-as-H1 + markdown)   # the chunk source (see _with_title)
 if existing and existing.content_hash == digest and existing.embedding_model == EMBED_MODEL:
+    if not crawled: → return ("unchanged", 0)      # re-embed only: true no-op
     → bump crawl_count, set last_status='unchanged', last_crawled=now()
     → return ("unchanged", 0)
 ```
@@ -152,14 +159,17 @@ dimension guard raises if the model's real embedding size ≠ `EMBED_DIMS`
 
 ```
 BEGIN
-  INSERT INTO pages (…) ON CONFLICT (url) DO UPDATE …   -- content, hash, model, last_crawled, crawl_count+1
+  INSERT INTO pages (…) ON CONFLICT (url) DO UPDATE …   -- content, hash, model (+ last_crawled, crawl_count+1 only when crawled=True)
   DELETE FROM chunks WHERE url = …
   INSERT INTO chunks (url, seq, text, embedding, last_crawled) …  -- batched (executemany)
 COMMIT
 ```
 
 Chunk replacement is delete-then-insert inside the same transaction, so a
-page never half-updates. `seq` preserves document order.
+page never half-updates. `seq` preserves document order. `chunks.last_crawled`
+is NOT NULL: on a fresh fetch it is `now()`; when re-storing without a fetch
+(`crawled=False`) it mirrors the page's stored last crawl time (falling back
+to `now()` for pages never crawled).
 
 ## In-flight dedupe (never crawl a URL twice at once)
 

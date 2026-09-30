@@ -101,10 +101,47 @@ async def _store_page_roundtrip() -> None:
     print("store_page:", status, "chunks:", chunks)
     assert status == "ok" and chunks >= 2
 
-    # unchanged short-circuit
-    status, chunks = await store_page("https://example.com/pgvector-intro", md, title="x")
+    # unchanged short-circuit. The title feeds the chunk source (H1 prepend),
+    # so it must match or the digest changes and a re-embed happens instead.
+    status, chunks = await store_page("https://example.com/pgvector-intro", md, title="pgvector introduction")
     assert status == "unchanged" and chunks == 0
     print("OK unchanged short-circuit")
+
+    # re-embed without a fetch (crawled=False): identical content is a true
+    # no-op and must not stamp crawl-time values
+    before = await db.fetch_one(
+        "SELECT last_crawled, crawl_count, last_status FROM pages WHERE url = %s",
+        ("https://example.com/pgvector-intro",),
+    )
+    status, chunks = await store_page(
+        "https://example.com/pgvector-intro", md, title="pgvector introduction", crawled=False
+    )
+    assert status == "unchanged" and chunks == 0
+    after = await db.fetch_one(
+        "SELECT last_crawled, crawl_count, last_status FROM pages WHERE url = %s",
+        ("https://example.com/pgvector-intro",),
+    )
+    assert after == before, (before, after)
+    print("OK re-embed no-op leaves crawl-time values untouched")
+
+    # re-embed of new content (model-change path): rewrites chunks but still
+    # must not stamp crawl-time values; chunks mirror the page's last crawl
+    status, chunks = await store_page(
+        "https://example.com/pgvector-intro", md + "\n## extra\nextra text.",
+        title="pgvector introduction", crawled=False,
+    )
+    assert status == "ok" and chunks >= 2
+    after2 = await db.fetch_one(
+        "SELECT last_crawled, crawl_count, last_status FROM pages WHERE url = %s",
+        ("https://example.com/pgvector-intro",),
+    )
+    assert after2 == before, (before, after2)
+    chunk_row = await db.fetch_one(
+        "SELECT last_crawled FROM chunks WHERE url = %s ORDER BY seq LIMIT 1",
+        ("https://example.com/pgvector-intro",),
+    )
+    assert chunk_row["last_crawled"] == before["last_crawled"], (before, chunk_row)
+    print("OK re-embed of new content leaves crawl-time values untouched")
 
 
 async def _check_local_hit() -> None:

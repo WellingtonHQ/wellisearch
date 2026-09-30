@@ -1,9 +1,14 @@
-"""index: store_page(url, markdown, title=None) — hash → chunk → embed → upsert.
+"""index: store_page(url, markdown, title=None, crawled=True) — hash → chunk →
+embed → upsert.
 
 Transactional. The `unchanged` short-circuit (same content hash AND same
 embedding model) skips chunking/embedding entirely. A model change
 invalidates vectors even for identical content — that's why the model name is
 stored per page (plan §15) and `python -m wellisearch.reindex` exists.
+
+Crawl-time values (`last_crawled`, `last_status`, `crawl_count`) are stamped
+only when `crawled=True`: a re-embed of already-stored content (reindex) is
+not a crawl, so page freshness stays untouched.
 
 The page title is prepended as an H1 to the chunk source (unless a site
 extractor already emitted it), so title words participate in the trigram and
@@ -41,14 +46,20 @@ async def store_page(
     url: str,
     markdown: str,
     title: str | None = None,
+    crawled: bool = True,
 ) -> tuple[str, int]:
-    """Store one crawled page. Returns (status, chunks_written).
+    """Store one page's content (hash → chunk → embed → upsert). Returns
+    (status, chunks_written), status ∈ {'ok', 'unchanged'}.
 
-    status ∈ {'ok', 'unchanged'}. The URL is canonicalized first (urlnorm) so
-    tracking-param / slug variants of one page share a row; the title is
-    prepended as an H1 to the chunk source (see _with_title) so it feeds the
-    trigram + vector legs. fit_markdown stays body-only and the hash covers
-    the chunk source.
+    The URL is canonicalized first (urlnorm) so tracking-param / slug variants
+    of one page share a row; the title is prepended as an H1 to the chunk
+    source (see _with_title) so it feeds the trigram + vector legs.
+    fit_markdown stays body-only and the hash covers the chunk source.
+
+    `crawled` marks that the content came from a fresh fetch of this URL: only
+    then are crawl-time values stamped (last_crawled, last_status,
+    crawl_count). Re-embedding already-stored content passes crawled=False so
+    page freshness is left untouched.
     """
     url = normalize_url(url)
     s = get_settings()
@@ -62,6 +73,10 @@ async def store_page(
         and existing.get("content_hash") == digest
         and existing.get("embedding_model") == s.EMBED_MODEL
     ):
+        # Re-embed only: the content is already current, so nothing is written
+        # — and no crawl-time values are stamped (nothing was fetched).
+        if not crawled:
+            return "unchanged", 0
         # Backfill the title too: pages crawled before titles were stored have
         # title IS NULL, and recrawl/refresh must refresh crawl-time values
         # even when the content hash matches. COALESCE keeps the stored title
@@ -81,9 +96,8 @@ async def store_page(
         raise RuntimeError(f"embed returned {len(vectors)} vectors for {len(chunks)} chunks")
 
     domain = domain_of(url)
-    async with db.transaction() as conn:
-        await conn.execute(
-            """
+    if crawled:
+        page_sql = """
             INSERT INTO pages
               (url, title, domain, fit_markdown, content_hash, embedding_model,
                last_crawled, last_status, crawl_count)
@@ -97,9 +111,31 @@ async def store_page(
               last_crawled    = now(),
               last_status     = 'ok',
               crawl_count     = pages.crawl_count + 1
-            """,
-            (url, title, domain, markdown, digest, s.EMBED_MODEL, title, domain),
-        )
+            """
+        page_params = (url, title, domain, markdown, digest, s.EMBED_MODEL, title, domain)
+    else:
+        # Re-embed only: nothing was fetched from the URL, so crawl-time values
+        # (last_crawled, last_status, crawl_count) keep their stored values.
+        page_sql = """
+            INSERT INTO pages
+              (url, title, domain, fit_markdown, content_hash, embedding_model)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (url) DO UPDATE SET
+              title           = COALESCE(%s, pages.title),
+              domain          = COALESCE(%s, pages.domain),
+              fit_markdown    = EXCLUDED.fit_markdown,
+              content_hash    = EXCLUDED.content_hash,
+              embedding_model = EXCLUDED.embedding_model
+            """
+        page_params = (url, title, domain, markdown, digest, s.EMBED_MODEL, title, domain)
+
+    # chunks.last_crawled is NOT NULL: when re-storing without a fresh fetch,
+    # mirror the page's real last crawl time (a re-embed doesn't make content
+    # fresher); COALESCE falls back to now() for pages never crawled.
+    chunk_ts = None if crawled else (existing or {}).get("last_crawled")
+
+    async with db.transaction() as conn:
+        await conn.execute(page_sql, page_params)
         await conn.execute("DELETE FROM chunks WHERE url = %s", (url,))
         if chunks:
             # vectors pass as list[float]; the pgvector adapter (db.py) serializes.
@@ -107,8 +143,8 @@ async def store_page(
             cur = conn.cursor()
             await cur.executemany(
                 "INSERT INTO chunks (url, seq, text, embedding, last_crawled) "
-                "VALUES (%s, %s, %s, %s, now())",
-                [(url, i, text, vec) for i, (text, vec) in enumerate(zip(chunks, vectors))],
+                "VALUES (%s, %s, %s, %s, COALESCE(%s, now()))",
+                [(url, i, text, vec, chunk_ts) for i, (text, vec) in enumerate(zip(chunks, vectors))],
             )
     return "ok", len(chunks)
 

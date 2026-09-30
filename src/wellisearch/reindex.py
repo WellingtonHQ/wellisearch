@@ -2,7 +2,9 @@
 
 Run after changing EMBED_MODEL (stored vectors are invalid) or to repair the
 index. Iterates pages, re-chunks + re-embeds each (store_page's unchanged
-short-circuit makes already-fresh pages a no-op).
+short-circuit makes already-fresh pages a no-op). Re-embedding is not a
+crawl: last_crawled / crawl_count stay untouched, so freshness gates and the
+watchlist refresh keep working off real crawl times.
 
 Usage:
   python -m wellisearch.reindex            # reindex everything stale
@@ -44,7 +46,8 @@ async def _reembed_page(p: dict[str, Any]) -> str:
     """Re-embed one page; return 'ok', 'unchanged', or 'failed'."""
     url = p["url"]
     try:
-        status, _ = await store_page(url, p["fit_markdown"], title=p["title"])
+        # crawled=False: no fetch happened, so last_crawled / crawl_count stay put.
+        status, _ = await store_page(url, p["fit_markdown"], title=p["title"], crawled=False)
     except Exception as e:
         log.warning("reindex %s failed: %s", url, e)
         return "failed"
