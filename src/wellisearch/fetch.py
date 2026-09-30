@@ -23,6 +23,7 @@ from psycopg_pool import PoolTimeout
 
 from . import crawler, queue
 from .config import Settings, get_settings
+from .crawl.extractors.amazon import needs_refresh as amazon_needs_refresh
 from .crawl.extractors.base import title_from_markdown
 from .crawl.extractors.reddit import needs_refresh as reddit_needs_refresh
 from .crawl.probe import reset_probe_budget, set_probe_budget
@@ -309,10 +310,10 @@ async def _record_failed_refresh(url: str, needed_refresh: bool) -> None:
 async def _resolve_page(url: str) -> dict:
     """Content for one URL: from index when present, else crawl on demand.
 
-    A reddit post whose stored markdown is stale (reddit_needs_refresh) normally
-    re-crawls inline; while a refresh-failure backoff is active it serves the
-    stored copy instead, so a walled page can't burn a full browser crawl on
-    every fetch."""
+    A stored page whose markdown is stale (reddit_needs_refresh for posts,
+    amazon_needs_refresh for product pages) normally re-crawls inline; while a
+    refresh-failure backoff is active it serves the stored copy instead, so a
+    walled page can't burn a full browser crawl on every fetch."""
     s = get_settings()
     t_index = time.monotonic()
     # Look up by canonical URL: a tracking-param variant of an indexed page
@@ -320,7 +321,9 @@ async def _resolve_page(url: str) -> dict:
     page = await db.page_get(normalize_url(url))
     index_ms = int((time.monotonic() - t_index) * 1000)
     stored_md = page.get("fit_markdown") if page and not page.get("disabled") else None
-    needs_refresh = bool(stored_md) and reddit_needs_refresh(url, stored_md)
+    needs_refresh = bool(stored_md) and (
+        reddit_needs_refresh(url, stored_md) or amazon_needs_refresh(url, stored_md)
+    )
     if stored_md and (not needs_refresh or _refresh_backoff_active(page)):
         if needs_refresh:
             log.debug(

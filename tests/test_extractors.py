@@ -6,7 +6,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from wellisearch.crawl.extractors import for_url
-from wellisearch.crawl.extractors.amazon import AmazonExtractor
+from wellisearch.crawl.extractors.amazon import (
+    AmazonExtractor,
+    is_product_url,
+    needs_refresh as amazon_needs_refresh,
+)
 from wellisearch.crawl.extractors.ap import APExtractor
 from wellisearch.crawl.extractors.base import (
     MIN_MD_CHARS,
@@ -40,6 +44,41 @@ def rendered(html: str, title: str | None = None) -> Rendered:
 # Amazon
 # ---------------------------------------------------------------------------
 
+AMAZON_DESC = (
+    "<div id=\"productDescription\">"
+    "<p>Kindle (10th generation) pairs a crisp 300 ppi display with weeks of battery "
+    "life, so you can read anywhere without hunting for an outlet.</p>"
+    "<p>The lightweight, pocketable design makes it easy to take anywhere, and the "
+    "adjustable warm light lets you read comfortably day or night.</p>"
+    "</div>"
+)
+AMAZON_DETAILS = (
+    "<div id=\"detailBullets_feature_div\">"
+    "<table><tr><th>Item model number</th><td>B08WM3LJQB</td></tr></table>"
+    "</div>"
+)
+AMAZON_REVIEWS = (
+    "<div id=\"customerReviews\"><ul id=\"localTopReviewsList\">"
+    '<li><div data-hook="review" id="R1">'
+    "<span class=\"a-profile-name\">Angela B</span>"
+    "<i class=\"a-icon a-icon-star a-star-5\" data-hook=\"review-star-rating\">"
+    "<span class=\"a-icon-alt\">5 out of 5 stars</span></i>"
+    "<h5 data-hook=\"reviewTitle\">Perfect starter kit</h5>"
+    "<span data-hook=\"review-date\">Reviewed in the United States on September 22, 2026</span>"
+    "<span data-hook=\"avp-badge\">Verified Purchase</span>"
+    "<div data-hook=\"reviewRichContentContainer\"><p>Love this set.</p>"
+    "<p>The bottles reduced colic from the first week.</p></div>"
+    "</div></li>"
+    '<li><div data-hook="review" id="R2">'
+    "<span class=\"a-profile-name\">Marcus T</span>"
+    "<i class=\"a-icon a-icon-star a-star-4\" data-hook=\"review-star-rating\">"
+    "<span class=\"a-icon-alt\">4 out of 5 stars</span></i>"
+    "<h5 data-hook=\"reviewTitle\">Good value</h5>"
+    "<span data-hook=\"review-date\">Reviewed in the United States on June 14, 2026</span>"
+    "<div data-hook=\"reviewRichContentContainer\"><p>Good value for the price.</p></div>"
+    "</div></li>"
+    "</ul></div>"
+)
 AMAZON_HTML = (
     "<html><head><title>Kindle (10th generation) : Amazon.com</title></head><body>"
     "<span id=\"productTitle\">Kindle (10th generation)</span>"
@@ -65,7 +104,10 @@ AMAZON_HTML = (
     "<li>Water resistance means it can handle a splash in the rain or a dip in the pool, so "
     "your reading never has to stop.</li>"
     "</ul>"
-    "<div id=\"hub\">Frequently bought together: add a case, a screen protector, and a "
+    + AMAZON_DESC
+    + AMAZON_DETAILS
+    + AMAZON_REVIEWS
+    + "<div id=\"hub\">Frequently bought together: add a case, a screen protector, and a "
     "reading light to complete the bundle and save on shipping at checkout.</div>"
     "</body></html>"
 )
@@ -83,6 +125,74 @@ assert fitted.signals["rating"] == "4.6 out of 5 stars", fitted.signals
 assert fitted.signals["seller"] == "Amazon.com", fitted.signals
 assert fitted.title == "Kindle (10th generation)", fitted.title
 assert ex.accept(fitted)
+# product description: both paragraphs, ordered between bullets and details
+assert "## Product description" in fitted.md, fitted.md[:400]
+assert "pairs a crisp 300 ppi display" in fitted.md, fitted.md[:400]
+assert "pocketable design makes it easy to take anywhere" in fitted.md, fitted.md[:400]
+assert fitted.signals["description"] > 0, fitted.signals
+# product details table renders after the description
+assert "## Product details" in fitted.md, fitted.md[:400]
+assert "Item model number B08WM3LJQB" in fitted.md, fitted.md[:400]
+order = [fitted.md.index(h) for h in ("About this item", "Product description", "Product details")]
+assert order == sorted(order), fitted.md
+# top reviews: heading, per-review fields, displayed order, after details
+assert "## Amazon reviews (up to 5)" in fitted.md, fitted.md[:600]
+assert "### 1. Angela B (5 out of 5 stars, verified purchase)" in fitted.md, fitted.md[:800]
+assert "### 2. Marcus T (4 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "**Perfect starter kit** — Reviewed in the United States on September 22, 2026" in fitted.md
+assert "reduced colic from the first week" in fitted.md  # second paragraph kept
+assert fitted.md.index("### 1. Angela B") < fitted.md.index("### 2. Marcus T")
+assert fitted.signals["reviews"] == 2, fitted.signals
+assert fitted.signals["reviews_reported"] == 12345, fitted.signals
+rev_order = [fitted.md.index(h) for h in ("Product details", "Amazon reviews")]
+assert rev_order == sorted(rev_order), fitted.md
+# limit: only the first review is kept
+with patch(
+    "wellisearch.crawl.extractors.amazon.get_settings",
+    return_value=SimpleNamespace(CRAWL_AMAZON_MAX_REVIEWS=1),
+):
+    limited_fit = ex.fit(rendered(AMAZON_HTML))
+assert limited_fit.signals["reviews"] == 1, limited_fit.signals
+assert "### 1. Angela B" in limited_fit.md
+assert "Marcus T" not in limited_fit.md
+# product page with no rendered cards -> heading + placeholder (no empty gap, no loop)
+no_reviews = ex.fit(rendered(AMAZON_HTML.replace(AMAZON_REVIEWS, "")))
+assert "## Amazon reviews (up to 5)" in no_reviews.md, no_reviews.md[:600]
+assert "No reviews available." in no_reviews.md, no_reviews.md[:600]
+assert no_reviews.signals["reviews"] == 0, no_reviews.signals
+# needs_refresh: stale (pre-feature) markdown re-crawls, current markdown doesn't
+amazon_url = "https://www.amazon.com/Kindle-10th-generation/dp/B08WM3LJQB"
+assert is_product_url(amazon_url)
+assert is_product_url("https://us.amazon.com/Kindle-10th-generation/dp/B08WM3LJQB?th=1")
+assert not is_product_url("https://www.amazon.com/gp/bestsellers/electronics/")
+assert not is_product_url("https://notamazon.com/dp/B08WM3LJQB")
+stale_md = "# Kindle (10th generation)\n\n**Price:** $129.99"
+assert amazon_needs_refresh(amazon_url, stale_md)
+assert not amazon_needs_refresh(amazon_url, fitted.md)
+assert not amazon_needs_refresh(amazon_url, no_reviews.md)  # placeholder heading counts
+with patch(
+    "wellisearch.crawl.extractors.amazon.get_settings",
+    return_value=SimpleNamespace(CRAWL_AMAZON_MAX_REVIEWS=8),
+):
+    assert amazon_needs_refresh(amazon_url, fitted.md)  # limit changed -> stale
+assert not amazon_needs_refresh("https://www.amazon.com/gp/bestsellers/electronics/", stale_md)
+# no #productDescription -> no empty Product description section
+no_desc = ex.fit(rendered(AMAZON_HTML.replace(AMAZON_DESC, "")))
+assert "Product description" not in no_desc.md, no_desc.md[:400]
+assert no_desc.signals["description"] == 0, no_desc.signals
+# #product-description wrapper (no inner id) still extracts the text
+fallback = ex.fit(
+    rendered(
+        "<html><body>"
+        "<span id=\"productTitle\">Kindle</span>"
+        "<div data-asin=\"x\"><span class=\"a-price\">"
+        "<span class=\"a-offscreen\">$129.99</span></span></div>"
+        "<ul id=\"feature-bullets\"><li>One bullet.</li></ul>"
+        "<div id=\"product-description\"><p>Fallback wrapper description text.</p></div>"
+        "</body></html>"
+    )
+)
+assert "Fallback wrapper description text" in fallback.md, fallback.md[:400]
 # no price element -> gate fails
 no_price = ex.fit(
     rendered(

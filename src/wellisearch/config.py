@@ -161,6 +161,7 @@ class Settings(BaseSettings):
     LOG_RETENTION_DAYS: int = 90  # event_log / crawl_log / search_log prune age
 
     # --- native crawl engine (replaces the Crawl4AI path; design §6) ---
+    CRAWL_AMAZON_MAX_REVIEWS: int = 5  # top reviews kept per amazon product page
     # CF (challenge) lane: a dedicated low-concurrency, high-timeout lane so a
     # Cloudflare/turnstile crawl never blocks the fast lane. The fast lane only
     # probes for a bot-wall and routes it here; the CF lane runs the full

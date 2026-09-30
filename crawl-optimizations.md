@@ -114,23 +114,23 @@ search-enqueue time.
 ### rokthejvm.com Title is "RSS"
 Title for [https://rockthejvm.com/articles/structured-concurrency-jdk-25] is "RSS". Something is off about how the title is being crawled.
 
-### Amazon product description missing from stored markdown (found 2026-09-30)
+### Amazon "no cards" review variant (found 2026-09-30)
 
-[https://www.amazon.com/Playtex-Baby-Anti-Colic-Pre-Sterilized-Breastfeeding/dp/B0CGKY5JM2]
-stores 1,371 chars — title, price + stock, rating, seller, "About this item" bullets —
-but the page's **Product description** section is absent. The live DOM has a
-`#productDescription` block (~966 chars of real product copy), and it is
-server-rendered: a plain impersonated GET returns it in the initial HTML (2.1 MB),
-so every tier captures it — `AmazonExtractor.fit` simply never reads that field
-(`extractors/amazon.py` has no description anchor). The "Product details" table is
-correctly absent here: this page genuinely carries none of the four known detail-
-section IDs and no matching tables. A+ content (`#aplus`) holds only nav links
-("Visit the Store"), nothing worth capturing.
+Amazon A/B-serves the reviews block two ways: most loads render the full
+review cards server-side (`div[data-hook="review"]` under
+`ul#localTopReviewsList`), but ~1/3 of loads — in both the http tier and a
+real browser — serve `#customerReviews` as a ~107KB shell with zero cards.
+Pages stored during a bad load carry `## Amazon reviews (up to N)` +
+"No reviews available." instead of review entries; `needs_refresh` sees the
+heading and treats the stored copy as current, so nothing re-crawls until the
+normal watchlist refresh lands a good load. Harmless but means a fraction of
+Amazon pages temporarily lack review text.
 
-Fix direction: add a `description` field to `AmazonExtractor`, anchored on
-`#productDescription` (fallback `#product-description`), rendered as a
-`## Product description` section between bullets and details; then recrawl indexed
-amazon pages so stored markdown picks it up.
+Fix direction if it ever bites: v2 could fall back to the page's own AJAX
+endpoint `/hz/reviews-render/ajax/medley-reviews/get/` (token lives in the
+`#cr-state-object` data-state) when the shell has no cards — a browser tier
+was measured and does **not** reliably help (~50% of headful loads also miss
+the cards).
 
 ---
 
@@ -261,3 +261,44 @@ pages (`eightfold.ai`, `/responsible-ai/`) came back `unchanged` (5.1s / 2.7s) �
 their stored content already matches what the browser tier produces, so no stale
 JSON blobs remain in the index. Note: the job page carries
 `<meta name="robots" content="noindex">` — irrelevant for a private index.
+
+### Amazon product description missing from stored markdown (found 2026-09-30, fixed 2026-09-30)
+
+Amazon product pages stored title/price/rating/seller/bullets but never the
+**Product description** section: `#productDescription` is server-rendered in the
+initial HTML (every tier captures it), yet `AmazonExtractor.fit` had no anchor
+for it. The "Product details" table was correctly absent on the example page —
+it genuinely carries none of the known detail-section IDs.
+
+Fixed: `_description()` helper in `extractors/amazon.py` anchored on
+`#productDescription` (fallback `#product-description`), rendered as a
+`## Product description` section between bullets and details, with a
+`description` signal. Tests extended in `tests/test_extractors.py` (content,
+section ordering, absent-description case, fallback id).
+
+Verified live (2026-09-30): rebuilt + redeployed the image, then recrawled all
+103 indexed Amazon pages (`recrawl --domain amazon.com`, new suffix-match flag) —
+88 updated, 15 unchanged (no description on those pages), 0 failed. The Playtex
+B0CGKY5JM2 page now stores 2,363 chars including the full product copy.
+
+### Amazon review texts missing from stored markdown (found 2026-09-30, fixed 2026-09-30)
+
+Amazon product pages stored the rating line (count only) but never the
+individual review texts. The full text is server-rendered in the initial HTML
+(measured up to ~6,700 chars per review), so no browser work was needed.
+
+Fixed in `extractors/amazon.py`: up to `CRAWL_AMAZON_MAX_REVIEWS` (default 5,
+new config knob) top reviews per product under a `## Amazon reviews (up to N)`
+heading — author, star rating, verified-purchase badge, title, date, and the
+full body of each `div[data-hook="review"]` card, plus the reported rating
+count as a `reviews_reported` signal. Product pages with no cards store a
+"No reviews available." placeholder so `needs_refresh` never loops; the
+heading encodes the limit, so raising the knob self-refreshes affected pages
+on the next pass (same pattern as the reddit comments heading). `fetch.py`
+OR's the new `amazon.needs_refresh` into the fetch-path refresh check.
+
+Verified live (2026-09-30): rebuilt + redeployed the image, then recrawled all
+103 indexed Amazon pages — 103 updated, 0 failed (~0.6 min). The Playtex
+B0CGKY5JM2 page stores 5 reviews with full bodies; the Apple MacBook Neo
+B0GR6F79MT page stores multi-thousand-character reviews. See the open
+"no cards" variant item for the known caveat.
