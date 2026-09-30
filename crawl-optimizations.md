@@ -3,6 +3,137 @@
 Working list of crawl problems found in the index. Fixed items are kept as
 short notes with their verification; open items stay at the bottom.
 
+## Open
+
+### Genuine bot-walled pages (bounded, no action)
+
+These came back `challenge detected` on the index-wide recrawl and are real
+walls, not false positives. They now sit in refresh backoff instead of failing
+every tick:
+
+- `https://s2f.kytta.dev/?text=https%3A%2F%2Fdev` (last error 09-10)
+- `https://www.spectrumbusiness.net/` — cookie/JS wall, browser tier also failed (09-08)
+- `https://xdaforums.com/m/wellingtonhq.9307974/about` — challenge on both tiers (09-08)
+
+Re-checked 2026-09-28: all three now refresh as `unchanged` at sub-second
+runtimes with `refresh_fail_streak = 0` — the wall content is stable, so it
+hashes unchanged and costs nothing per tick. Harmless operationally; the only
+caveat is that `fetch_page` on these URLs still returns the wall stub (250 /
+237 / 1,403 chars) until a tier ever gets through.
+
+### Queue-path (`search`) crawl errors — CF-lane timeout burn (diagnosed 2026-09-28, fix deferred)
+
+**Status: deferred (decided 2026-09-28).** The `is_botwall`/CF-routing change is
+held until the browseros neo layer lands. Direction agreed in the meantime: a
+404 is intended — the page does not exist and should be marked as such, not
+crawled; a 403 may be login-gated content (legitimately unviewable anonymously),
+so it shouldn't be treated as a solvable challenge either. The diagnosis below
+is kept for when this is picked up.
+
+Search-triggered queue crawls of hard-error pages (403/404/"request blocked")
+each burn ~303–305s. As of 2026-09-28: 37 errors in 18h across only 14 distinct
+URLs, heavily repeated (bakersplus ×6, several ×3) — a small set of stubborn
+pages re-enqueued by recurring searches, not a broad failure rate.
+
+Root cause (traced through `crawl/`): `is_botwall()` returns `"http_<status>"`
+for **any** status ≥ 400 (`botwall.py:76-77`). The fast-lane browser tier raises
+`ChallengeDetected` for *any* non-None result — including a bare 403/404 with no
+challenge content (`tiers/browser.py:107`) — so the worker routes the row to the
+CF lane and **resets `attempts = 0`** (`db.queue_route_to_cf`, `db.py:569-584`).
+In the CF lane, `_resolve_challenge`'s turnstile loop exits only when
+`is_botwall(...) is None` (`tiers/browser.py:150-158`) — which can never hold for
+status ≥ 400 (the captured status is immutable inside the loop), so it clicks a
+nonexistent widget until the full `CRAWL_CF_TIMEOUT_S = 300` budget expires. The
+loop's click result is discarded (`browser.py:156`), and `CRAWL_CHALLENGE_BUDGET_S`
+(40s) is dead on this path because the CF call site always passes 300.
+
+Aggravators: no backoff exists on the queue path (refresh backoff only fires for
+`trigger == "refresh"`, `worker.py:164-168`); each fast→CF routing grants a fresh
+3-attempt budget; and once a row is `failed`, the next search enqueues a brand-new
+row (`queue_enqueue` dedupes only pending/in-flight rows) — restarting the full
+~15-min cycle. With `CRAWL_CF_POOL_SIZE = 1`, each burn also serializes genuine
+challenge work behind it.
+
+Recommended fix: treat "hard HTTP error with no challenge content" as
+not-a-challenge at both decision points — (1) raise `ChallengeDetected` in the
+fast lane only when a real phrase/structural marker is present in the body, so a
+plain 403/404 fails fast (~5s) through normal retry handling; (2) skip or
+short-circuit the turnstile loop when no marker is detected (and/or break after N
+consecutive "no widget found" clicks). Keep `is_botwall`'s status ≥ 400 behavior
+for tier escalation in the engine — that part is cheap and correct. Genuine CF
+managed challenges virtually always render marker text, so regression risk is low;
+an empty-bodied 403 burns 300s today and fails anyway, so failing fast is strictly
+better. Follow-up hardening: queue-path backoff (mirror `refresh_fail_bump` onto
+`crawl_queue` failures) and stop resetting `attempts = 0` in `queue_route_to_cf`.
+Tests: `tests/test_lanes.py` (404 must not raise `ChallengeDetected`; CF loop with
+no marker returns without burning budget; guard case where a real challenge is
+served with 403 + "just a moment" still loops) and `tests/test_crawl_core.py` if a
+marker-only helper lands in `botwall.py`.
+
+### GitHub PR pages false-positive as loading stubs (found 2026-09-28)
+
+`github.com/<org>/<repo>/pull/*` pages fail both tiers with
+`http: escalate: browser; browser: escalate: browser` — 81 errors in 7 days,
+mostly open-webui/ArchiveBox PRs. The server HTML holds the real content
+(~400k chars) but trafilatura extracts only ~1,395 chars from GitHub's complex
+DOM (under `LOADING_STUB_MAX_CHARS = 1500`), and the markup contains a lazy-load
+placeholder `<include-fragment aria-label="Loading...">` that trips the gpupoet
+stub guard (`_is_loading_stub`) — so both tiers raise `Escalate("browser")` and
+the crawl errors out on a page that was fine all along.
+
+Fix direction: exclude attribute values (or at least `aria-label`) from the stub
+marker scan, or special-case `<include-fragment>`; alternatively a GitHub PR
+extractor that targets the rendered conversation/description containers.
+
+### Intermittent reddit walls on new posts (found 2026-09-28)
+
+New post URLs arriving via search intermittently hit `prove your humanity` +
+`net::ERR_HTTP_RESPONSE_CODE_REPEATED` in the browser tier, after which the
+stealth tier burns its full 120s budget — ~2 min per failed attempt. The wall is
+transient: the same URL re-crawls successfully minutes later in ~4s (verified on
+several URLs). Indexed posts are unaffected (recrawl verified 2026-09-27); this
+only hits fresh search-triggered crawls — 23 such errors on 09-27 alone.
+
+Fix direction: the queue-path backoff from the CF-lane item would bound the
+re-burn; separately, consider dropping `stealth` from the reddit policy when the
+browser tier already hit a wall (it adds nothing there, only 120s of latency).
+
+### Social login-wall URLs re-enqueued by search (found 2026-09-28)
+
+Provider search results include facebook.com posts/videos and instagram reels;
+each enqueue fails fast (~5–6s: `gate failed [0 chars]` or double escalation) but
+nothing remembers the failure, so recurring searches re-enqueue the same URLs —
+~370 errors in 7 days (same starkhealthdept1920 post crawled 3+ times). These can
+never succeed anonymously. Related fast-fail noise: youtube.com `http_429`
+rate-limiting (~38 in 7d) and tiktok short links returning empty bodies.
+
+Fix direction: same queue-path backoff as the CF-lane item (one mechanism covers
+all three), or a domain-level skip/short-circuit for known login-wall domains at
+search-enqueue time.
+
+### rokthejvm.com Title is "RSS"
+Title for [https://rockthejvm.com/articles/structured-concurrency-jdk-25] is "RSS". Something is off about how the title is being crawled.
+
+### Amazon product description missing from stored markdown (found 2026-09-30)
+
+[https://www.amazon.com/Playtex-Baby-Anti-Colic-Pre-Sterilized-Breastfeeding/dp/B0CGKY5JM2]
+stores 1,371 chars — title, price + stock, rating, seller, "About this item" bullets —
+but the page's **Product description** section is absent. The live DOM has a
+`#productDescription` block (~966 chars of real product copy), and it is
+server-rendered: a plain impersonated GET returns it in the initial HTML (2.1 MB),
+so every tier captures it — `AmazonExtractor.fit` simply never reads that field
+(`extractors/amazon.py` has no description anchor). The "Product details" table is
+correctly absent here: this page genuinely carries none of the four known detail-
+section IDs and no matching tables. A+ content (`#aplus`) holds only nav links
+("Visit the Store"), nothing worth capturing.
+
+Fix direction: add a `description` field to `AmazonExtractor`, anchored on
+`#productDescription` (fallback `#product-description`), rendered as a
+`## Product description` section between bullets and details; then recrawl indexed
+amazon pages so stored markdown picks it up.
+
+---
+
 ## Resolved
 
 ### Crawl failure flood — worker refresh retry loop (reported 2026-09-13, fixed 2026-09-17/18)
@@ -130,111 +261,3 @@ pages (`eightfold.ai`, `/responsible-ai/`) came back `unchanged` (5.1s / 2.7s) �
 their stored content already matches what the browser tier produces, so no stale
 JSON blobs remain in the index. Note: the job page carries
 `<meta name="robots" content="noindex">` — irrelevant for a private index.
-
-## Open
-
-### Genuine bot-walled pages (bounded, no action)
-
-These came back `challenge detected` on the index-wide recrawl and are real
-walls, not false positives. They now sit in refresh backoff instead of failing
-every tick:
-
-- `https://s2f.kytta.dev/?text=https%3A%2F%2Fdev` (last error 09-10)
-- `https://www.spectrumbusiness.net/` — cookie/JS wall, browser tier also failed (09-08)
-- `https://xdaforums.com/m/wellingtonhq.9307974/about` — challenge on both tiers (09-08)
-
-Re-checked 2026-09-28: all three now refresh as `unchanged` at sub-second
-runtimes with `refresh_fail_streak = 0` — the wall content is stable, so it
-hashes unchanged and costs nothing per tick. Harmless operationally; the only
-caveat is that `fetch_page` on these URLs still returns the wall stub (250 /
-237 / 1,403 chars) until a tier ever gets through.
-
-### Queue-path (`search`) crawl errors — CF-lane timeout burn (diagnosed 2026-09-28, fix deferred)
-
-**Status: deferred (decided 2026-09-28).** The `is_botwall`/CF-routing change is
-held until the browseros neo layer lands. Direction agreed in the meantime: a
-404 is intended — the page does not exist and should be marked as such, not
-crawled; a 403 may be login-gated content (legitimately unviewable anonymously),
-so it shouldn't be treated as a solvable challenge either. The diagnosis below
-is kept for when this is picked up.
-
-Search-triggered queue crawls of hard-error pages (403/404/"request blocked")
-each burn ~303–305s. As of 2026-09-28: 37 errors in 18h across only 14 distinct
-URLs, heavily repeated (bakersplus ×6, several ×3) — a small set of stubborn
-pages re-enqueued by recurring searches, not a broad failure rate.
-
-Root cause (traced through `crawl/`): `is_botwall()` returns `"http_<status>"`
-for **any** status ≥ 400 (`botwall.py:76-77`). The fast-lane browser tier raises
-`ChallengeDetected` for *any* non-None result — including a bare 403/404 with no
-challenge content (`tiers/browser.py:107`) — so the worker routes the row to the
-CF lane and **resets `attempts = 0`** (`db.queue_route_to_cf`, `db.py:569-584`).
-In the CF lane, `_resolve_challenge`'s turnstile loop exits only when
-`is_botwall(...) is None` (`tiers/browser.py:150-158`) — which can never hold for
-status ≥ 400 (the captured status is immutable inside the loop), so it clicks a
-nonexistent widget until the full `CRAWL_CF_TIMEOUT_S = 300` budget expires. The
-loop's click result is discarded (`browser.py:156`), and `CRAWL_CHALLENGE_BUDGET_S`
-(40s) is dead on this path because the CF call site always passes 300.
-
-Aggravators: no backoff exists on the queue path (refresh backoff only fires for
-`trigger == "refresh"`, `worker.py:164-168`); each fast→CF routing grants a fresh
-3-attempt budget; and once a row is `failed`, the next search enqueues a brand-new
-row (`queue_enqueue` dedupes only pending/in-flight rows) — restarting the full
-~15-min cycle. With `CRAWL_CF_POOL_SIZE = 1`, each burn also serializes genuine
-challenge work behind it.
-
-Recommended fix: treat "hard HTTP error with no challenge content" as
-not-a-challenge at both decision points — (1) raise `ChallengeDetected` in the
-fast lane only when a real phrase/structural marker is present in the body, so a
-plain 403/404 fails fast (~5s) through normal retry handling; (2) skip or
-short-circuit the turnstile loop when no marker is detected (and/or break after N
-consecutive "no widget found" clicks). Keep `is_botwall`'s status ≥ 400 behavior
-for tier escalation in the engine — that part is cheap and correct. Genuine CF
-managed challenges virtually always render marker text, so regression risk is low;
-an empty-bodied 403 burns 300s today and fails anyway, so failing fast is strictly
-better. Follow-up hardening: queue-path backoff (mirror `refresh_fail_bump` onto
-`crawl_queue` failures) and stop resetting `attempts = 0` in `queue_route_to_cf`.
-Tests: `tests/test_lanes.py` (404 must not raise `ChallengeDetected`; CF loop with
-no marker returns without burning budget; guard case where a real challenge is
-served with 403 + "just a moment" still loops) and `tests/test_crawl_core.py` if a
-marker-only helper lands in `botwall.py`.
-
-### GitHub PR pages false-positive as loading stubs (found 2026-09-28)
-
-`github.com/<org>/<repo>/pull/*` pages fail both tiers with
-`http: escalate: browser; browser: escalate: browser` — 81 errors in 7 days,
-mostly open-webui/ArchiveBox PRs. The server HTML holds the real content
-(~400k chars) but trafilatura extracts only ~1,395 chars from GitHub's complex
-DOM (under `LOADING_STUB_MAX_CHARS = 1500`), and the markup contains a lazy-load
-placeholder `<include-fragment aria-label="Loading...">` that trips the gpupoet
-stub guard (`_is_loading_stub`) — so both tiers raise `Escalate("browser")` and
-the crawl errors out on a page that was fine all along.
-
-Fix direction: exclude attribute values (or at least `aria-label`) from the stub
-marker scan, or special-case `<include-fragment>`; alternatively a GitHub PR
-extractor that targets the rendered conversation/description containers.
-
-### Intermittent reddit walls on new posts (found 2026-09-28)
-
-New post URLs arriving via search intermittently hit `prove your humanity` +
-`net::ERR_HTTP_RESPONSE_CODE_REPEATED` in the browser tier, after which the
-stealth tier burns its full 120s budget — ~2 min per failed attempt. The wall is
-transient: the same URL re-crawls successfully minutes later in ~4s (verified on
-several URLs). Indexed posts are unaffected (recrawl verified 2026-09-27); this
-only hits fresh search-triggered crawls — 23 such errors on 09-27 alone.
-
-Fix direction: the queue-path backoff from the CF-lane item would bound the
-re-burn; separately, consider dropping `stealth` from the reddit policy when the
-browser tier already hit a wall (it adds nothing there, only 120s of latency).
-
-### Social login-wall URLs re-enqueued by search (found 2026-09-28)
-
-Provider search results include facebook.com posts/videos and instagram reels;
-each enqueue fails fast (~5–6s: `gate failed [0 chars]` or double escalation) but
-nothing remembers the failure, so recurring searches re-enqueue the same URLs —
-~370 errors in 7 days (same starkhealthdept1920 post crawled 3+ times). These can
-never succeed anonymously. Related fast-fail noise: youtube.com `http_429`
-rate-limiting (~38 in 7d) and tiktok short links returning empty bodies.
-
-Fix direction: same queue-path backoff as the CF-lane item (one mechanism covers
-all three), or a domain-level skip/short-circuit for known login-wall domains at
-search-enqueue time.
