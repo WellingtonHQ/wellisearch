@@ -10,7 +10,7 @@ are needed:
 Scenarios pinned to the dataset below:
   Q1 on-topic query, a full set passes all gate conditions -> served local (zero credits)
   Q2 first misses, then one strong provider result is indexed -> repeat served local
-  Three moderate passing rows, no strong row               -> partial set served local
+  Three moderate passing rows, no strong row               -> partial set served local (per-domain cap trims the third example.com row)
   Marginal partial row passes ordinary gate but not strong gate -> provider
   Off-brand pages clear coverage+similarity but miss every distinctive word -> provider
   An on-brand page (distinctive_coverage 1.0) serves; off-brand companions dropped
@@ -311,7 +311,11 @@ async def _check_multiple_partial_serves(stub: StubGateway) -> None:
     try:
         out = await sw.search_web("multiple moderate matches", num_results=5)
         assert out["source"] == "local" and not out["degraded"], out
-        assert [r["url"] for r in out["results"]] == urls, out
+        # All three stub rows share example.com, so the per-domain cap
+        # (SEARCH_MAX_PER_DOMAIN) trims the third; equal similarity and score
+        # keep the input order stable.
+        expected = urls[: s.SEARCH_MAX_PER_DOMAIN]
+        assert [r["url"] for r in out["results"]] == expected, out
         assert stub.calls[calls_before:] == [], f"partial hit must avoid provider: {stub.calls}"
     finally:
         sw._search_local_index = original_search
