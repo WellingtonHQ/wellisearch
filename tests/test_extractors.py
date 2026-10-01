@@ -1,6 +1,7 @@
 """Unit tests: per-site extractors (fixture HTML, no network)."""
 from __future__ import annotations
 
+import json
 import re
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -25,6 +26,11 @@ from wellisearch.crawl.extractors.brave import (
 )
 from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
+from wellisearch.crawl.extractors.homedepot import (
+    HomeDepotExtractor,
+    is_product_url as hd_is_product_url,
+    needs_refresh as hd_needs_refresh,
+)
 from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
 from wellisearch.crawl.extractors.reddit import RedditExtractor, comment_request_url, needs_refresh
 from wellisearch.crawl.extractors.reuters import ReutersExtractor
@@ -149,7 +155,7 @@ assert rev_order == sorted(rev_order), fitted.md
 # limit: only the first review is kept
 with patch(
     "wellisearch.crawl.extractors.amazon.get_settings",
-    return_value=SimpleNamespace(CRAWL_AMAZON_MAX_REVIEWS=1),
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=1),
 ):
     limited_fit = ex.fit(rendered(AMAZON_HTML))
 assert limited_fit.signals["reviews"] == 1, limited_fit.signals
@@ -172,7 +178,7 @@ assert not amazon_needs_refresh(amazon_url, fitted.md)
 assert not amazon_needs_refresh(amazon_url, no_reviews.md)  # placeholder heading counts
 with patch(
     "wellisearch.crawl.extractors.amazon.get_settings",
-    return_value=SimpleNamespace(CRAWL_AMAZON_MAX_REVIEWS=8),
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=8),
 ):
     assert amazon_needs_refresh(amazon_url, fitted.md)  # limit changed -> stale
 assert not amazon_needs_refresh("https://www.amazon.com/gp/bestsellers/electronics/", stale_md)
@@ -215,6 +221,145 @@ no_bullets = ex.fit(
 )
 assert not ex.accept(no_bullets)
 print("OK amazon")
+
+# ---------------------------------------------------------------------------
+# Home Depot
+# ---------------------------------------------------------------------------
+
+HD_PRODUCT = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": "AquaTru Carafe AT100 Countertop Water Purifier",
+    "brand": {"@type": "Brand", "name": "AQUA TRU"},
+    "model": "90AT100AT01",
+    "sku": "1009919869",
+    "productID": "325993266",
+    "gtin13": "0874617003712",
+    "color": "White",
+    "width": "7.5 in",
+    "depth": "14 in",
+    "height": "13 in",
+    "weight": "9 lb",
+    "description": "AquaTru AT100 Carafe Water Purifier is tested and certified by IAPMO "
+    "according to NSF/ANSI standards to remove 83 contaminants, including lead, "
+    "chromium, copper, and chlorine.",
+    "aggregateRating": {"@type": "AggregateRating", "ratingValue": "4.6", "reviewCount": 2645},
+    "offers": {"@type": "Offer", "price": 375, "priceCurrency": "USD"},
+    "review": [
+        {
+            "@type": "Review",
+            "author": {"@type": "Person", "name": "IleanaR"},
+            "headline": "Better water, better sips",
+            "reviewBody": "I'm really happy with this reverse osmosis water filter!",
+            "reviewRating": {"@type": "Rating", "ratingValue": 5},
+        },
+        {
+            "@type": "Review",
+            "author": {"@type": "Person", "name": "EkaterinaD"},
+            "headline": "Excellent water purifier!",
+            "reviewBody": "Setting it up was quick and effortless right out of the box.",
+            "reviewRating": {"@type": "Rating", "ratingValue": 4},
+        },
+        {
+            "@type": "Review",
+            "author": "MillerM",
+            "headline": "AquaTru real review",
+            "reviewBody": "This is the best upgrade for my kitchen.",
+            "reviewRating": {"@type": "Rating", "ratingValue": 5},
+        },
+    ],
+}
+HD_HTML = (
+    "<html><head><title>AquaTru Carafe AT100 - The Home Depot</title></head><body>"
+    '<script type="application/ld+json">'
+    + json.dumps({"@context": "https://schema.org", "@type": "WebPage", "name": "AquaTru Carafe"})
+    + "</script>"
+    '<script type="application/ld+json">' + json.dumps(HD_PRODUCT) + "</script>"
+    "<h1>AquaTru Carafe AT100 Countertop Water Purifier</h1>"
+    "<div class=\"hub-price\">$ 375 . 00</div>"
+    "</body></html>"
+)
+ex = HomeDepotExtractor()
+fitted = ex.fit(rendered(HD_HTML))
+assert fitted.title == "AquaTru Carafe AT100 Countertop Water Purifier", fitted.title
+assert fitted.signals["price"] == "$375.00", fitted.signals
+assert "**Price:** $375.00" in fitted.md, fitted.md[:200]
+assert "**Rating:** 4.6 out of 5 stars 2,645 ratings" in fitted.md, fitted.md[:300]
+assert "**Brand:** AQUA TRU" in fitted.md, fitted.md[:300]
+assert fitted.signals["rating"] == "4.6 out of 5 stars", fitted.signals
+assert fitted.signals["reviews_reported"] == 2645, fitted.signals
+assert ex.accept(fitted)
+# description + spec fields from the JSON-LD node, in order before reviews
+assert "## Product description" in fitted.md, fitted.md[:400]
+assert "tested and certified by IAPMO" in fitted.md, fitted.md[:400]
+assert "## Product details" in fitted.md, fitted.md[:400]
+assert "Model: 90AT100AT01" in fitted.md, fitted.md[:400]
+assert "SKU: 1009919869" in fitted.md, fitted.md[:400]
+assert "Internet #: 325993266" in fitted.md, fitted.md[:400]
+assert "Weight: 9 lb" in fitted.md, fitted.md[:400]
+order = [fitted.md.index(h) for h in ("Product description", "Product details", "Home Depot reviews")]
+assert order == sorted(order), fitted.md
+# top reviews: heading, per-review fields, displayed order, after details
+assert "## Home Depot reviews (up to 5)" in fitted.md, fitted.md[:600]
+assert "### 1. IleanaR (5 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "**Better water, better sips**" in fitted.md, fitted.md[:800]
+assert "reverse osmosis water filter" in fitted.md
+assert "### 2. EkaterinaD (4 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "### 3. MillerM (5 out of 5 stars)" in fitted.md, fitted.md[:800]  # string author
+assert fitted.signals["reviews"] == 3, fitted.signals
+# limit: only the first review is kept
+with patch(
+    "wellisearch.crawl.extractors.homedepot.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=1),
+):
+    limited_fit = ex.fit(rendered(HD_HTML))
+assert limited_fit.signals["reviews"] == 1, limited_fit.signals
+assert "### 1. IleanaR" in limited_fit.md
+assert "EkaterinaD" not in limited_fit.md
+# no review array -> heading + placeholder (no empty gap, no loop)
+HD_NO_REVIEWS = {k: v for k, v in HD_PRODUCT.items() if k != "review"}
+no_reviews_fit = ex.fit(
+    rendered(HD_HTML.replace(json.dumps(HD_PRODUCT), json.dumps(HD_NO_REVIEWS)))
+)
+assert "## Home Depot reviews (up to 5)" in no_reviews_fit.md, no_reviews_fit.md[:600]
+assert "No reviews available." in no_reviews_fit.md, no_reviews_fit.md[:600]
+assert no_reviews_fit.signals["reviews"] == 0, no_reviews_fit.signals
+assert ex.accept(no_reviews_fit)
+# @graph wrapper: the Product node is still found
+graph_html = HD_HTML.replace(
+    json.dumps(HD_PRODUCT),
+    json.dumps({"@context": "https://schema.org", "@graph": [HD_PRODUCT]}),
+)
+graph_fit = ex.fit(rendered(graph_html))
+assert graph_fit.signals["price"] == "$375.00", graph_fit.signals
+assert ex.accept(graph_fit)
+# no offers (call-for-pricing render) -> gate fails
+no_offers = {k: v for k, v in HD_PRODUCT.items() if k != "offers"}
+no_offers_fit = ex.fit(
+    rendered(HD_HTML.replace(json.dumps(HD_PRODUCT), json.dumps(no_offers)))
+)
+assert not ex.accept(no_offers_fit)
+# no Product node (Akamai challenge page / degraded render) -> gate fails
+wall = ex.fit(rendered("<html><body><div>Powered and protected by</div></body></html>"))
+assert not ex.accept(wall)
+# needs_refresh: stale (pre-feature) markdown re-crawls, current markdown doesn't
+hd_url = "https://www.homedepot.com/p/AQUA-TRU-Carafe/325993266"
+assert hd_is_product_url(hd_url)
+assert hd_is_product_url(hd_url + "?MERCH=REC-_-reorder")
+assert not hd_is_product_url("https://www.homedepot.com/p/reviews/AQUA-TRU-Carafe/325993266/1")
+assert not hd_is_product_url("https://www.homedepot.com/b/Appliances-Dishwashers/GE/N-5yc1vZ")
+assert not hd_is_product_url("https://notdepot.com/p/AQUA-TRU-Carafe/325993266")
+stale_md = "# AquaTru Carafe AT100\n\n**Price:** $375.00"
+assert hd_needs_refresh(hd_url, stale_md)
+assert not hd_needs_refresh(hd_url, fitted.md)
+assert not hd_needs_refresh(hd_url, no_reviews_fit.md)  # placeholder heading counts
+with patch(
+    "wellisearch.crawl.extractors.homedepot.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=8),
+):
+    assert hd_needs_refresh(hd_url, fitted.md)  # limit changed -> stale
+assert not hd_needs_refresh("https://www.homedepot.com/p/reviews/AQUA-TRU-Carafe/325993266/1", stale_md)
+print("OK homedepot")
 
 # ---------------------------------------------------------------------------
 # Walmart
@@ -680,6 +825,7 @@ print("OK generic loading stub")
 # ---------------------------------------------------------------------------
 
 assert for_url("https://www.amazon.com/dp/B08WM3LJQB").name == "amazon"
+assert for_url("https://www.homedepot.com/p/AQUA-TRU-Carafe/325993266").name == "homedepot"
 assert for_url("https://boards.greenhouse.io/acme/1234567").name == "greenhouse"
 assert for_url(
     "https://careers.ascensus.com/jobs/principal-software-engineer?source=linkedin_posting"

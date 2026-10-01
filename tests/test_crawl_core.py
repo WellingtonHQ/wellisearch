@@ -26,6 +26,9 @@ assert match("https://www.nytimes.com/2026/01/01/tech/x.html").name == "nytimes"
 reddit_policy = match("https://www.reddit.com/r/Appliances/comments/1s8pw99/dishwashers_at_costco/")
 assert reddit_policy.tiers[0] == "browser"
 assert "network_idle" in reddit_policy.waits
+hd_policy = match("https://www.homedepot.com/p/AQUA-TRU-Carafe/325993266")
+assert hd_policy.name == "homedepot"
+assert hd_policy.tiers[0] == "http"  # JSON-LD is server-rendered; http tier first
 assert match("https://example.com/x").name == "default"
 assert match("https://notamazon.com/x").name == "default"  # suffix match must not false-positive
 print("OK policy")
@@ -246,6 +249,34 @@ tiers.register(listing_tier)
 listing_result = asyncio.run(engine.crawl("https://www.reddit.com/r/Appliances/"))
 assert listing_result.ok
 assert listing_result.flags.get("extractor") == "generic"
+
+
+class HdCategoryHttpTier:
+    """Fake http tier returning a Home Depot category page (no Product JSON-LD)."""
+
+    name = "http"
+
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Return a category listing with enough text to clear the generic gate."""
+        html = (
+            "<html><head><title>GE - Dishwashers</title></head><body>"
+            "<p>" + "GE dishwashers in stainless steel and black finishes, with QuadWash "
+            "action and TrueSteam sanitation for a spotless interior every cycle. " * 3 + "</p>"
+            "</body></html>"
+        )
+        return Rendered(html=html, title="GE - Dishwashers", status=200, ms=1, engine="fake")
+
+
+hd_cat_tier = HdCategoryHttpTier()
+tiers._REGISTRY.clear()
+tiers.register(hd_cat_tier)
+hd_cat_result = asyncio.run(engine.crawl("https://www.homedepot.com/b/Appliances-Dishwashers/GE/N-5yc1vZ"))
+assert hd_cat_result.ok
+assert hd_cat_result.flags.get("extractor") == "generic"  # non-product page -> generic path
 
 
 class BotwallHttpTier:

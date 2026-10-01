@@ -35,6 +35,12 @@ POLICY: dict[str, Policy] = {
     ),
     # Client-rendered careers app: server HTML is a config-JSON shell; job content arrives via JS + API.
     "eightfold.ai": Policy("eightfold", ("browser",), ("settle", "network_idle"), (), "shared"),
+    # JSON-LD-driven product pages: everything (price, specs, review bodies) is in the
+    # server HTML; Akamai walls are intermittent, so the http tier lands a real page
+    # whenever the wall lets a request through.
+    "homedepot.com": Policy(
+        "homedepot", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
+    ),
     "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     # Post comments arrive after hydration; the HTTP response contains only the post.
     "reddit.com": Policy("reddit", ("browser", "stealth"), ("settle", "network_idle"), (), "shared"),

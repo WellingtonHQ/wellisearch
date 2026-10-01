@@ -37,7 +37,7 @@ class AmazonExtractor:
     def fit(self, r: Rendered) -> Fitted:
         """Fit an Amazon product page into structured markdown."""
         soup = _soup(r.html)
-        limit = max(1, get_settings().CRAWL_AMAZON_MAX_REVIEWS)
+        limit = max(1, get_settings().CRAWL_MAX_REVIEWS)
         title = _title(soup)
         price = _price(soup)
         stock = _stock(soup)
@@ -111,7 +111,7 @@ def needs_refresh(url: str, md: str) -> bool:
     """Recrawl product pages stored before reviews were extracted (or at an older limit)."""
     if not is_product_url(url):
         return False
-    limit = max(1, get_settings().CRAWL_AMAZON_MAX_REVIEWS)
+    limit = max(1, get_settings().CRAWL_MAX_REVIEWS)
     return _reviews_heading(limit) not in md
 
 

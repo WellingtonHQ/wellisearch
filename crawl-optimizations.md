@@ -132,35 +132,6 @@ endpoint `/hz/reviews-render/ajax/medley-reviews/get/` (token lives in the
 was measured and does **not** reliably help (~50% of headful loads also miss
 the cards).
 
-### Home Depot product pages stored as thin nav stubs (found 2026-09-30)
-
-Home Depot product pages (e.g. the AQUA TRU Carafe AT100,
-`/p/…/325993266`) store only ~179 chars of header/nav text ("Home Depot
-Credit Cards … Best Seller") and 1 chunk. The generic path is blind to
-Home Depot's markup: trafilatura extracts a thin slice from the ~780 KB
-server HTML, and the 100-char generic gate accepts the stub.
-
-Two facts shape the fix:
-
-- The server HTML (no browser needed) carries the full **Product
-  JSON-LD**: name, `offers.price`, `aggregateRating` (4.6 / 2,645),
-  `description`, model/sku/gtin/dimensions, and a `review` array of up to
-  10 full review bodies — verified by a same-origin fetch from a real
-  browser.
-- Akamai bot management intermittently walls the container egress: a
-  200 + 2.5 KB sensor-challenge page or a bare 403, on both the http and
-  browser tiers. The stored stub came from a lucky pass; the challenge
-  page fails the generic gate (32 chars), so nothing bad is stored — a
-  blocked attempt just burns a tier escalation until a pass lands.
-
-Fix direction: a `HomeDepotExtractor` anchored on the Product JSON-LD
-(title, price, rating, description, spec fields, top reviews under a
-`## Home Depot reviews (up to N)` heading so the stored stubs
-self-refresh), a `homedepot.com` policy entry, an engine fallback to the
-generic extractor for non-product pages (category `/b/` and `/p/reviews/`
-pages must keep working), and the review cap generalized from
-`CRAWL_AMAZON_MAX_REVIEWS` to one universal product-crawler knob.
-
 ---
 
 ## Resolved
@@ -317,7 +288,8 @@ individual review texts. The full text is server-rendered in the initial HTML
 (measured up to ~6,700 chars per review), so no browser work was needed.
 
 Fixed in `extractors/amazon.py`: up to `CRAWL_AMAZON_MAX_REVIEWS` (default 5,
-new config knob) top reviews per product under a `## Amazon reviews (up to N)`
+new config knob — later generalized to the universal `CRAWL_MAX_REVIEWS`)
+top reviews per product under a `## Amazon reviews (up to N)`
 heading — author, star rating, verified-purchase badge, title, date, and the
 full body of each `div[data-hook="review"]` card, plus the reported rating
 count as a `reviews_reported` signal. Product pages with no cards store a
@@ -331,3 +303,37 @@ Verified live (2026-09-30): rebuilt + redeployed the image, then recrawled all
 B0CGKY5JM2 page stores 5 reviews with full bodies; the Apple MacBook Neo
 B0GR6F79MT page stores multi-thousand-character reviews. See the open
 "no cards" variant item for the known caveat.
+
+### Home Depot product pages stored as thin nav stubs (found 2026-09-30, fixed 2026-10-01)
+
+Home Depot product pages (e.g. the AQUA TRU Carafe AT100,
+`/p/…/325993266`) stored only ~179 chars of header/nav text and 1 chunk:
+trafilatura extracts a thin slice from the ~780 KB server HTML and the
+generic gate accepted the stub. The server HTML carries the full **Product
+JSON-LD** — name, `offers.price`, `aggregateRating`, `description`,
+model/sku/gtin/dimensions, and a `review` array of up to 10 full review
+bodies — so no browser tier was needed.
+
+Fixed: new `HomeDepotExtractor` (`crawl/extractors/homedepot.py`) anchored on
+the Product JSON-LD node, rendering title, `**Price:**`, `**Rating:**`,
+`**Brand:**`, `## Product description`, `## Product details` (labeled spec
+fields), and the top `CRAWL_MAX_REVIEWS` reviews under a
+`## Home Depot reviews (up to N)` heading (or a "No reviews available."
+placeholder). The gate requires title + price, so Akamai challenge pages and
+degraded renders are rejected instead of stored. New `homedepot.com` policy
+(`http` first, like amazon); non-product URLs (category `/b/`,
+`/p/reviews/`) fall back to the generic extractor in `engine.py`, so those
+pages keep working. `CRAWL_AMAZON_MAX_REVIEWS` was generalized to the
+universal product-crawler knob `CRAWL_MAX_REVIEWS` (default 5), now used by
+both amazon and homedepot extractors. `fetch.py` OR's `homedepot` into the
+refresh chain so the stale 179-char stubs self-refresh.
+
+Verified live (2026-10-01): rebuilt + redeployed the image, then recrawled
+all 38 indexed homedepot.com pages (two passes — Akamai walls the container
+egress intermittently). Both AQUA TRU URL variants now store ~3 KB each:
+price ($375.00), rating (4.6 / 2,6xx ratings), full description, spec table,
+and 5 full review bodies. 5 of 11 product pages passed through; the rest
+came back `challenge detected` on every attempt (the gate correctly rejects
+the challenge page, so nothing bad is stored — they'll fill in as watchlist
+refreshes land a pass or the CF lane solves one, as it did for the canonical
+AQUA TRU URL).
