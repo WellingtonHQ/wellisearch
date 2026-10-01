@@ -37,6 +37,12 @@ async def crawl(url: str) -> CrawlResult:
         else:
             p = DEFAULT_POLICY
             ex = extractors.GenericExtractor()
+    if p.name == "homedepot":
+        # Only product detail pages carry the JSON-LD Product node; category and
+        # review pages keep the standard generic path.
+        if not extractors.homedepot.is_product_url(url):
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
     attempts: list[dict] = []
     best: Fitted | None = None
     start = time.monotonic()

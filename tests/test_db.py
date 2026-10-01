@@ -30,6 +30,7 @@ async def main() -> None:
     await _check_provider_order()
     await _check_app_state()
     await _check_event_log()
+    await _check_merge_dupes()
     await _cleanup()
     await db.close()
     print("ALL DB INTEGRATION TESTS PASSED")
@@ -38,6 +39,68 @@ async def main() -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _check_merge_dupes() -> None:
+    """Verify page/chunk renames commit together and FK failure rolls back the merge."""
+    from unittest.mock import patch
+
+    from psycopg import AsyncConnection
+
+    from wellisearch import merge_dupes
+
+    canonical = "https://example.com/merge-review"
+    variant = canonical + "?utm_source=review"
+    await db.execute(
+        "INSERT INTO pages (url, fetch_count, fit_markdown) VALUES (%s, 1, 'Old'), (%s, 5, 'New')",
+        (canonical, variant),
+    )
+    await db.execute(
+        "INSERT INTO chunks (url, seq, text, last_crawled) "
+        "VALUES (%s, 0, 'Old', now()), (%s, 0, 'New', now())",
+        (canonical, variant),
+    )
+    groups = {canonical: [
+        {"url": canonical, "fetch_count": 1, "md_len": 3},
+        {"url": variant, "fetch_count": 5, "md_len": 3},
+    ]}
+    original = merge_dupes._merge_group
+
+    async def orphan_after_merge(
+        conn: AsyncConnection,
+        url: str,
+        group: list[dict],
+    ) -> tuple[int, int]:
+        """Inject an orphan while the FK is dropped to force validation failure."""
+        result = await original(conn, url, group)
+        await conn.execute(
+            "INSERT INTO chunks (url, seq, text, last_crawled) VALUES (%s, 0, 'Orphan', now())",
+            (canonical + "-orphan",),
+        )
+        return result
+
+    with patch.object(merge_dupes, "_merge_group", orphan_after_merge):
+        try:
+            await merge_dupes._merge_groups(groups)
+        except Exception as exc:
+            assert "foreign key" in str(exc).lower(), f"unexpected failure: {exc}"
+        else:
+            raise AssertionError("restoring the FK must reject orphan chunks")
+    rows = await db.fetch_all(
+        "SELECT url, fit_markdown FROM pages WHERE url IN (%s, %s) ORDER BY url",
+        (canonical, variant),
+    )
+    assert rows == [
+        {"url": canonical, "fit_markdown": "Old"},
+        {"url": variant, "fit_markdown": "New"},
+    ], f"failed merge must roll back page mutations: {rows}"
+    assert await merge_dupes._merge_groups(groups) == (1, 1)
+    chunks = await db.fetch_all("SELECT url, text FROM chunks WHERE url = %s", (canonical,))
+    assert chunks == [{"url": canonical, "text": "New"}], f"survivor chunks must move: {chunks}"
+    assert await db.page_get(variant) is None, "variant page must be removed"
+    await db.execute("DELETE FROM pages WHERE url = %s", (canonical,))
+    assert not await db.fetch_all("SELECT url FROM chunks WHERE url = %s", (canonical,))
+    print("OK merge_dupes (atomic rollback, canonical rename, restored cascade)")
+
 
 async def _clean_slate() -> None:
     """Delete this test's URLs (DB persists between runs)."""
@@ -101,10 +164,47 @@ async def _store_page_roundtrip() -> None:
     print("store_page:", status, "chunks:", chunks)
     assert status == "ok" and chunks >= 2
 
-    # unchanged short-circuit
-    status, chunks = await store_page("https://example.com/pgvector-intro", md, title="x")
+    # unchanged short-circuit. The title feeds the chunk source (H1 prepend),
+    # so it must match or the digest changes and a re-embed happens instead.
+    status, chunks = await store_page("https://example.com/pgvector-intro", md, title="pgvector introduction")
     assert status == "unchanged" and chunks == 0
     print("OK unchanged short-circuit")
+
+    # re-embed without a fetch (crawled=False): identical content is a true
+    # no-op and must not stamp crawl-time values
+    before = await db.fetch_one(
+        "SELECT last_crawled, crawl_count, last_status FROM pages WHERE url = %s",
+        ("https://example.com/pgvector-intro",),
+    )
+    status, chunks = await store_page(
+        "https://example.com/pgvector-intro", md, title="pgvector introduction", crawled=False
+    )
+    assert status == "unchanged" and chunks == 0
+    after = await db.fetch_one(
+        "SELECT last_crawled, crawl_count, last_status FROM pages WHERE url = %s",
+        ("https://example.com/pgvector-intro",),
+    )
+    assert after == before, (before, after)
+    print("OK re-embed no-op leaves crawl-time values untouched")
+
+    # re-embed of new content (model-change path): rewrites chunks but still
+    # must not stamp crawl-time values; chunks mirror the page's last crawl
+    status, chunks = await store_page(
+        "https://example.com/pgvector-intro", md + "\n## extra\nextra text.",
+        title="pgvector introduction", crawled=False,
+    )
+    assert status == "ok" and chunks >= 2
+    after2 = await db.fetch_one(
+        "SELECT last_crawled, crawl_count, last_status FROM pages WHERE url = %s",
+        ("https://example.com/pgvector-intro",),
+    )
+    assert after2 == before, (before, after2)
+    chunk_row = await db.fetch_one(
+        "SELECT last_crawled FROM chunks WHERE url = %s ORDER BY seq LIMIT 1",
+        ("https://example.com/pgvector-intro",),
+    )
+    assert chunk_row["last_crawled"] == before["last_crawled"], (before, chunk_row)
+    print("OK re-embed of new content leaves crawl-time values untouched")
 
 
 async def _check_local_hit() -> None:
@@ -232,4 +332,3 @@ async def _cleanup() -> None:
 
 
 asyncio.run(main())
-

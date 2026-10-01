@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Search · wellisearch</title>
   <link rel="stylesheet" href="/search.css">
+  <script src="/markdown.js" defer></script>
   <script src="/search.js" defer></script>
 </head>
 <body>
@@ -78,7 +79,7 @@
       <div class="dialog-body">
         <div id="fetch-status" class="status" role="status" aria-live="polite"></div>
         <div id="content-meta" class="content-meta"></div>
-        <pre id="content-markdown" hidden></pre>
+        <div id="content-markdown" class="markdown-body" hidden></div>
         <button id="retry-fetch" type="button" hidden>Try again</button>
       </div>
     </div>

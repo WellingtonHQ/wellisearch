@@ -153,19 +153,22 @@ CREATE TABLE IF NOT EXISTS app_state (
 );
 
 -- ===========================================================================
--- fn_search_local(query, qvec, k) — the hybrid ranking core: FTS + trigram +
--- vector legs (each top-50), RRF fusion with a per-page top-3 cap, then
--- prominence/freshness adjustments; disabled pages filtered out. Each row
--- also carries `coverage` (query-word fraction in title+body),
--- `distinctive_coverage` (rare query-word fraction), and `similarity`
--- (best-chunk cosine to the query vector) — the local-hit gate (search_web.py).
+-- fn_search_local(query, qvec, k, vec_limit) — the hybrid ranking core: FTS +
+-- trigram legs (each top-50) + vector leg (top-`vec_limit`, default 50), RRF
+-- fusion with a per-page top-3 cap, then prominence/freshness adjustments;
+-- disabled pages filtered out. Each row also carries `coverage` (query-word
+-- fraction in title+body), `distinctive_coverage` (rare query-word fraction),
+-- and `similarity` (best-chunk cosine to the query vector) — the local-hit
+-- gate (search_web.py). A wider vector leg lets semantically close but
+-- lexically thin pages enter the fusion at all.
 -- Design, formulas, and calibration:
 -- docs/ranking.md (trigram leg: docs/trigram-rewrite.md).
 -- ===========================================================================
 -- DROP first: CREATE OR REPLACE cannot change the return type (adding a
 -- column), and nothing references this function besides the app at runtime.
 DROP FUNCTION IF EXISTS fn_search_local(TEXT, VECTOR(384), INT);
-CREATE FUNCTION fn_search_local(query TEXT, qvec VECTOR(384), k INT)
+DROP FUNCTION IF EXISTS fn_search_local(TEXT, VECTOR(384), INT, INT);
+CREATE FUNCTION fn_search_local(query TEXT, qvec VECTOR(384), k INT, vec_limit INT DEFAULT 50)
 RETURNS TABLE (
   url TEXT,
   title TEXT,
@@ -264,11 +267,13 @@ AS $$
       ORDER BY cid
     ) cand
   ),
-  -- Vector leg: inner top-50 via ORDER BY + LIMIT is the canonical pgvector
-  -- shape — the planner streams from the HNSW index (chunks_vec_hnsw) and
-  -- stops after 50 rows. Without the LIMIT the planner cannot early-stop and
-  -- falls back to a full seq scan + sort over every embedding (~10-30 s at
-  -- 1.4M chunks), which dominated search latency.
+  -- Vector leg: inner top-`vec_limit` via ORDER BY + LIMIT is the canonical
+  -- pgvector shape — the planner streams from the HNSW index (chunks_vec_hnsw)
+  -- and stops after `vec_limit` rows. Without the LIMIT the planner cannot
+  -- early-stop and falls back to a full seq scan + sort over every embedding
+  -- (~10-30 s at 1.4M chunks), which dominated search latency. The app passes
+  -- SEARCH_VECTOR_LEG_LIMIT (default 200) so semantically close but lexically
+  -- thin pages enter the fusion; rows past rank 50 earn small RRF credit only.
   vec AS (
     SELECT t.cid, t.url, ROW_NUMBER() OVER (ORDER BY t.d) AS rnk
     FROM (
@@ -276,7 +281,7 @@ AS $$
       FROM chunks c
       WHERE c.embedding IS NOT NULL AND qvec IS NOT NULL
       ORDER BY c.embedding <=> qvec
-      LIMIT 50
+      LIMIT COALESCE(vec_limit, 50)
     ) t
   ),
   leg AS (
@@ -284,7 +289,7 @@ AS $$
     UNION ALL
     SELECT 'trg' AS leg, cid, url, rnk FROM trg WHERE rnk <= 50
     UNION ALL
-    SELECT 'vec' AS leg, cid, url, rnk FROM vec WHERE rnk <= 50
+    SELECT 'vec' AS leg, cid, url, rnk FROM vec WHERE rnk <= COALESCE(vec_limit, 50)
   ),
   per AS (
     SELECT leg, cid, url, rnk,

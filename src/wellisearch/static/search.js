@@ -219,8 +219,13 @@ async function loadContent(result) {
       `${data.chars ?? data.markdown?.length ?? 0} characters`,
       data.truncated ? "truncated" : null,
     ].filter(Boolean).join(" · ");
-    $("#content-markdown").textContent = data.markdown || "(No Markdown content returned.)";
-    $("#content-markdown").hidden = false;
+    const body = $("#content-markdown");
+    if (data.markdown) {
+      body.innerHTML = renderMarkdown(data.markdown);
+    } else {
+      body.textContent = "(No Markdown content returned.)";
+    }
+    body.hidden = false;
   } catch (error) {
     if (sequence !== fetchSequence || error.name === "AbortError") return;
     if (error.status === 401) {

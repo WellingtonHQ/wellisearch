@@ -29,6 +29,7 @@ from .providers import get_gateway
 from .search_web import render_search_markdown, search_web as _search_web
 from .serialize import resolve_format, to_json
 from .truncation import STRATEGIES
+from .urlnorm import normalize_url
 from .worker import crawl_url
 
 TREND_WINDOWS = {"24h": 1, "7d": 7, "30d": 30}  # index_stats search-trend windows (label → days)
@@ -299,7 +300,7 @@ def _tool_seed_url(server: MCPServer) -> None:
         row = await db.fetch_one(
             "SELECT status, attempts, enqueued_at FROM crawl_queue WHERE url = %s "
             "ORDER BY enqueued_at DESC LIMIT 1",
-            (url,),
+            (normalize_url(url),),
         )
         pos = await db.fetch_one(
             "SELECT count(*) AS ahead FROM crawl_queue WHERE status = 'pending' "
@@ -333,14 +334,15 @@ def _tool_refresh_page(server: MCPServer) -> None:
         try:
             r = await crawl_url(url, trigger="manual")
         except Exception as e:
-            page = await db.page_get(url)
+            # crawl_url stores under the canonical URL (urlnorm).
+            page = await db.page_get(normalize_url(url))
             return _clean({
                 "ok": False,
                 "url": url,
                 "error": str(e),
                 "last_status": (page or {}).get("last_status"),
             })
-        page = await db.page_get(url)
+        page = await db.page_get(normalize_url(url))
         return _clean({
             "ok": True,
             "url": url,
