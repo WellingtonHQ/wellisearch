@@ -132,6 +132,35 @@ endpoint `/hz/reviews-render/ajax/medley-reviews/get/` (token lives in the
 was measured and does **not** reliably help (~50% of headful loads also miss
 the cards).
 
+### Home Depot product pages stored as thin nav stubs (found 2026-09-30)
+
+Home Depot product pages (e.g. the AQUA TRU Carafe AT100,
+`/p/…/325993266`) store only ~179 chars of header/nav text ("Home Depot
+Credit Cards … Best Seller") and 1 chunk. The generic path is blind to
+Home Depot's markup: trafilatura extracts a thin slice from the ~780 KB
+server HTML, and the 100-char generic gate accepts the stub.
+
+Two facts shape the fix:
+
+- The server HTML (no browser needed) carries the full **Product
+  JSON-LD**: name, `offers.price`, `aggregateRating` (4.6 / 2,645),
+  `description`, model/sku/gtin/dimensions, and a `review` array of up to
+  10 full review bodies — verified by a same-origin fetch from a real
+  browser.
+- Akamai bot management intermittently walls the container egress: a
+  200 + 2.5 KB sensor-challenge page or a bare 403, on both the http and
+  browser tiers. The stored stub came from a lucky pass; the challenge
+  page fails the generic gate (32 chars), so nothing bad is stored — a
+  blocked attempt just burns a tier escalation until a pass lands.
+
+Fix direction: a `HomeDepotExtractor` anchored on the Product JSON-LD
+(title, price, rating, description, spec fields, top reviews under a
+`## Home Depot reviews (up to N)` heading so the stored stubs
+self-refresh), a `homedepot.com` policy entry, an engine fallback to the
+generic extractor for non-product pages (category `/b/` and `/p/reviews/`
+pages must keep working), and the review cap generalized from
+`CRAWL_AMAZON_MAX_REVIEWS` to one universal product-crawler knob.
+
 ---
 
 ## Resolved
