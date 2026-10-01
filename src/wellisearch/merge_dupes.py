@@ -21,6 +21,8 @@ import asyncio
 import logging
 from typing import Any
 
+from psycopg import AsyncConnection
+
 from .db import db
 from .urlnorm import normalize_url
 
@@ -60,62 +62,75 @@ async def _run(dry_run: bool) -> None:
         groups: dict[str, list[dict[str, Any]]] = {}
         for r in rows:
             groups.setdefault(normalize_url(r["url"]), []).append(r)
+        pending = {
+            canonical: group for canonical, group in sorted(groups.items())
+            if len(group) > 1 or group[0]["url"] != canonical
+        }
 
-        merged_groups = 0
         total_renamed = 0
         total_deleted = 0
         if dry_run:
-            for canonical, group in sorted(groups.items()):
-                if len(group) == 1 and group[0]["url"] == canonical:
-                    continue
-                keep = _survivor(group)
-                merged_groups += 1
-                log.info(
-                    "would merge %d variants -> %s (keep fetch_count=%d)",
-                    len(group), canonical, keep["fetch_count"],
-                )
+            _report_groups(pending)
         else:
-            # One transaction for the whole run: drop the FK so page/chunk
-            # renames can move both sides of it; re-adding validates every
-            # chunk and rolls back everything if an orphan slipped in.
-            async with db.pool.connection() as conn:
-                await conn.execute(f"ALTER TABLE chunks DROP CONSTRAINT IF EXISTS {CHUNKS_FK_NAME}")
-                for canonical, group in sorted(groups.items()):
-                    if len(group) == 1 and group[0]["url"] == canonical:
-                        continue
-                    keep = _survivor(group)
-                    drop = [r["url"] for r in group if r["url"] != keep["url"]]
-                    merged_groups += 1
-                    log.info(
-                        "merged %d variants -> %s (keep fetch_count=%d)",
-                        len(group), canonical, keep["fetch_count"],
-                    )
-                    for u in drop:
-                        # explicit chunk delete: the FK is dropped for this
-                        # transaction, so ON DELETE CASCADE is not in effect
-                        await conn.execute("DELETE FROM chunks WHERE url = %s", (u,))
-                        await conn.execute("DELETE FROM pages WHERE url = %s", (u,))
-                        total_deleted += 1
-                    if keep["url"] != canonical:
-                        await conn.execute(
-                            "UPDATE chunks SET url = %s WHERE url = %s", (canonical, keep["url"])
-                        )
-                        await conn.execute(
-                            "UPDATE pages SET url = %s WHERE url = %s", (canonical, keep["url"])
-                        )
-                        total_renamed += 1
-                await conn.execute(
-                    f"ALTER TABLE chunks ADD CONSTRAINT {CHUNKS_FK_NAME} "
-                    "FOREIGN KEY (url) REFERENCES pages(url) ON DELETE CASCADE"
-                )
+            total_renamed, total_deleted = await _merge_groups(pending)
 
         print(
             f"{len(rows)} pages in {len(groups)} canonical groups; "
-            f"{'would merge' if dry_run else 'merged'} {merged_groups} groups "
+            f"{'would merge' if dry_run else 'merged'} {len(pending)} groups "
             f"(renamed={total_renamed} deleted={total_deleted})"
         )
     finally:
         await db.close()
+
+
+def _report_groups(groups: dict[str, list[dict[str, Any]]]) -> None:
+    """Log the survivor of each pending group without changing stored rows."""
+    for canonical, group in groups.items():
+        keep = _survivor(group)
+        log.info(
+            "would merge %d variants -> %s (keep fetch_count=%d)",
+            len(group), canonical, keep["fetch_count"],
+        )
+
+
+async def _merge_groups(groups: dict[str, list[dict[str, Any]]]) -> tuple[int, int]:
+    """Merge all groups atomically, validating the restored chunk FK before commit."""
+    total_renamed = 0
+    total_deleted = 0
+    async with db.transaction() as conn:
+        await conn.execute(f"ALTER TABLE chunks DROP CONSTRAINT IF EXISTS {CHUNKS_FK_NAME}")
+        for canonical, group in groups.items():
+            renamed, deleted = await _merge_group(conn, canonical, group)
+            total_renamed += renamed
+            total_deleted += deleted
+        await conn.execute(
+            f"ALTER TABLE chunks ADD CONSTRAINT {CHUNKS_FK_NAME} "
+            "FOREIGN KEY (url) REFERENCES pages(url) ON DELETE CASCADE"
+        )
+    return total_renamed, total_deleted
+
+
+async def _merge_group(
+    conn: AsyncConnection,
+    canonical: str,
+    group: list[dict[str, Any]],
+) -> tuple[int, int]:
+    """Delete losing variants and rename the survivor and its chunks together."""
+    keep = _survivor(group)
+    drop = [r["url"] for r in group if r["url"] != keep["url"]]
+    for url in drop:
+        # The FK is temporarily dropped, so cascade deletion is unavailable.
+        await conn.execute("DELETE FROM chunks WHERE url = %s", (url,))
+        await conn.execute("DELETE FROM pages WHERE url = %s", (url,))
+    renamed = int(keep["url"] != canonical)
+    if renamed:
+        await conn.execute("UPDATE chunks SET url = %s WHERE url = %s", (canonical, keep["url"]))
+        await conn.execute("UPDATE pages SET url = %s WHERE url = %s", (canonical, keep["url"]))
+    log.info(
+        "merged %d variants -> %s (keep fetch_count=%d)",
+        len(group), canonical, keep["fetch_count"],
+    )
+    return renamed, len(drop)
 
 
 if __name__ == "__main__":

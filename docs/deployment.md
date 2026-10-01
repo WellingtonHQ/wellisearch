@@ -106,7 +106,13 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 | `LOCAL_MIN_DISTINCTIVE_COVERAGE` | `1.0` | local-hit gate: min fraction of the query's rare/brand words (those in <1% of chunks) a passing page must contain; 1.0 = must contain every distinctive term, so off-brand junk can't answer a brand query (see ranking.md) |
 | `LOCAL_PARTIAL_MIN_SIMILARITY` | `0.55` | stronger best-chunk similarity required to serve a partial local set when fewer than k rows pass; the coverage gate still applies |
 | `LOCAL_PARTIAL_MIN_PASSING` | `3` | minimum number of ordinary gate-passing pages that can serve a partial local set without one strong page |
-| `SEARCH_GATE_MIN_K` | `50` | rows fetched so the gate can see passing pages that rank well outside top-k (score is rank-only; semantically strong pages often sit far down it — see ranking.md) |
+| `SEARCH_GATE_MIN_K` | `100` | rows fetched so the gate can see passing pages that rank well outside top-k (score is rank-only; semantically strong pages often sit far down it — see ranking.md) |
+| `SEARCH_JOB_BOARD_PENALTY` | `0.5` | auto-mode multiplier for job-board score and similarity on non-job-intent queries |
+| `SEARCH_JOB_BOARDS` | `linkedin.com/jobs,indeed.com,glassdoor.com/Job,ziprecruiter.com/Jobs,monster.com,naukri.com,jobs.lever.co,boards.greenhouse.io` | comma-separated job-board URL matches for the penalty |
+| `SEARCH_JOB_INTENT_TERMS` | `job, jobs, hiring, open roles, careers` | comma-separated query terms that bypass the job-board penalty |
+| `SEARCH_MAX_PER_DOMAIN` | `2` | maximum auto-mode results per registrable domain; local mode is uncapped |
+| `SEARCH_TOP_BY_SIM` | `20` | extra similarity-ranked candidates added to the auto-mode score window |
+| `SEARCH_VECTOR_LEG_LIMIT` | `200` | vector-leg candidate limit in `fn_search_local` |
 | `SEARCH_MIN_SCORE` | `0.06` | legacy; now only for ranking (see ranking.md) |
 | `STALE_HOURS` | `72` | staleness hint for stats/dashboard |
 | `MAX_CHUNK_TOKENS` | `500` | chunk token budget; must stay under MiniLM's 512-token input window (est. ~4 chars/token) |
@@ -137,7 +143,9 @@ may increase provider calls; queries with no rare words are unaffected.
 | `REFRESH_MIN_AGE_HOURS` | `72` | watchlist page is eligible for refresh after this age |
 | `REFRESH_BACKOFF_BASE_HOURS` | `6` | consecutive failed refreshes back off `base × 2^(streak−1)`, capped at `REFRESH_MIN_AGE_HOURS`; a successful crawl resets the streak |
 | `CRAWL_TIMEOUT_S` | `45` | per-URL crawl timeout |
-| `CRAWL_MAX_PARALLEL` | `3` | concurrent crawls |
+| `CRAWL_MAX_PARALLEL` | `8` | concurrent crawls |
+| `CRAWL_POOL_SIZE` | `3` | concurrent fast-lane browser pages; keep low to bound renderer memory |
+| `CRAWL_MAX_REVIEWS` | `5` | maximum top reviews included per product page |
 | `CRAWL_IGNORE_SSL_ERRORS` | `true` | the tiers are read-only (fetch public pages, never send data), so untrusted TLS certs are accepted; set `false` to enforce strict verification |
 | `CRAWL_LAUNCH_RETRY_AFTER_S` | `30` | relaunch backoff after a failed browser launch; keep equal to the entrypoint.sh Xvfb self-heal poll interval |
 | `CRAWL_REDDIT_COMMENT_RANKING` | `score` | `score` selects the highest scored rendered comments; `best` keeps Reddit's Best order |

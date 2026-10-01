@@ -30,6 +30,7 @@ async def main() -> None:
     await _check_provider_order()
     await _check_app_state()
     await _check_event_log()
+    await _check_merge_dupes()
     await _cleanup()
     await db.close()
     print("ALL DB INTEGRATION TESTS PASSED")
@@ -38,6 +39,68 @@ async def main() -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _check_merge_dupes() -> None:
+    """Verify page/chunk renames commit together and FK failure rolls back the merge."""
+    from unittest.mock import patch
+
+    from psycopg import AsyncConnection
+
+    from wellisearch import merge_dupes
+
+    canonical = "https://example.com/merge-review"
+    variant = canonical + "?utm_source=review"
+    await db.execute(
+        "INSERT INTO pages (url, fetch_count, fit_markdown) VALUES (%s, 1, 'Old'), (%s, 5, 'New')",
+        (canonical, variant),
+    )
+    await db.execute(
+        "INSERT INTO chunks (url, seq, text, last_crawled) "
+        "VALUES (%s, 0, 'Old', now()), (%s, 0, 'New', now())",
+        (canonical, variant),
+    )
+    groups = {canonical: [
+        {"url": canonical, "fetch_count": 1, "md_len": 3},
+        {"url": variant, "fetch_count": 5, "md_len": 3},
+    ]}
+    original = merge_dupes._merge_group
+
+    async def orphan_after_merge(
+        conn: AsyncConnection,
+        url: str,
+        group: list[dict],
+    ) -> tuple[int, int]:
+        """Inject an orphan while the FK is dropped to force validation failure."""
+        result = await original(conn, url, group)
+        await conn.execute(
+            "INSERT INTO chunks (url, seq, text, last_crawled) VALUES (%s, 0, 'Orphan', now())",
+            (canonical + "-orphan",),
+        )
+        return result
+
+    with patch.object(merge_dupes, "_merge_group", orphan_after_merge):
+        try:
+            await merge_dupes._merge_groups(groups)
+        except Exception as exc:
+            assert "foreign key" in str(exc).lower(), f"unexpected failure: {exc}"
+        else:
+            raise AssertionError("restoring the FK must reject orphan chunks")
+    rows = await db.fetch_all(
+        "SELECT url, fit_markdown FROM pages WHERE url IN (%s, %s) ORDER BY url",
+        (canonical, variant),
+    )
+    assert rows == [
+        {"url": canonical, "fit_markdown": "Old"},
+        {"url": variant, "fit_markdown": "New"},
+    ], f"failed merge must roll back page mutations: {rows}"
+    assert await merge_dupes._merge_groups(groups) == (1, 1)
+    chunks = await db.fetch_all("SELECT url, text FROM chunks WHERE url = %s", (canonical,))
+    assert chunks == [{"url": canonical, "text": "New"}], f"survivor chunks must move: {chunks}"
+    assert await db.page_get(variant) is None, "variant page must be removed"
+    await db.execute("DELETE FROM pages WHERE url = %s", (canonical,))
+    assert not await db.fetch_all("SELECT url FROM chunks WHERE url = %s", (canonical,))
+    print("OK merge_dupes (atomic rollback, canonical rename, restored cascade)")
+
 
 async def _clean_slate() -> None:
     """Delete this test's URLs (DB persists between runs)."""
@@ -269,4 +332,3 @@ async def _cleanup() -> None:
 
 
 asyncio.run(main())
-

@@ -70,6 +70,7 @@ _malloc_trim: Callable[[int], int] | bool | None = None
 
 async def crawl_url(url: str, trigger: str) -> dict:
     """Public entry: crawl one URL, never twice concurrently (shared set)."""
+    url = normalize_url(url)
     return await queue.crawl_deduped(url, trigger, lambda: _crawl_and_store(url, trigger))
 
 
@@ -103,7 +104,7 @@ async def tick() -> dict:
         log.info("tick done: %s", stats)
         await _log_event("worker tick", stats)
         await _retention_sweep()
-        _trim_memory()
+        await asyncio.to_thread(_trim_memory)
         return stats
 
 
@@ -155,6 +156,7 @@ def main() -> None:
 
 async def _crawl_and_store(url: str, trigger: str) -> dict:
     """One crawl+store attempt (in-flight-deduped by the caller)."""
+    url = normalize_url(url)
     t0 = time.monotonic()
     ms = 0
     try:
@@ -187,9 +189,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     # priority order — fresh <title> > previously stored title > derived from the
     # markdown. Re-crawls that miss <title> then only backfill pages whose title
     # is still NULL, while a genuine new <title> always wins over the old one.
-    # store_page canonicalizes the URL, so look up the old title by the
-    # canonical form too (a variant URL would miss its own stored row).
-    old_title = ((await db.page_get(normalize_url(url))) or {}).get("title")
+    old_title = ((await db.page_get(url)) or {}).get("title")
     resolved_title = title or old_title or title_from_markdown(md)
 
     try:

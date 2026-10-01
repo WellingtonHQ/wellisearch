@@ -196,8 +196,9 @@ decision is made by three `fn_search_local` columns, all computed in Postgres:
   when there are none). Answers "is it topically about it, or just a body
   that happens to contain those words?"
 
-The gate only sees what `fn_search_local` returns, so `search_web` calls it
-with `max(k, SEARCH_GATE_MIN_K)` rows — default **50**, not 10. Score is
+The gate only sees what `fn_search_local` returns, so auto-mode `search_web`
+calls it with `max(k, SEARCH_GATE_MIN_K + SEARCH_TOP_BY_SIM)` rows — default
+**120**, including the **100**-row score window and **20** similarity candidates. Score is
 rank-only, and a semantically strong page can sit far down the score order
 behind pages that accumulate RRF mass from many lexically matching chunks
 (measured 2026-09-29: on-topic articles ranked 17–44 behind LinkedIn job

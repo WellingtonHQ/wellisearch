@@ -26,3 +26,6 @@ jobs:
 
       - name: Run provider adapter tests
         run: python tests/test_providers.py
+
+      - name: Run PR review regression tests
+        run: python tests/test_review_regressions.py

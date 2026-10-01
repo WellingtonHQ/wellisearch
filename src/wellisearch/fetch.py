@@ -157,7 +157,7 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
         log.warning("fetch_page failed for %s: %s", url, e)
         return {"ok": False, "error": _friendly_error(e), "url": url, "timing": _timing()}
 
-    await db.bump_fetch_count(url)
+    await db.bump_fetch_count(normalize_url(url))
 
     truncated = False
     omitted = 0
@@ -244,7 +244,7 @@ async def fetch_pages(
 
     # bump fetch_count for every successfully fetched page
     for p in resolved:
-        await db.bump_fetch_count(p["url"])
+        await db.bump_fetch_count(normalize_url(p["url"]))
 
     # --- allocate the budget per strategy
     pages_out, total_chars, any_truncated = _allocate_pages(resolved, strat, budget, per_page)
@@ -303,7 +303,7 @@ async def _record_failed_refresh(url: str, needed_refresh: bool) -> None:
     if not needed_refresh:
         return
     try:
-        await db.refresh_fail_bump(url)
+        await db.refresh_fail_bump(normalize_url(url))
     except Exception as e:
         log.warning("refresh backoff bump failed for %s: %s", url, e)
 
@@ -348,7 +348,7 @@ async def _resolve_page(url: str) -> dict:
     # of quoting a seconds-based retry ETA that would never come true.
     paused = await db.worker_paused()
 
-    if await db.queue_challenge_in_flight(url):
+    if await db.queue_challenge_in_flight(normalize_url(url)):
         raise crawler.CrawlError(url, _botwall_error(s, paused))
 
     t_crawl = time.monotonic()
@@ -402,7 +402,7 @@ async def _probe_crawl(url: str, paused: bool = False) -> dict:
         return await crawl_url(url, trigger="fetch")
     except ChallengeDetected:
         if not await queue.enqueue(url, source="fetch", lane="cf"):
-            await db.queue_route_to_cf(url)
+            await db.queue_route_to_cf(normalize_url(url))
         log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
         raise crawler.CrawlError(url, _botwall_error(get_settings(), paused)) from None
 

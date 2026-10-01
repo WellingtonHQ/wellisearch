@@ -300,7 +300,7 @@ def _tool_seed_url(server: MCPServer) -> None:
         row = await db.fetch_one(
             "SELECT status, attempts, enqueued_at FROM crawl_queue WHERE url = %s "
             "ORDER BY enqueued_at DESC LIMIT 1",
-            (url,),
+            (normalize_url(url),),
         )
         pos = await db.fetch_one(
             "SELECT count(*) AS ahead FROM crawl_queue WHERE status = 'pending' "
