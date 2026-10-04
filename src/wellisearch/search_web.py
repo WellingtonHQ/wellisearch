@@ -85,9 +85,9 @@ async def search_web(
 
     t_start = time.monotonic()
 
-    # ---- local index (zero provider cost) — skipped entirely in provider
-    # mode (the caller wants a live provider answer, e.g. after being
-    # unsatisfied with a prior local result).
+    # local index (zero provider cost) — skipped entirely in provider mode
+    # (the caller wants a live provider answer, e.g. after being unsatisfied
+    # with a prior local result).
     local_rows: list[dict] = []
     index_ms = 0
     index_error: str | None = None
@@ -119,7 +119,7 @@ async def search_web(
         # local hit — zero provider credits (the quota-preservation layer)
         source, results = await _serve_local(local_rows, k)
     else:
-        # ---- provider gateway (auto: no good local hit; provider: always)
+        # provider gateway (auto: no good local hit; provider: always)
         source, results, degraded, errors, provider_ms = await _provider_search(
             query, k, crawl_n, search_mode, local_rows
         )

@@ -192,7 +192,7 @@ async def fetch_pages(
         t.update(extra)
         return t
 
-    # --- validate + dedupe (preserve first-seen order)
+    # Validate + dedupe (preserve first-seen order).
     clean, bad = _validate_urls(urls)
 
     if not clean:
@@ -224,7 +224,7 @@ async def fetch_pages(
     else:
         per_page = per_page_chars if per_page_chars and per_page_chars > 0 else None
 
-    # --- resolve all pages in parallel (in-flight-deduped)
+    # Resolve all pages in parallel (in-flight-deduped).
     resolved, failed = await _resolve_all(clean)
     if not resolved:
         return {
@@ -238,7 +238,7 @@ async def fetch_pages(
     for p in resolved:
         await db.bump_fetch_count(p["url"])
 
-    # --- allocate the budget per strategy
+    # Allocate the shared char budget per strategy.
     pages_out, total_chars, any_truncated = _allocate_pages(resolved, strat, budget, per_page)
 
     # Pages resolved in parallel, so each leg is the critical path (max), not
