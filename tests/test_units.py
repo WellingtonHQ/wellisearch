@@ -250,6 +250,7 @@ from wellisearch.crawler import failure_detail  # noqa: E402
 
 
 def _result(attempts: list[dict]) -> CrawlResult:
+    """A failed browser-tier crawl result with the given attempt history."""
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
 
 
