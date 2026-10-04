@@ -9,6 +9,8 @@ which keeps SPA SERPs clearable by the gate without site-specific selectors.
 """
 from __future__ import annotations
 
+from bs4 import BeautifulSoup
+
 from ..results import Fitted, Rendered
 from . import register
 from .base import MIN_MD_CHARS, generic_md, trim_md
@@ -67,10 +69,8 @@ def _visible_text_markdown(html: str) -> str:
         return ""
 
 
-def _soup(html: str):
+def _soup(html: str) -> BeautifulSoup:
     """BeautifulSoup (lxml) parse; the repo's shared parser choice."""
-    from bs4 import BeautifulSoup
-
     return BeautifulSoup(html, "lxml")
 
 
