@@ -337,3 +337,40 @@ came back `challenge detected` on every attempt (the gate correctly rejects
 the challenge page, so nothing bad is stored — they'll fill in as watchlist
 refreshes land a pass or the CF lane solves one, as it did for the canonical
 AQUA TRU URL).
+
+### walmart.ca product pages stored as thin price stubs (found 2026-10-04, fixed 2026-10-04)
+
+walmart.ca product pages (e.g. the Mainstays office chair,
+`/en/ip/mainstays-bonded-leather-mid-back-managers-office-chair-black/6000199102326`)
+stored only ~441 chars of price/delivery text: the extractor registry's
+"walmart.com" suffix does not match "walmart.ca", so every walmart.ca URL fell
+back to `GenericExtractor`, and trafilatura extracts only a thin slice from
+the site's heavy client-rendered HTML. The server HTML carries everything in a
+single `application/ld+json` block — a `ProductGroup` node with name,
+description, `aggregateRating` (4.1 / 2,704 reviews), a `review` array of up to
+10 full review bodies (author, date, stars), and `hasVariant[0]` holding
+sku/gtin/model/brand/color plus the CAD offer — so no browser tier is needed.
+
+Fixed: `WalmartExtractor` (`crawl/extractors/walmart.py`) now anchors on that
+JSON-LD node when present (walmart.ca) and renders title, `**Price:**`,
+`**Rating:**`, `**Brand:**`, `## Product description`, `## Product details`
+(model/sku/gtin/color), and the top `CRAWL_MAX_REVIEWS` reviews under a
+`## Walmart reviews (up to N)` heading (or a "No reviews available."
+placeholder). walmart.com pages carry no Product JSON-LD, so they keep the
+legacy generic fit + hero-price gate unchanged; `needs_refresh` is scoped to
+walmart.ca hosts only, so stored .com pages never re-crawl in a loop. New
+`walmart.ca` policy entry (http/browser, like the default) and an engine.py
+fallback that sends non-product walmart URLs (search/category) back to the
+generic extractor. `fetch.py` OR's `walmart.needs_refresh` into the refresh
+chain so stale stubs self-heal on fetch. Tests extended in
+`tests/test_extractors.py` (JSON-LD content, section ordering, review fields,
+limit, no-reviews placeholder, gate failures, legacy .com path, needs_refresh
+host scoping).
+
+Verified live (2026-10-04): rebuilt + redeployed the image; `fetch_page` on
+the chair URL triggered the inline refresh re-crawl (~4s, http tier) and now
+stores 3,555 chars — price ($88.00), rating (4.1 / 2,704 ratings), full
+description, spec table, and 5 full review bodies with author/stars/date; the
+second fetch serves it from the index in ~11ms. It was the only walmart.ca
+page in the index, so no bulk recrawl was needed; the 13 stored walmart.com
+pages are unaffected (legacy path + needs_refresh host scoping).

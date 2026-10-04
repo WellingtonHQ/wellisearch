@@ -27,6 +27,7 @@ from .crawl.extractors.amazon import needs_refresh as amazon_needs_refresh
 from .crawl.extractors.base import title_from_markdown
 from .crawl.extractors.homedepot import needs_refresh as homedepot_needs_refresh
 from .crawl.extractors.reddit import needs_refresh as reddit_needs_refresh
+from .crawl.extractors.walmart import needs_refresh as walmart_needs_refresh
 from .crawl.probe import reset_probe_budget, set_probe_budget
 from .crawl.results import ChallengeDetected
 from .db import db
@@ -312,7 +313,7 @@ async def _resolve_page(url: str) -> dict:
     """Content for one URL: from index when present, else crawl on demand.
 
     A stored page whose markdown is stale (reddit_needs_refresh for posts,
-    amazon/homedepot needs_refresh for product pages) normally re-crawls inline;
+    amazon/homedepot/walmart needs_refresh for product pages) normally re-crawls inline;
     while a refresh-failure backoff is active it serves the stored copy instead,
     so a walled page can't burn a full browser crawl on every fetch."""
     s = get_settings()
@@ -326,6 +327,7 @@ async def _resolve_page(url: str) -> dict:
         reddit_needs_refresh(url, stored_md)
         or amazon_needs_refresh(url, stored_md)
         or homedepot_needs_refresh(url, stored_md)
+        or walmart_needs_refresh(url, stored_md)
     )
     if stored_md and (not needs_refresh or _refresh_backoff_active(page)):
         if needs_refresh:

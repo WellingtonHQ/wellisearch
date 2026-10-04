@@ -43,6 +43,12 @@ async def crawl(url: str) -> CrawlResult:
         if not extractors.homedepot.is_product_url(url):
             p = DEFAULT_POLICY
             ex = extractors.GenericExtractor()
+    if p.name == "walmart":
+        # Only product detail pages carry the JSON-LD ProductGroup node; search and
+        # category pages keep the standard generic path.
+        if not extractors.walmart.is_product_url(url):
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
     attempts: list[dict] = []
     best: Fitted | None = None
     start = time.monotonic()

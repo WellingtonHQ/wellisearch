@@ -35,7 +35,11 @@ from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
 from wellisearch.crawl.extractors.reddit import RedditExtractor, comment_request_url, needs_refresh
 from wellisearch.crawl.extractors.reuters import ReutersExtractor
 from wellisearch.crawl.extractors.target import TargetExtractor
-from wellisearch.crawl.extractors.walmart import WalmartExtractor
+from wellisearch.crawl.extractors.walmart import (
+    WalmartExtractor,
+    is_product_url as wm_is_product_url,
+    needs_refresh as wm_needs_refresh,
+)
 from wellisearch.crawl.extractors.wsj import WSJExtractor
 from wellisearch.crawl.policy import match
 from wellisearch.crawl.results import Escalate, Rendered
@@ -365,6 +369,127 @@ print("OK homedepot")
 # Walmart
 # ---------------------------------------------------------------------------
 
+WALMART_PRODUCT = {
+    "@context": "https://schema.org",
+    "@type": "ProductGroup",
+    "name": "Mainstays Bonded Leather Mid-Back Manager's Office Chair, for Adults, Black",
+    "description": (
+        "The Mainstays Mid Back Office Chair is the ideal desk chair for comfort and style. "
+        "The sleek black bonded leather upholstery and sturdy frame make it a great fit for "
+        "any home office."
+    ),
+    "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": 4.1,
+        "bestRating": 5,
+        "reviewCount": 2704,
+    },
+    "review": [
+        {
+            "@type": "Review",
+            "datePublished": "9/25/2024",
+            "reviewBody": (
+                "I was somewhat hesitant in purchasing the chair. I had never seen one of these "
+                "assembled in a Walmart before but for $75 it is a solid desk chair."
+            ),
+            "reviewRating": {"@type": "Rating", "worstRating": 1, "ratingValue": 5, "bestRating": 5},
+            "author": {"@type": "Person", "name": "Michael"},
+        },
+        {
+            "@type": "Review",
+            "name": "So happy with the purchase!",
+            "datePublished": "3/8/2023",
+            "reviewBody": (
+                "Got a $20.00 discount while buying, extremely happy with the quality of the chair."
+            ),
+            "reviewRating": {"@type": "Rating", "worstRating": 1, "ratingValue": 4, "bestRating": 5},
+            "author": {"@type": "Person", "name": "Mahmud"},
+        },
+    ],
+    "hasVariant": [
+        {
+            "@type": "Product",
+            "name": "Mainstays Bonded Leather Mid-Back Manager's Office Chair, for Adults, Black",
+            "sku": "6000199102326",
+            "gtin13": "656292496535",
+            "model": "MS98-060-099-01",
+            "color": "Black",
+            "brand": {"@type": "Brand", "name": "Mainstays"},
+            "offers": [
+                {
+                    "@type": "Offer",
+                    "priceCurrency": "CAD",
+                    "price": 88,
+                    "availability": "https://schema.org/InStock",
+                }
+            ],
+        },
+    ],
+}
+WALMART_CA_HTML = (
+    "<html><head>"
+    "<title>Mainstays Bonded Leather Mid-Back Manager's Office Chair - Walmart.ca</title></head>"
+    "<body>"
+    '<script type="application/ld+json">' + json.dumps(WALMART_PRODUCT) + "</script>"
+    "<h1>Mainstays Bonded Leather Mid-Back Manager's Office Chair, for Adults, Black</h1>"
+    "</body></html>"
+)
+ex = WalmartExtractor()
+fitted = ex.fit(rendered(WALMART_CA_HTML))
+assert (
+    fitted.title == "Mainstays Bonded Leather Mid-Back Manager's Office Chair, for Adults, Black"
+), fitted.title
+assert fitted.signals["price"] == "$88.00", fitted.signals
+assert "**Price:** $88.00" in fitted.md, fitted.md[:200]
+assert "**Rating:** 4.1 out of 5 stars 2,704 ratings" in fitted.md, fitted.md[:300]
+assert "**Brand:** Mainstays" in fitted.md, fitted.md[:300]
+assert fitted.signals["rating"] == "4.1 out of 5 stars", fitted.signals
+assert fitted.signals["reviews_reported"] == 2704, fitted.signals
+assert ex.accept(fitted)
+# description + spec fields from the JSON-LD node, in order before reviews
+assert "## Product description" in fitted.md, fitted.md[:400]
+assert "ideal desk chair for comfort and style" in fitted.md, fitted.md[:400]
+assert "## Product details" in fitted.md, fitted.md[:400]
+assert "Model: MS98-060-099-01" in fitted.md, fitted.md[:400]
+assert "SKU: 6000199102326" in fitted.md, fitted.md[:400]
+assert "GTIN: 656292496535" in fitted.md, fitted.md[:400]
+order = [fitted.md.index(h) for h in ("Product description", "Product details", "Walmart reviews")]
+assert order == sorted(order), fitted.md
+# top reviews: heading, per-review fields, displayed order, after details
+assert "## Walmart reviews (up to 5)" in fitted.md, fitted.md[:600]
+assert "### 1. Michael (5 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "solid desk chair" in fitted.md
+assert "### 2. Mahmud (4 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "**So happy with the purchase!** — 3/8/2023" in fitted.md, fitted.md[:900]
+assert fitted.signals["reviews"] == 2, fitted.signals
+# limit: only the first review is kept
+with patch(
+    "wellisearch.crawl.extractors.walmart.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=1),
+):
+    limited_fit = ex.fit(rendered(WALMART_CA_HTML))
+assert limited_fit.signals["reviews"] == 1, limited_fit.signals
+assert "### 1. Michael" in limited_fit.md
+assert "Mahmud" not in limited_fit.md
+# no review array -> heading + placeholder (no empty gap, no loop)
+WALMART_NO_REVIEWS = {k: v for k, v in WALMART_PRODUCT.items() if k != "review"}
+no_reviews_fit = ex.fit(
+    rendered(WALMART_CA_HTML.replace(json.dumps(WALMART_PRODUCT), json.dumps(WALMART_NO_REVIEWS)))
+)
+assert "## Walmart reviews (up to 5)" in no_reviews_fit.md, no_reviews_fit.md[:600]
+assert "No reviews available." in no_reviews_fit.md, no_reviews_fit.md[:600]
+assert no_reviews_fit.signals["reviews"] == 0, no_reviews_fit.signals
+assert ex.accept(no_reviews_fit)
+# no offers (call-for-pricing render) -> gate fails
+no_offers = {k: v for k, v in WALMART_PRODUCT.items() if k != "hasVariant"}
+no_offers_fit = ex.fit(
+    rendered(WALMART_CA_HTML.replace(json.dumps(WALMART_PRODUCT), json.dumps(no_offers)))
+)
+assert not ex.accept(no_offers_fit)
+# no product node (challenge page / degraded render, no price in the html) -> gate fails
+wall = ex.fit(rendered("<html><body><div>Just a moment...</div></body></html>"))
+assert not ex.accept(wall)
+# walmart.com pages carry no Product JSON-LD: legacy generic fit + hero-price gate
 _WALM = (
     "Key item features: a 27-inch full HD IPS display with a 100Hz refresh rate, AMD "
     "FreeSync, and three-sided slim bezels for a clean desk setup. The 100Hz refresh rate "
@@ -375,18 +500,36 @@ _WALM = (
     "multiple displays for a seamless workspace, and the adjustable stand lets you tilt, "
     "swivel, and height-adjust the screen to your perfect viewing position. "
 ) * 8
-WALMART_HTML = (
+WALMART_COM_HTML = (
     "<html><head><title>Acer ED270RS3 27-inch Full HD Monitor - Walmart.com</title></head><body>"
     "<h1>Acer ED270RS3 27-inch Full HD Monitor</h1>"
     "<p>$199.00</p>"
     f"<p>{_WALM}</p>"
     "</body></html>"
 )
-ex = WalmartExtractor()
-fitted = ex.fit(rendered(WALMART_HTML))
-assert fitted.signals["price"] == "$199.00", fitted.signals
-assert ex.accept(fitted)
-assert not ex.accept(ex.fit(rendered(WALMART_HTML.replace("$199.00", ""))))
+com_fit = ex.fit(rendered(WALMART_COM_HTML))
+assert com_fit.signals["price"] == "$199.00", com_fit.signals
+assert not com_fit.flags.get("structured")
+assert ex.accept(com_fit)
+assert not ex.accept(ex.fit(rendered(WALMART_COM_HTML.replace("$199.00", ""))))
+# needs_refresh: stale (pre-feature) markdown re-crawls, current markdown doesn't
+ca_url = "https://www.walmart.ca/en/ip/mainstays-bonded-leather-mid-back-managers-office-chair-black/6000199102326"
+assert wm_is_product_url(ca_url)
+assert wm_is_product_url("https://www.walmart.com/ip/Acer-ED270RS3/123456")
+assert not wm_is_product_url("https://www.walmart.ca/search?q=office+chair")
+assert not wm_is_product_url("https://www.walmart.ca/en/categories/furniture-desks-tables")
+assert not wm_is_product_url("https://notwalmart.com/en/ip/mainstays-chair/6000199102326")
+stale_md = "# Mainstays Office Chair\n\n**Price:** $88.00"
+assert wm_needs_refresh(ca_url, stale_md)
+assert not wm_needs_refresh(ca_url, fitted.md)
+assert not wm_needs_refresh(ca_url, no_reviews_fit.md)  # placeholder heading counts
+with patch(
+    "wellisearch.crawl.extractors.walmart.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=8),
+):
+    assert wm_needs_refresh(ca_url, fitted.md)  # limit changed -> stale
+# walmart.com product URLs never loop (they keep the legacy generic fit)
+assert not wm_needs_refresh("https://www.walmart.com/ip/Acer-ED270RS3/123456", stale_md)
 print("OK walmart")
 
 # ---------------------------------------------------------------------------
@@ -826,6 +969,7 @@ print("OK generic loading stub")
 
 assert for_url("https://www.amazon.com/dp/B08WM3LJQB").name == "amazon"
 assert for_url("https://www.homedepot.com/p/AQUA-TRU-Carafe/325993266").name == "homedepot"
+assert for_url("https://www.walmart.ca/en/ip/mainstays-chair/6000199102326").name == "walmart"
 assert for_url("https://boards.greenhouse.io/acme/1234567").name == "greenhouse"
 assert for_url(
     "https://careers.ascensus.com/jobs/principal-software-engineer?source=linkedin_posting"
