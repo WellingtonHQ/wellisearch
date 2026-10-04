@@ -104,6 +104,8 @@ API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
 API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
 API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
 API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
+API_LOGS_MERGED_DEFAULT_LIMIT = 200  # /api/logs (merged stream) default limit
+LOG_QUERY_MAX_LEN = 100  # max chars of the query kept in merged /api/logs messages
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +465,7 @@ async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
 @app.get("/api/logs")
 async def api_logs(
     secs: int = WINDOW_MAX_SECS,
-    limit: int = 200,
+    limit: int = API_LOGS_MERGED_DEFAULT_LIMIT,
     q: str = "",
 ) -> Any:
     """Merged windowed log stream: crawls + searches + events, ts DESC.
@@ -506,9 +508,9 @@ async def api_logs(
     for srow in searches:
         n_results = len(srow["results"] or [])
         if srow["source"] == "local":
-            msg = f"search '{(srow['query'] or '')[:100]}' → local ({srow['local_hits'] or 0} hits)"
+            msg = f"search '{(srow['query'] or '')[:LOG_QUERY_MAX_LEN]}' → local ({srow['local_hits'] or 0} hits)"
         else:
-            msg = f"search '{(srow['query'] or '')[:100]}' → {srow['source']} ({n_results} results)"
+            msg = f"search '{(srow['query'] or '')[:LOG_QUERY_MAX_LEN]}' → {srow['source']} ({n_results} results)"
         logs.append({
             "ts": srow["ts"],
             "kind": "search",

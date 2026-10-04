@@ -18,6 +18,8 @@ from ..config import Settings
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
+DEFAULT_SNIPPET_CHARS = 400  # default snippet length for provider results
+
 
 @dataclass(slots=True)
 class Result:
@@ -86,7 +88,7 @@ class Provider:
         return _WS_RE.sub(" ", text).strip()
 
     @staticmethod
-    def snippet(text: str, limit: int = 400) -> str:
+    def snippet(text: str, limit: int = DEFAULT_SNIPPET_CHARS) -> str:
         """Trim to ~limit chars, boundary-safe (never mid-word)."""
         text = Provider.clean_html(text)
         if len(text) <= limit:
