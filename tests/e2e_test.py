@@ -229,8 +229,10 @@ async def test_fetch_bulk(c: httpx.AsyncClient) -> None:
     r = await c.post(
         "/api/fetch-bulk",
         json={
-            "urls": ["https://python.langchain.com/docs/introduction/",
-                     "https://python.langchain.com/docs/get_started/quickstart/"],
+            "urls": [
+                "https://python.langchain.com/docs/introduction/",
+                "https://python.langchain.com/docs/get_started/quickstart/",
+            ],
             "max_chars": 3000, "strategy": "even"}
     )
     md2 = r.text
@@ -533,8 +535,10 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
     r = await c.post(
         "/api/fetch-bulk",
         json={
-            "urls": ["https://python.langchain.com/docs/introduction/",
-                     "https://python.langchain.com/docs/get_started/quickstart/"],
+            "urls": [
+                "https://python.langchain.com/docs/introduction/",
+                "https://python.langchain.com/docs/get_started/quickstart/",
+            ],
             "max_chars": 3000, "strategy": "even", "format": "json"}
     )
     j = r.json()
