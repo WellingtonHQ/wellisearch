@@ -246,7 +246,8 @@ GREENHOUSE_HTML = (
     '"jobLocation":[{"@type":"Place","address":{"@type":"PostalAddress",'
     '"streetAddress":"Remote","addressLocality":"Remote","addressRegion":"Nationwide","addressCountry":"US"}}],'
     '"description":"<p>We are building the platform that keeps thousands of customer teams productive every day. '
-    "The team ships small, reviewed changes through a fast continuous delivery pipeline with an emphasis on observability.</p>"
+    "The team ships small, reviewed changes through a fast continuous delivery pipeline"
+    " with an emphasis on observability.</p>"
     "<ul><li>Design and build services in Python and Go with a focus on reliability</li>"
     "<li>Own deployment pipelines end to end and improve developer experience</li>"
     "<li>Mentor engineers on architecture, testing, and incident response</li></ul>\""
@@ -452,7 +453,8 @@ assert title_from_markdown("") is None, "empty md must yield None"
 assert title_from_markdown("   \n") is None, "whitespace-only md must yield None"
 assert title_from_markdown("[a](b)\n[c](d)") is None, "all-link md must yield None"
 mixed_nav = "Home | [Log in](/login)\nReal Headline Below\nSome body copy."
-assert title_from_markdown(mixed_nav) == "Real Headline Below", "mixed nav-junk line with a link must be skipped"
+assert title_from_markdown(mixed_nav) == "Real Headline Below", \
+    "mixed nav-junk line with a link must be skipped"
 assert title_from_markdown("___\nPlain Title Here\nBody text.") == "Plain Title Here", \
     "underscore HR (symbol-only, word-char-ish) first line must be skipped"
 fenced_h1 = (
