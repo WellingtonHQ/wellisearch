@@ -196,7 +196,6 @@ async def _drain_queue(deadline: float) -> dict:
 
     async def process(url: str) -> None:
         """Claim one fast-lane row and crawl it (bounded by the parallelism cap)."""
-        nonlocal processed
         if time.monotonic() > deadline:
             return
         if not await db.queue_claim(url):
@@ -204,19 +203,24 @@ async def _drain_queue(deadline: float) -> dict:
         token = set_lane(FAST)
         try:
             async with sem:
-                try:
-                    await crawl_url(url, "search")
-                    await db.queue_done(url, ok=True)
-                except ChallengeDetected:
-                    log.info("challenge detected — routing %s to the CF lane", url)
-                    await db.queue_route_to_cf(url)
-                except Exception as e:
-                    log.warning("queue crawl failed for %s: %s", url, e)
-                    await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
-                finally:
-                    processed += 1
+                await _crawl_one(url)
         finally:
             reset_lane(token)
+
+    async def _crawl_one(url: str) -> None:
+        """Crawl one claimed fast-lane row and record its outcome (counted even on failure)."""
+        nonlocal processed
+        try:
+            await crawl_url(url, "search")
+            await db.queue_done(url, ok=True)
+        except ChallengeDetected:
+            log.info("challenge detected — routing %s to the CF lane", url)
+            await db.queue_route_to_cf(url)
+        except Exception as e:
+            log.warning("queue crawl failed for %s: %s", url, e)
+            await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
+        finally:
+            processed += 1
 
     await asyncio.gather(*(process(r["url"]) for r in rows))
     return {"processed": processed}

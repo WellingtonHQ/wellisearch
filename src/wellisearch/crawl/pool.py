@@ -170,17 +170,21 @@ class BrowserPool:
                         f"backing off {retry_after_s:.0f}s to avoid a relaunch storm"
                     )
                 await self._evict_lru_if_needed()
-                try:
-                    ctx = await self._launch(key, pw)
-                except BaseException:
-                    # Record the failure (also on cancellation: a launch cut
-                    # short may have left an orphaned chromium behind).
-                    self._launch_failed_at[key] = time.monotonic()
-                    raise
-                self._launch_failed_at.pop(key, None)
-                self._contexts[key] = ctx
-                self._last_used[key] = time.monotonic()
-                return ctx
+                return await self._launch_and_store(key, pw)
+
+    async def _launch_and_store(self, key: str, pw: Playwright) -> BrowserContext:
+        """Launch the context for key and store it; record failures for backoff."""
+        try:
+            ctx = await self._launch(key, pw)
+        except BaseException:
+            # Record the failure (also on cancellation: a launch cut
+            # short may have left an orphaned chromium behind).
+            self._launch_failed_at[key] = time.monotonic()
+            raise
+        self._launch_failed_at.pop(key, None)
+        self._contexts[key] = ctx
+        self._last_used[key] = time.monotonic()
+        return ctx
 
     async def _evict_lru_if_needed(self) -> None:
         """Evict the least recently used idle context when at capacity."""
