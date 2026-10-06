@@ -109,10 +109,18 @@ def _title(soup: BeautifulSoup) -> str | None:
 def _price(soup: BeautifulSoup) -> str | None:
     """First real price found by the buy-box selectors."""
     for sel in _PRICE_SELECTORS:
-        for e in soup.select(sel):
-            t = e.get_text(strip=True)
-            if t and t.lower() != "null":
-                return t
+        t = _first_price_text(soup.select(sel))
+        if t is not None:
+            return t
+    return None
+
+
+def _first_price_text(elements: object) -> str | None:
+    """First non-empty text that isn't the literal 'null'."""
+    for e in elements:
+        t = e.get_text(strip=True)
+        if t and t.lower() != "null":
+            return t
     return None
 
 
@@ -143,10 +151,9 @@ def _product_details(soup: BeautifulSoup) -> str | None:
     """First product-details section text from the known section IDs."""
     for tid in _DETAILS_IDS:
         el = soup.find(id=tid)
-        if el:
-            t = el.get_text(" ", strip=True)
-            if t:
-                return t
+        t = el.get_text(" ", strip=True) if el is not None else ""
+        if t:
+            return t
     return None
 
 
