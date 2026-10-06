@@ -156,21 +156,31 @@ class BrowserPool:
             pw = await self._ensure_playwright()
         async with self._launch_lock(key):
             async with self._lock:
-                if key in self._contexts:
-                    self._last_used[key] = time.monotonic()
-                    return self._contexts[key]
-                retry_after_s = get_settings().CRAWL_LAUNCH_RETRY_AFTER_S
-                failed_at = self._launch_failed_at.get(key)
-                if (
-                    failed_at is not None
-                    and time.monotonic() - failed_at < retry_after_s
-                ):
-                    raise LaunchBackoffError(
-                        f"browser launch for {key!r} recently failed; "
-                        f"backing off {retry_after_s:.0f}s to avoid a relaunch storm"
-                    )
-                await self._evict_lru_if_needed()
-                return await self._launch_and_store(key, pw)
+                return await self._cached_or_launch(key, pw)
+
+    async def _cached_or_launch(self, key: str, pw: Playwright) -> BrowserContext:
+        """Re-check the cache and launch backoff under both locks; else evict + launch.
+
+        Called with _lock and the per-key launch lock already held (see
+        _get_or_launch): returns the cached context when present, raises
+        LaunchBackoffError inside a retry window, otherwise LRU-evicts as
+        needed and launches a fresh context for key.
+        """
+        if key in self._contexts:
+            self._last_used[key] = time.monotonic()
+            return self._contexts[key]
+        retry_after_s = get_settings().CRAWL_LAUNCH_RETRY_AFTER_S
+        failed_at = self._launch_failed_at.get(key)
+        if (
+            failed_at is not None
+            and time.monotonic() - failed_at < retry_after_s
+        ):
+            raise LaunchBackoffError(
+                f"browser launch for {key!r} recently failed; "
+                f"backing off {retry_after_s:.0f}s to avoid a relaunch storm"
+            )
+        await self._evict_lru_if_needed()
+        return await self._launch_and_store(key, pw)
 
     async def _launch_and_store(self, key: str, pw: Playwright) -> BrowserContext:
         """Launch the context for key and store it; record failures for backoff."""
@@ -315,9 +325,11 @@ def _reap_orphans(profile_dir: str) -> None:
     for non-Linux). A crashed browser leaves a live chromium with the profile's
     SingletonLock; the next launch then hangs on the locked profile.
     """
-    if os.path.isdir("/proc"):
-        marker = f"--user-data-dir={profile_dir}"
-        for entry in os.listdir("/proc"):
-            if entry.isdigit() and _is_orphan_chromium(entry, marker):
-                _kill_pid(entry)
+    if not os.path.isdir("/proc"):
+        _remove_singleton_lock(profile_dir)
+        return
+    marker = f"--user-data-dir={profile_dir}"
+    for entry in os.listdir("/proc"):
+        if entry.isdigit() and _is_orphan_chromium(entry, marker):
+            _kill_pid(entry)
     _remove_singleton_lock(profile_dir)

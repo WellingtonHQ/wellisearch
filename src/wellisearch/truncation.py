@@ -46,11 +46,9 @@ def boundary_cut_tail(text: str, n: int) -> str:
     start = len(text) - n
     i = start
     while i < len(text):
-        ch = text[i]
-        if ch in " \n\t":
-            seg = text[i:]
-            if seg.count("<") <= seg.count(">"):
-                return seg.lstrip()
+        seg = text[i:]
+        if text[i] in " \n\t" and seg.count("<") <= seg.count(">"):
+            return seg.lstrip()
         i += 1
     return text
 
