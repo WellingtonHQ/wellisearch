@@ -109,16 +109,7 @@ class Database:
         )
         try:
             async with admin.cursor() as cur:
-                await cur.execute(
-                    "SELECT 1 FROM pg_database WHERE datname = %s",
-                    (s.POSTGRES_DB,),
-                )
-                exists = await cur.fetchone()
-                if not exists:
-                    # identifier must be safe: it comes from our own config
-                    safe = s.POSTGRES_DB.replace('"', '""')
-                    await cur.execute(f'CREATE DATABASE "{safe}"')
-                    log.info("created database %s", s.POSTGRES_DB)
+                await _ensure_database_exists(cur, s.POSTGRES_DB)
         finally:
             await admin.close()
 
@@ -166,15 +157,15 @@ class Database:
         slow query can't hold a pooled connection for minutes. Raises
         psycopg.errors.QueryCanceled on expiry."""
         async with self.pool.connection() as conn:
-            if timeout_ms is not None:
-                # SET does not accept parameter placeholders — inline the
-                # (int-coerced) value instead.
-                async with conn.transaction():
-                    await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
-                    cur = await conn.execute(sql, params or ())
-                    return list(await cur.fetchall())
-            cur = await conn.execute(sql, params or ())
-            return list(await cur.fetchall())
+            if timeout_ms is None:
+                cur = await conn.execute(sql, params or ())
+                return list(await cur.fetchall())
+            # SET does not accept parameter placeholders — inline the
+            # (int-coerced) value instead.
+            async with conn.transaction():
+                await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
+                cur = await conn.execute(sql, params or ())
+                return list(await cur.fetchall())
 
     async def fetch_one(
         self,
@@ -557,3 +548,20 @@ async def _register_vector(conn: psycopg.AsyncConnection) -> None:
     from pgvector.psycopg import register_vector_async
 
     await register_vector_async(conn)
+
+
+async def _ensure_database_exists(
+    cur: psycopg.AsyncCursor,
+    db_name: str,
+) -> None:
+    """Create the app DB (via an admin-DB cursor) if it does not exist yet."""
+    await cur.execute(
+        "SELECT 1 FROM pg_database WHERE datname = %s",
+        (db_name,),
+    )
+    exists = await cur.fetchone()
+    if not exists:
+        # identifier must be safe: it comes from our own config
+        safe = db_name.replace('"', '""')
+        await cur.execute(f'CREATE DATABASE "{safe}"')
+        log.info("created database %s", db_name)

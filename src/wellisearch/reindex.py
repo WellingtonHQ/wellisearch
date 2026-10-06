@@ -51,6 +51,19 @@ async def _reembed_page(p: dict[str, Any]) -> str:
     return "unchanged" if status == "unchanged" else "ok"
 
 
+def _maybe_print_progress(
+    i: int,
+    total: int,
+    stats: dict[str, int],
+) -> None:
+    """Print a progress line every PROGRESS_INTERVAL pages and on the last."""
+    if i % PROGRESS_INTERVAL == 0 or i == total:
+        print(
+            f"  {i}/{total} (ok={stats['ok']} unchanged={stats['unchanged']} "
+            f"failed={stats['failed']})"
+        )
+
+
 async def _run(force: bool, dry_run: bool) -> None:
     """Find pages needing (re)embedding (all when --force) and re-chunk +
     re-embed each, reporting progress."""
@@ -80,11 +93,7 @@ async def _run(force: bool, dry_run: bool) -> None:
         for i, p in enumerate(stale, 1):
             outcome = await _reembed_page(p)
             stats[outcome] += 1
-            if i % PROGRESS_INTERVAL == 0 or i == len(stale):
-                print(
-                    f"  {i}/{len(stale)} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                    f"failed={stats['failed']})"
-                )
+            _maybe_print_progress(i, len(stale), stats)
 
         print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
     finally:

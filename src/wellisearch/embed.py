@@ -55,30 +55,36 @@ def _cache_dir() -> str:
     return os.environ.get("FASTEMBED_CACHE_DIR") or str(pathlib.Path.home() / ".cache" / "fastembed")
 
 
+def _load_model() -> None:
+    """Load the fastembed model into ``_model`` and verify its dimension
+    matches EMBED_DIMS (raises RuntimeError on mismatch)."""
+    global _model
+    from fastembed import TextEmbedding
+
+    s = get_settings()
+    log.info(
+        "loading embedding model %s (threads=%s, first use may download ~90 MB)…",
+        model_name(),
+        s.EMBED_THREADS
+    )
+    _model = TextEmbedding(
+        model_name=model_name(),
+        cache_dir=_cache_dir(),
+        threads=s.EMBED_THREADS,
+    )
+    dim = _model.embedding_size
+    if dim != s.EMBED_DIMS:
+        raise RuntimeError(
+            f"embedding dim mismatch: model={dim} EMBED_DIMS={s.EMBED_DIMS} — "
+            "the schema assumes 384-dim vectors"
+        )
+    log.info("embedding model ready (dim=%d)", dim)
+
+
 def _get_model() -> Any:
     """Load the fastembed model once (thread-safe) and verify its dimension
     matches EMBED_DIMS."""
-    global _model
     with _lock:
         if _model is None:
-            from fastembed import TextEmbedding
-
-            s = get_settings()
-            log.info(
-                "loading embedding model %s (threads=%s, first use may download ~90 MB)…",
-                model_name(),
-                s.EMBED_THREADS
-            )
-            _model = TextEmbedding(
-                model_name=model_name(),
-                cache_dir=_cache_dir(),
-                threads=s.EMBED_THREADS,
-            )
-            dim = _model.embedding_size
-            if dim != s.EMBED_DIMS:
-                raise RuntimeError(
-                    f"embedding dim mismatch: model={dim} EMBED_DIMS={s.EMBED_DIMS} — "
-                    "the schema assumes 384-dim vectors"
-                )
-            log.info("embedding model ready (dim=%d)", dim)
+            _load_model()
     return _model
