@@ -287,6 +287,7 @@ print("OK failure detail")
 # of truth (wellisearch.__version__). Skipped for source-tree dev runs where
 # the package is not installed.
 import importlib.metadata as _im
+
 import wellisearch as _ws
 
 try:
