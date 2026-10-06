@@ -19,8 +19,8 @@ from urllib.parse import urlparse
 GARBAGE_EXTENSIONS: frozenset[str] = frozenset({
     "3gp", "7z", "aac", "apk", "avi", "bmp", "bz2", "deb", "dmg", "doc",
     "docx", "exe", "flac", "flv", "gif", "gz", "ico", "jpeg", "jpg", "m3u8",
-    "m4a", "m4s", "m4v", "mkv", "mov", "mp3", "mp4", "msi", "ogg", "ods",
-    "odt", "pdf", "png", "ppt", "pptx", "rar", "rpm", "svg", "tar", "tgz",
+    "m4a", "m4s", "m4v", "mkv", "mov", "mp3", "mp4", "msi", "ods", "odt",
+    "ogg", "pdf", "png", "ppt", "pptx", "rar", "rpm", "svg", "tar", "tgz",
     "tiff", "wav", "webm", "webp", "wmv", "xls", "xlsx", "xz", "zip",
 })
 
