@@ -255,12 +255,10 @@ def _result(attempts: list[dict]) -> CrawlResult:
 
 
 d = failure_detail(
-    _result(
-        [
-            {"tier": "http", "error": "ssl.SSLCertVerificationError: certificate has expired"},
-            {"tier": "browser", "error": "botwall: turnstile-challenge", "status": 403},
-        ]
-    )
+    _result([
+        {"tier": "http", "error": "ssl.SSLCertVerificationError: certificate has expired"},
+        {"tier": "browser", "error": "botwall: turnstile-challenge", "status": 403},
+    ])
 )
 assert d.startswith("http: ssl.SSLCertVerificationError"), d
 assert "(http 403)" in d, d
