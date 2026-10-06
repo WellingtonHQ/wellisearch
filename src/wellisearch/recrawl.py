@@ -48,15 +48,19 @@ def main() -> None:
     )
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "--limit", type=int, default=0,
+        "--limit",
+        type=int,
+        default=0,
         help="only re-crawl the first N (by fetch_count)"
     )
     ap.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="report what would be re-crawled, don't crawl"
     )
     ap.add_argument(
-        "--resume", action="store_true",
+        "--resume",
+        action="store_true",
         help="skip pages already crawled in the last 24h (resume a partially-finished run)"
     )
     args = ap.parse_args()
@@ -134,13 +138,15 @@ async def _run(
             eta_min = (total - done) / rate / 60 if rate > 0 else 0.0
             print(
                 f"  {done}/{total} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                f"failed={stats['failed']}) {rate:.1f}/s eta={eta_min:.0f}m", flush=True
+                f"failed={stats['failed']}) {rate:.1f}/s eta={eta_min:.0f}m",
+                flush=True
             )
 
         elapsed = time.monotonic() - t0
         print(
             f"done in {elapsed / 60:.1f}m: ok={stats['ok']} "
-            f"unchanged={stats['unchanged']} failed={stats['failed']}", flush=True
+            f"unchanged={stats['unchanged']} failed={stats['failed']}",
+            flush=True
         )
     finally:
         await db.close()

@@ -59,7 +59,8 @@ async def _check_fn_search_local_nonsense() -> None:
     """fn_search_local exists and runs (nonsense token -> no rows,
     regardless of what else the shared dev index contains)."""
     rows = await db.fetch_all(
-        "SELECT * FROM fn_search_local(%s, NULL, 5)", ("zxqvjflurbqz xyptwqrfvz",)
+        "SELECT * FROM fn_search_local(%s, NULL, 5)",
+        ("zxqvjflurbqz xyptwqrfvz",)
     )
     assert rows == [], rows
     print("OK fn_search_local (nonsense query -> no rows)")

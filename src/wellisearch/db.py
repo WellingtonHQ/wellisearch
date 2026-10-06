@@ -73,7 +73,9 @@ class Database:
                 last_err = e
                 log.warning(
                     "waiting for postgres… (%d/%d) %s",
-                    attempt, STARTUP_RETRIES, e,
+                    attempt,
+                    STARTUP_RETRIES,
+                    e,
                 )
                 await asyncio.sleep(STARTUP_RETRY_S)
         if last_err is not None:
@@ -105,7 +107,8 @@ class Database:
         to open before ``schema.sql`` gets a chance to create it.
         """
         admin = await psycopg.AsyncConnection.connect(
-            s.conninfo(s.POSTGRES_ADMIN_DB), autocommit=True
+            s.conninfo(s.POSTGRES_ADMIN_DB),
+            autocommit=True
         )
         try:
             async with admin.cursor() as cur:
@@ -116,7 +119,8 @@ class Database:
         # Ensure the extensions the pool needs are present in the app DB, so a
         # fresh database boots without the "vector type not found" pool error.
         app = await psycopg.AsyncConnection.connect(
-            s.conninfo(s.POSTGRES_DB), autocommit=True
+            s.conninfo(s.POSTGRES_DB),
+            autocommit=True
         )
         try:
             async with app.cursor() as cur:
@@ -259,7 +263,8 @@ class Database:
         )
         used = row["used"] if row else 0
         state = await self.fetch_one(
-            "SELECT limit_override FROM provider_state WHERE provider = %s", (provider,)
+            "SELECT limit_override FROM provider_state WHERE provider = %s",
+            (provider,)
         )
         limit = (
             state["limit_override"]

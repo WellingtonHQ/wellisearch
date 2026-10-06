@@ -89,7 +89,9 @@ async def run_forever() -> None:
     STATE["started_at"] = dt.datetime.now(dt.timezone.utc)
     log.info(
         "worker started (interval=%sm budget/run=%d parallel=%d)",
-        s.WORKER_INTERVAL_MIN, s.WORKER_BUDGET_PER_RUN, s.CRAWL_MAX_PARALLEL,
+        s.WORKER_INTERVAL_MIN,
+        s.WORKER_BUDGET_PER_RUN,
+        s.CRAWL_MAX_PARALLEL,
     )
     while True:
         await asyncio.sleep(s.WORKER_INTERVAL_MIN * 60)
@@ -117,7 +119,8 @@ def main() -> None:
     if "--once" not in sys.argv:
         print(
             "worker --once not given; run `python -m wellisearch.worker --once` "
-            "for a manual run (the app starts the worker itself).", file=sys.stderr
+            "for a manual run (the app starts the worker itself).",
+            file=sys.stderr
         )
         sys.exit(2)
     result = asyncio.run(_once())

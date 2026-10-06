@@ -260,7 +260,8 @@ def select_random_pages(
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     """Pull a random set of real pages (spread across domains) from the index."""
     conn = await psycopg.AsyncConnection.connect(
-        cfg.postgres_dsn, row_factory=psycopg.rows.dict_row
+        cfg.postgres_dsn,
+        row_factory=psycopg.rows.dict_row
     )
     try:
         cur = await conn.execute(
@@ -357,7 +358,10 @@ async def stream_chat(
         "completion_tokens": None,
     }
     async with client.stream(
-        "POST", f"{base}/api/chat", json=payload, headers=_headers(api_key)
+        "POST",
+        f"{base}/api/chat",
+        json=payload,
+        headers=_headers(api_key)
     ) as resp:
         resp.raise_for_status()
         async for line in resp.aiter_lines():
@@ -389,7 +393,11 @@ async def warmup(
     """Load the model into RAM so measured runs exclude one-time load latency."""
     try:
         await stream_chat(
-            client, cfg, cfg.ollama_base_url, cfg.ollama_api_key, model,
+            client,
+            cfg,
+            cfg.ollama_base_url,
+            cfg.ollama_api_key,
+            model,
             [{"role": "user", "content": "Reply with the single word: ready"}],
         )
     except Exception:
@@ -413,7 +421,9 @@ async def judge_call(
     }
     t0 = time.perf_counter()
     r = await client.post(
-        f"{cfg.judge_base_url}/chat/completions", json=payload, headers=_headers(cfg.judge_api_key)
+        f"{cfg.judge_base_url}/chat/completions",
+        json=payload,
+        headers=_headers(cfg.judge_api_key)
     )
     r.raise_for_status()
     data = r.json()
@@ -483,7 +493,11 @@ async def run_model(
             who = f"[run] {label} · page {idx + 1}/{len(pages)} · {page['url']}"
             try:
                 out = await stream_chat(
-                    client, cfg, cfg.ollama_base_url, cfg.ollama_api_key, tag,
+                    client,
+                    cfg,
+                    cfg.ollama_base_url,
+                    cfg.ollama_api_key,
+                    tag,
                     [
                         {"role": "system", "content": CLEANUP_SYSTEM_PROMPT},
                         {"role": "user", "content": page["fit_markdown"]},
@@ -709,7 +723,9 @@ def main() -> None:
     p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
     p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
     p.add_argument(
-        "--concurrency", type=int, default=1,
+        "--concurrency",
+        type=int,
+        default=1,
         help="parallel pages per model (default 1 = fair CPU timing)",
     )
     p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")

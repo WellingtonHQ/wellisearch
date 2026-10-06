@@ -71,7 +71,8 @@ no_price = ex.fit(
     rendered(
         AMAZON_HTML.replace(
             "<div data-asin=\"B08WM3LJQB\"><span class=\"a-price\">"
-            "<span class=\"a-offscreen\">$129.99</span></span></div>", ""
+            "<span class=\"a-offscreen\">$129.99</span></span></div>",
+            ""
         )
     )
 )

@@ -72,7 +72,9 @@ async def test_auth() -> None:
         r = await open_c.get("/api/stats")
         check("REST auth: missing key -> 401", r.status_code == 401, str(r.status_code))
     async with httpx.AsyncClient(
-        base_url=BASE, headers={"Authorization": f"Bearer {KEY}"}, timeout=30
+        base_url=BASE,
+        headers={"Authorization": f"Bearer {KEY}"},
+        timeout=30
     ) as b_c:
         r = await b_c.get("/api/stats")
         check("REST auth: Bearer key -> 200", r.status_code == 200, str(r.status_code))
@@ -721,7 +723,8 @@ async def _mcp_http_tool_call_checks(session: ClientSession) -> None:
     # stateless: a second request must work in the same
     # "session" (each POST gets a fresh transport server-side)
     res = await session.call_tool(
-        "fetch_page", {"url": "https://python.langchain.com/docs/introduction/"}
+        "fetch_page",
+        {"url": "https://python.langchain.com/docs/introduction/"}
     )
     md = res.content[0].text if res.content else ""
     check(

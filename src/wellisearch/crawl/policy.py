@@ -22,27 +22,47 @@ class Policy:
 
 POLICY: dict[str, Policy] = {
     "amazon.com": Policy(
-        "amazon", ("http", "browser", "stealth"), ("network_idle", "settle"), ("price", "stock"), "dedicated",
+        "amazon",
+        ("http", "browser", "stealth"),
+        ("network_idle", "settle"),
+        ("price", "stock"),
+        "dedicated",
     ),
     "apnews.com": Policy("ap", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "bestbuy.com": Policy(
-        "bestbuy", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
+        "bestbuy",
+        ("http", "browser", "stealth"),
+        ("settle",),
+        ("price", "stock"),
+        "dedicated",
     ),
     "boardgamegeek.com": Policy("bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated"),
     # SERP is a SvelteKit SPA: results render client-side, so wait for network
     # idle before capturing (same as amazon/target). Browser-first — the raw
     # HTML has no content at all, so there is nothing for the http tier to win.
     "search.brave.com": Policy(
-        "brave", ("browser",), ("network_idle", "settle"), (), "shared",
+        "brave",
+        ("browser",),
+        ("network_idle", "settle"),
+        (),
+        "shared",
     ),
     "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "target.com": Policy(
-        "target", ("http", "browser", "stealth"), ("network_idle", "settle"), ("price", "stock"), "dedicated",
+        "target",
+        ("http", "browser", "stealth"),
+        ("network_idle", "settle"),
+        ("price", "stock"),
+        "dedicated",
     ),
     "theguardian.com": Policy("guardian", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "walmart.com": Policy(
-        "walmart", ("http", "browser", "stealth"), ("settle",), ("price", "stock"), "dedicated",
+        "walmart",
+        ("http", "browser", "stealth"),
+        ("settle",),
+        ("price", "stock"),
+        "dedicated",
     ),
     "wsj.com": Policy("wsj", ("http", "browser", "stealth"), ("settle",), (), "shared"),
 }
