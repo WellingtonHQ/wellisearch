@@ -669,9 +669,14 @@ async def _mcp_http_session_checks() -> None:
 
     async with httpx2.AsyncClient(headers={"X-API-Key": KEY}) as http:
         async with streamable_http_client(f"{BASE}/mcp/http", http_client=http) as (read, write):
-            async with ClientSession(read, write) as session:
-                await _mcp_http_handshake_checks(session)
-                await _mcp_http_tool_call_checks(session)
+            await _run_mcp_session_checks(ClientSession(read, write))
+
+
+async def _run_mcp_session_checks(session: ClientSession) -> None:
+    """Enter one client session and run the handshake + tool checks."""
+    async with session:
+        await _mcp_http_handshake_checks(session)
+        await _mcp_http_tool_call_checks(session)
 
 
 async def _mcp_http_handshake_checks(session: ClientSession) -> None:
