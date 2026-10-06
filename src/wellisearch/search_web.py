@@ -119,7 +119,10 @@ async def search_web(
         # local hit — zero provider credits (the quota-preservation layer)
         source, results = await _serve_local(local_rows, k)
     else:
-        # ---- provider gateway (auto: no good local hit; provider: always)
+        # ---------------------------------------------------------------------------
+        # Provider Gateway (Auto: No Good Local Hit; Provider: Always)
+        # ---------------------------------------------------------------------------
+
         source, results, degraded, errors, provider_ms = await _provider_search(
             query, k, crawl_n, search_mode, local_rows
         )

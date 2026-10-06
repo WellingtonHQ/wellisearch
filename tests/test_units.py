@@ -83,7 +83,7 @@ assert not trunc and text == "x" * 100
 print("OK per-page trim")
 
 # ---------------------------------------------------------------------------
-# Timing Header (feature: response timing)
+# Timing Header (Feature: Response Timing)
 # ---------------------------------------------------------------------------
 
 # format_timing: None/empty -> no line
@@ -193,7 +193,7 @@ assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")
 
 # ---------------------------------------------------------------------------
-# URL Filter (garbage URL rejection)
+# URL Filter (Garbage URL Rejection)
 # ---------------------------------------------------------------------------
 
 # binary / non-page files must be rejected

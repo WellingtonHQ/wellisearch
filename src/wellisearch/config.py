@@ -19,7 +19,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- postgres (host must be resolvable + reachable from the app container) ---
+    # ---------------------------------------------------------------------------
+    # Postgres (Host Must Be Resolvable + Reachable from the App Container)
+    # ---------------------------------------------------------------------------
+
     POSTGRES_HOST: str = "postgres"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "wellington"
@@ -44,7 +47,10 @@ class Settings(BaseSettings):
     YOUCOM_QUOTA_MONTHLY: int = 1000
     PROVIDER_TIMEOUT_S: int = 20
 
-    # --- embeddings (single source of truth; load-bearing) ---
+    # ---------------------------------------------------------------------------
+    # Embeddings (Single Source of Truth; Load-Bearing)
+    # ---------------------------------------------------------------------------
+
     EMBED_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     EMBED_DIMS: int = 384
     # ORT intra-op threads per embedding session (fastembed `threads=`).
@@ -53,7 +59,10 @@ class Settings(BaseSettings):
     # Postgres. MiniLM is small — a couple of threads per session is plenty.
     EMBED_THREADS: int = 2
 
-    # --- search ---
+    # ---------------------------------------------------------------------------
+    # Search
+    # ---------------------------------------------------------------------------
+
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
     # Local-hit gate: fetch at least this many rows so the coverage gate can
@@ -71,12 +80,18 @@ class Settings(BaseSettings):
     # to the provider gateway (search_web.py) instead of stalling the request.
     SEARCH_STATEMENT_TIMEOUT_MS: int = 15000
 
-    # --- fetch_pages truncation (swappable strategies) ---
+    # ---------------------------------------------------------------------------
+    # fetch_pages Truncation (Swappable Strategies)
+    # ---------------------------------------------------------------------------
+
     FETCH_DEFAULT_STRATEGY: str = "smart"  # even | head | priority | smart | tail
     FETCH_MAX_CHARS: int = 40000  # default total budget when max_chars omitted
     FETCH_PER_PAGE_CHARS: int = 12000  # default per-page cap
 
-    # --- worker / queue (async indexing) ---
+    # ---------------------------------------------------------------------------
+    # Worker / Queue (Async Indexing)
+    # ---------------------------------------------------------------------------
+
     WORKER_INTERVAL_MIN: float = 30
     WORKER_BUDGET_PER_RUN: int = 25
     REFRESH_MIN_AGE_HOURS: int = 72  # refresh pass skips pages whose last crawl is younger than this
@@ -92,7 +107,10 @@ class Settings(BaseSettings):
     CRAWL_MAX_PARALLEL: int = 8
     LOG_RETENTION_DAYS: int = 30  # event_log / crawl_log / search_log prune age
 
-    # --- native crawl engine (replaces the Crawl4AI path; design §6) ---
+    # ---------------------------------------------------------------------------
+    # Native Crawl Engine (Replaces the Crawl4AI Path; Design §6)
+    # ---------------------------------------------------------------------------
+
     # CF (challenge) lane: a dedicated low-concurrency, high-timeout lane so a
     # Cloudflare/turnstile crawl never blocks the fast lane. The fast lane only
     # probes for a bot-wall and routes it here; the CF lane runs the full
@@ -118,7 +136,10 @@ class Settings(BaseSettings):
     # certificate verification. Applies to all three transport tiers.
     CRAWL_IGNORE_SSL_ERRORS: bool = True
 
-    # --- server ---
+    # ---------------------------------------------------------------------------
+    # Server
+    # ---------------------------------------------------------------------------
+
     BIND_PORT: int = 8780
     WELLISEARCH_API_KEY: str = ""  # empty = open; set = require on REST + MCP
 

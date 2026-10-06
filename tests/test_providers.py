@@ -105,7 +105,7 @@ async def expect_network_error(cls: type[Provider], settings: Settings) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Base Helpers (shared normalization point)
+# Base Helpers (Shared Normalization Point)
 # ---------------------------------------------------------------------------
 
 def test_base() -> None:
