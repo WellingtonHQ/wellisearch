@@ -457,62 +457,7 @@ async def test_dashboard(c: httpx.AsyncClient) -> None:
 
 async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
     """format=json on /api/search + /api/fetch + /api/fetch-bulk: envelope + precedence."""
-    # search: explicit format=json -> JSON envelope
-    params = {"query": "fastapi mcp server", "num_results": 5, "format": "json"}
-    r = await c.get("/api/search", params=params)
-    j = r.json()
-    check(
-        "search json: 200 + content-type json",
-        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json"),
-        r.headers.get("content-type", "")
-    )
-    check(
-        "search json: envelope keys",
-        isinstance(j, dict) and all(k in j for k in ("count", "degraded", "results", "source")),
-        str(sorted(j.keys())) if isinstance(j, dict) else type(j).__name__
-    )
-    check(
-        "search json: results list with url/title/snippet",
-        isinstance(j.get("results"), list) and len(j["results"]) >= 1
-        and all(k in j["results"][0] for k in ("snippet", "title", "url")),
-        json.dumps((j.get("results") or [{}])[0])[:120]
-    )
-    check(
-        "search json: timing object with total_ms + index_ms",
-        isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
-        json.dumps(j.get("timing"))
-    )
-
-    # search: Accept header only (no format param) -> JSON
-    r = await c.get(
-        "/api/search",
-        params={"query": "fastapi mcp server"},
-        headers={"Accept": "application/json"},
-    )
-    check(
-        "search json via Accept header",
-        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
-        and "results" in r.json(),
-        r.headers.get("content-type", "")
-    )
-
-    # precedence: format=markdown + Accept: application/json -> param wins
-    r = await c.get(
-        "/api/search",
-        params={"query": "fastapi mcp server", "format": "markdown"},
-        headers={"Accept": "application/json"}
-    )
-    check(
-        "search precedence: format param wins over Accept",
-        r.status_code == 200
-        and r.headers.get("content-type", "").startswith("text/markdown")
-        and "Source:" in r.text,
-        r.headers.get("content-type", ""),
-    )
-
-    # invalid format -> 400
-    r = await c.get("/api/search", params={"query": "fastapi", "format": "yaml"})
-    check("search invalid format -> 400", r.status_code == 400, r.text[:120])
+    await _check_search_json(c)
 
     # fetch: format=json -> JSON envelope
     r = await c.post("/api/fetch", json={"url": url, "format": "json"})
@@ -634,6 +579,66 @@ async def _set_pages_disabled(
     """PATCH each page's disabled flag (forces/undoes gateway failover)."""
     for u in urls:
         await c.patch(f"/api/pages/{quote(u, safe='')}", json={"disabled": disabled})
+
+
+async def _check_search_json(c: httpx.AsyncClient) -> None:
+    """format=json on /api/search: explicit param, Accept header, precedence, invalid."""
+    # search: explicit format=json -> JSON envelope
+    params = {"query": "fastapi mcp server", "num_results": 5, "format": "json"}
+    r = await c.get("/api/search", params=params)
+    j = r.json()
+    check(
+        "search json: 200 + content-type json",
+        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json"),
+        r.headers.get("content-type", "")
+    )
+    check(
+        "search json: envelope keys",
+        isinstance(j, dict) and all(k in j for k in ("count", "degraded", "results", "source")),
+        str(sorted(j.keys())) if isinstance(j, dict) else type(j).__name__
+    )
+    check(
+        "search json: results list with url/title/snippet",
+        isinstance(j.get("results"), list) and len(j["results"]) >= 1
+        and all(k in j["results"][0] for k in ("snippet", "title", "url")),
+        json.dumps((j.get("results") or [{}])[0])[:120]
+    )
+    check(
+        "search json: timing object with total_ms + index_ms",
+        isinstance(j.get("timing"), dict) and "total_ms" in j["timing"] and "index_ms" in j["timing"],
+        json.dumps(j.get("timing"))
+    )
+
+    # search: Accept header only (no format param) -> JSON
+    r = await c.get(
+        "/api/search",
+        params={"query": "fastapi mcp server"},
+        headers={"Accept": "application/json"},
+    )
+    check(
+        "search json via Accept header",
+        r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
+        and "results" in r.json(),
+        r.headers.get("content-type", "")
+    )
+
+    # precedence: format=markdown + Accept: application/json -> param wins
+    r = await c.get(
+        "/api/search",
+        params={"query": "fastapi mcp server", "format": "markdown"},
+        headers={"Accept": "application/json"}
+    )
+    check(
+        "search precedence: format param wins over Accept",
+        r.status_code == 200
+        and r.headers.get("content-type", "").startswith("text/markdown")
+        and "Source:" in r.text,
+        r.headers.get("content-type", ""),
+    )
+
+    # invalid format -> 400
+    r = await c.get("/api/search", params={"query": "fastapi", "format": "yaml"})
+    check("search invalid format -> 400", r.status_code == 400, r.text[:120])
 
 
 async def _mcp_http_auth_checks() -> None:
