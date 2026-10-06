@@ -5,4 +5,4 @@ from .engine import crawl
 from .policy import Policy
 from .results import CrawlResult, Escalate
 
-__all__ = ["CrawlResult", "Escalate", "Policy", "crawl"]
+__all__ = ["crawl", "CrawlResult", "Escalate", "Policy"]
