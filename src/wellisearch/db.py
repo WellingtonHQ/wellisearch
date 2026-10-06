@@ -488,12 +488,7 @@ class Database:
     ) -> None:
         """Finish a claimed row: done on success, else back to pending (attempts
         left) or failed (attempts exhausted)."""
-        if ok:
-            await self.execute(
-                "UPDATE crawl_queue SET status = 'done' WHERE url = %s AND status = 'in_flight'",
-                (url,),
-            )
-        else:
+        if not ok:
             row = await self.fetch_one(
                 "SELECT attempts FROM crawl_queue WHERE url = %s AND status = 'in_flight'",
                 (url,),
@@ -511,6 +506,11 @@ class Database:
                     "WHERE url = %s AND status = 'in_flight'",
                     (error, url),
                 )
+            return
+        await self.execute(
+            "UPDATE crawl_queue SET status = 'done' WHERE url = %s AND status = 'in_flight'",
+            (url,),
+        )
 
     async def queue_route_to_cf(self, url: str) -> bool:
         """Move a fast-lane row (pending or in-flight) onto the CF challenge lane.
