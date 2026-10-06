@@ -164,17 +164,6 @@ class Config:
         self.results_file = self.out_dir / "llm-cleanup.results.json"
         self.report_file = self.out_dir / "llm-cleanup.report.md"
 
-def _parse_model_spec(part: str) -> tuple[str, str] | None:
-    """One --models entry as (label, tag); None for an empty entry."""
-    part = part.strip()
-    if not part:
-        return None
-    if "=" in part:
-        label, tag = [p.strip() for p in part.split("=", 1)]
-    else:
-        label = tag = part
-    return (label, tag)
-
 def load_config(args: argparse.Namespace) -> Config:
     """Build a Config from CLI args + env, validating the judge is configured when needed."""
     pg_host = os.environ.get("POSTGRES_HOST", "127.0.0.1")
@@ -267,24 +256,6 @@ def select_random_pages(
             break
         round_idx += 1
     return picked
-
-def _one_round(
-    domains: list[str],
-    by_domain: dict[str, list[dict[str, Any]]],
-    round_idx: int,
-    cap: int,
-    target: int,
-    seen: set[str],
-    picked: list[dict[str, Any]],
-) -> bool:
-    """One round-robin pass over domains; True if any page was picked."""
-    progressed = False
-    for d in domains:
-        if len(picked) >= target:
-            break
-        if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
-            progressed = True
-    return progressed
 
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     """Pull a random set of real pages (spread across domains) from the index."""
@@ -525,37 +496,6 @@ async def run_model(
             return rec
 
     return list(await asyncio.gather(*(one(p, i) for i, p in enumerate(pages))))
-
-async def _record_page_result(
-    client: httpx.AsyncClient,
-    cfg: Config,
-    rec: dict[str, Any],
-    who: str,
-    page: dict[str, Any],
-    out: dict[str, Any],
-) -> None:
-    """Store the streamed output + metrics on rec; call and log the judge when enabled."""
-    rec.update({
-        k: out[k]
-        for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
-    })
-    rec["output"] = out["text"]
-    rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
-    stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
-             f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
-             f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
-    if cfg.use_judge and out["text"].strip():
-        log(f"{who} — {stats} → awaiting judge …")
-        rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
-        sc = rec["judge"].get("scores") or {}
-        log(
-            f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
-            f"(faith={sc.get('faithfulness')} "
-            f"noise={sc.get('noise_removal')} "
-            f"presv={sc.get('preservation')})"
-        )
-    else:
-        log(f"{who} — {stats}")
 
 async def ensure_models(
     client: httpx.AsyncClient,
@@ -823,6 +763,17 @@ def _load_dotenv() -> None:
         if key and key not in os.environ:
             os.environ[key] = value
 
+def _parse_model_spec(part: str) -> tuple[str, str] | None:
+    """One --models entry as (label, tag); None for an empty entry."""
+    part = part.strip()
+    if not part:
+        return None
+    if "=" in part:
+        label, tag = [p.strip() for p in part.split("=", 1)]
+    else:
+        label = tag = part
+    return (label, tag)
+
 def _pick_from_domain(
     domain: str,
     rows: list[dict[str, Any]],
@@ -839,6 +790,24 @@ def _pick_from_domain(
             picked.append(row)
             return True
     return False
+
+def _one_round(
+    domains: list[str],
+    by_domain: dict[str, list[dict[str, Any]]],
+    round_idx: int,
+    cap: int,
+    target: int,
+    seen: set[str],
+    picked: list[dict[str, Any]],
+) -> bool:
+    """One round-robin pass over domains; True if any page was picked."""
+    progressed = False
+    for d in domains:
+        if len(picked) >= target:
+            break
+        if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
+            progressed = True
+    return progressed
 
 # ---------------------------------------------------------------------------
 # LLM Calls
@@ -898,6 +867,37 @@ def _parse_judge_scores(text: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         return scores
     return scores
+
+async def _record_page_result(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    rec: dict[str, Any],
+    who: str,
+    page: dict[str, Any],
+    out: dict[str, Any],
+) -> None:
+    """Store the streamed output + metrics on rec; call and log the judge when enabled."""
+    rec.update({
+        k: out[k]
+        for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
+    })
+    rec["output"] = out["text"]
+    rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
+    stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
+             f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
+             f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
+    if cfg.use_judge and out["text"].strip():
+        log(f"{who} — {stats} → awaiting judge …")
+        rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
+        sc = rec["judge"].get("scores") or {}
+        log(
+            f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
+            f"(faith={sc.get('faithfulness')} "
+            f"noise={sc.get('noise_removal')} "
+            f"presv={sc.get('preservation')})"
+        )
+    else:
+        log(f"{who} — {stats}")
 
 # ---------------------------------------------------------------------------
 # Deterministic Metrics
