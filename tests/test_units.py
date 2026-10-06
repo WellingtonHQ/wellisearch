@@ -250,6 +250,7 @@ from wellisearch.crawler import failure_detail  # noqa: E402
 
 
 def _result(attempts: list[dict]) -> CrawlResult:
+    """Build a failed CrawlResult from tier attempts (failure_detail fixture)."""
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
 
 
