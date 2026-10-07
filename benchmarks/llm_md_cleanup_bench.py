@@ -178,16 +178,8 @@ def load_config(args: argparse.Namespace) -> Config:
 
     models = DEFAULT_MODELS
     if args.models:
-        models = []
-        for part in args.models.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            if "=" in part:
-                label, tag = [p.strip() for p in part.split("=", 1)]
-            else:
-                label = tag = part
-            models.append((label, tag))
+        specs = [_parse_model_spec(p) for p in args.models.split(",")]
+        models = [s for s in specs if s is not None]
 
     out_dir = Path(args.out_dir or os.environ.get("BENCH_OUT_DIR") or (HERE / "results"))
 
@@ -243,7 +235,8 @@ PER_DOMAIN_CAP = 3
 SAMPLE_POOL_LIMIT = 200
 
 def select_random_pages(
-    by_domain: dict[str, list[dict[str, Any]]], target: int
+    by_domain: dict[str, list[dict[str, Any]]],
+    target: int,
 ) -> list[dict[str, Any]]:
     """Round-robin across domains; within a domain take pages in arrival order.
 
@@ -259,13 +252,7 @@ def select_random_pages(
     seen: set[str] = set()
     round_idx = 0
     while len(picked) < target:
-        progressed = False
-        for d in domains:
-            if len(picked) >= target:
-                break
-            if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
-                progressed = True
-        if not progressed:
+        if not _one_round(domains, by_domain, round_idx, cap, target, seen, picked):
             break
         round_idx += 1
     return picked
@@ -273,7 +260,8 @@ def select_random_pages(
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     """Pull a random set of real pages (spread across domains) from the index."""
     conn = await psycopg.AsyncConnection.connect(
-        cfg.postgres_dsn, row_factory=psycopg.rows.dict_row
+        cfg.postgres_dsn,
+        row_factory=psycopg.rows.dict_row
     )
     try:
         cur = await conn.execute(
@@ -370,7 +358,10 @@ async def stream_chat(
         "completion_tokens": None,
     }
     async with client.stream(
-        "POST", f"{base}/api/chat", json=payload, headers=_headers(api_key)
+        "POST",
+        f"{base}/api/chat",
+        json=payload,
+        headers=_headers(api_key)
     ) as resp:
         resp.raise_for_status()
         async for line in resp.aiter_lines():
@@ -402,7 +393,11 @@ async def warmup(
     """Load the model into RAM so measured runs exclude one-time load latency."""
     try:
         await stream_chat(
-            client, cfg, cfg.ollama_base_url, cfg.ollama_api_key, model,
+            client,
+            cfg,
+            cfg.ollama_base_url,
+            cfg.ollama_api_key,
+            model,
             [{"role": "user", "content": "Reply with the single word: ready"}],
         )
     except Exception:
@@ -426,7 +421,9 @@ async def judge_call(
     }
     t0 = time.perf_counter()
     r = await client.post(
-        f"{cfg.judge_base_url}/chat/completions", json=payload, headers=_headers(cfg.judge_api_key)
+        f"{cfg.judge_base_url}/chat/completions",
+        json=payload,
+        headers=_headers(cfg.judge_api_key)
     )
     r.raise_for_status()
     data = r.json()
@@ -496,33 +493,17 @@ async def run_model(
             who = f"[run] {label} · page {idx + 1}/{len(pages)} · {page['url']}"
             try:
                 out = await stream_chat(
-                    client, cfg, cfg.ollama_base_url, cfg.ollama_api_key, tag,
+                    client,
+                    cfg,
+                    cfg.ollama_base_url,
+                    cfg.ollama_api_key,
+                    tag,
                     [
                         {"role": "system", "content": CLEANUP_SYSTEM_PROMPT},
                         {"role": "user", "content": page["fit_markdown"]},
                     ],
                 )
-                rec.update({
-                    k: out[k]
-                    for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
-                })
-                rec["output"] = out["text"]
-                rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
-                stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
-                         f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
-                         f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
-                if cfg.use_judge and out["text"].strip():
-                    log(f"{who} — {stats} → awaiting judge …")
-                    rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
-                    sc = rec["judge"].get("scores") or {}
-                    log(
-                        f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
-                        f"(faith={sc.get('faithfulness')} "
-                        f"noise={sc.get('noise_removal')} "
-                        f"presv={sc.get('preservation')})"
-                    )
-                else:
-                    log(f"{who} — {stats}")
+                await _record_page_result(client, cfg, rec, who, page, out)
             except Exception as e:
                 rec["error"] = f"{type(e).__name__}: {e}"
                 log(f"{who} — ERROR: {rec['error']}")
@@ -742,7 +723,9 @@ def main() -> None:
     p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
     p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
     p.add_argument(
-        "--concurrency", type=int, default=1,
+        "--concurrency",
+        type=int,
+        default=1,
         help="parallel pages per model (default 1 = fair CPU timing)",
     )
     p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")
@@ -796,6 +779,17 @@ def _load_dotenv() -> None:
         if key and key not in os.environ:
             os.environ[key] = value
 
+def _parse_model_spec(part: str) -> tuple[str, str] | None:
+    """One --models entry as (label, tag); None for an empty entry."""
+    part = part.strip()
+    if not part:
+        return None
+    if "=" in part:
+        label, tag = [p.strip() for p in part.split("=", 1)]
+    else:
+        label = tag = part
+    return (label, tag)
+
 def _pick_from_domain(
     domain: str,
     rows: list[dict[str, Any]],
@@ -812,6 +806,24 @@ def _pick_from_domain(
             picked.append(row)
             return True
     return False
+
+def _one_round(
+    domains: list[str],
+    by_domain: dict[str, list[dict[str, Any]]],
+    round_idx: int,
+    cap: int,
+    target: int,
+    seen: set[str],
+    picked: list[dict[str, Any]],
+) -> bool:
+    """One round-robin pass over domains; True if any page was picked."""
+    progressed = False
+    for d in domains:
+        if len(picked) >= target:
+            break
+        if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
+            progressed = True
+    return progressed
 
 # ---------------------------------------------------------------------------
 # LLM Calls
@@ -851,6 +863,12 @@ def _process_stream_line(
         state["prompt_tokens"] = chunk.get("prompt_eval_count")
         state["completion_tokens"] = chunk.get("eval_count")
 
+def _fill_judge_scores(obj: dict[str, Any], scores: dict[str, Any]) -> None:
+    """Copy the 1-5 score fields from a parsed judge object into scores."""
+    for k in ("faithfulness", "noise_removal", "preservation"):
+        if isinstance(obj.get(k), (int, float)):
+            scores[k] = int(obj[k])
+
 def _parse_judge_scores(text: str) -> dict[str, Any]:
     """Extract the judge's 1-5 scores (and note) from a free-text reply."""
     m = re.search(r"\{.*\}", text, re.DOTALL)
@@ -859,14 +877,43 @@ def _parse_judge_scores(text: str) -> dict[str, Any]:
         return scores
     try:
         obj = json.loads(m.group(0))
-        for k in ("faithfulness", "noise_removal", "preservation"):
-            if isinstance(obj.get(k), (int, float)):
-                scores[k] = int(obj[k])
+        _fill_judge_scores(obj, scores)
         if isinstance(obj.get("note"), str):
             scores["note"] = obj["note"]
     except json.JSONDecodeError:
         return scores
     return scores
+
+async def _record_page_result(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    rec: dict[str, Any],
+    who: str,
+    page: dict[str, Any],
+    out: dict[str, Any],
+) -> None:
+    """Store the streamed output + metrics on rec; call and log the judge when enabled."""
+    rec.update({
+        k: out[k]
+        for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
+    })
+    rec["output"] = out["text"]
+    rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])
+    stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
+             f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
+             f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
+    if cfg.use_judge and out["text"].strip():
+        log(f"{who} — {stats} → awaiting judge …")
+        rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
+        sc = rec["judge"].get("scores") or {}
+        log(
+            f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
+            f"(faith={sc.get('faithfulness')} "
+            f"noise={sc.get('noise_removal')} "
+            f"presv={sc.get('preservation')})"
+        )
+    else:
+        log(f"{who} — {stats}")
 
 # ---------------------------------------------------------------------------
 # Deterministic Metrics
@@ -988,6 +1035,23 @@ def _report_table_lines(
     lines.append("")
     return lines
 
+def _report_detail_row(r: dict[str, Any]) -> str:
+    """One detail-table row; error rows show the error instead of metrics."""
+    if "error" in r:
+        return f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |"
+    mt = r.get("metrics", {})
+    js = r.get("judge", {}).get("scores", {})
+    judge_cell = (
+        f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
+        f"{js.get('preservation','–')}"
+        if js else "—"
+    )
+    return (
+        f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
+        f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
+        f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
+    )
+
 def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str]:
     """The per-page detail tables (one per model)."""
     lines = ["## Per-page detail", ""]
@@ -999,21 +1063,7 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
         )
         lines.append("|---|---|---|---|---|---|---|---|---|")
         for r in payload["results"][label]:
-            if "error" in r:
-                lines.append(f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |")
-                continue
-            mt = r.get("metrics", {})
-            js = r.get("judge", {}).get("scores", {})
-            judge_cell = (
-                f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
-                f"{js.get('preservation','–')}"
-                if js else "—"
-            )
-            lines.append(
-                f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
-                f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
-                f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
-            )
+            lines.append(_report_detail_row(r))
         lines.append("")
     return lines
 

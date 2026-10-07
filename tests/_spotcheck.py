@@ -21,11 +21,7 @@ for q in [
     deg = re.search(r"^Degraded: (\S+)", md, re.M)
     m = re.search(r"URL: (\S+)", md)
     print(
-        "query=%r src=%s degraded=%s count=%s first=%s" % (
-            q,
-            src.group(1) if src else "?",
-            deg.group(1) if deg else "?",
-            len(re.findall(r"^URL: ", md, re.M)),
-            m.group(1) if m else "(none)",
-        )
+        f"query={q!r} src={src.group(1) if src else '?'} degraded="
+        f"{deg.group(1) if deg else '?'} count={len(re.findall(r'^URL: ', md, re.M))} "
+        f"first={m.group(1) if m else '(none)'}"
     )

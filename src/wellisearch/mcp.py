@@ -57,30 +57,30 @@ TRANSPORT_SECURITY = TransportSecuritySettings(
         # an origin-only entry still 421s. Keep this list mirrored with
         # allowed_origins below.
         "127.0.0.1:*",
-        "localhost:*",
         "[::1]:*",
-        "wellisearch:*",
+        "localhost:*",
         # bare + :port forms — the SDK's ":*" wildcard requires a port suffix.
         # One entry per machine that serves this app over Tailscale; each gets
         # a matching https:// origin in allowed_origins too.
-        "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
-        "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
         "normandysr1.tailc2fbf4.ts.net",
         "normandysr1.tailc2fbf4.ts.net:*",
         "normandysr2.tailc2fbf4.ts.net",
         "normandysr2.tailc2fbf4.ts.net:*",
+        "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
+        "wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
+        "wellisearch:*",
     ],
     allowed_origins=[
         "http://127.0.0.1:*",
         "http://[::1]:*",
         "http://localhost:*",
         "http://wellisearch:*",
-        "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
-        "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
         "https://normandysr1.tailc2fbf4.ts.net",
         "https://normandysr1.tailc2fbf4.ts.net:*",
         "https://normandysr2.tailc2fbf4.ts.net",
         "https://normandysr2.tailc2fbf4.ts.net:*",
+        "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net",
+        "https://wellingtons-16-macbook-pro-2019.tailc2fbf4.ts.net:*",
     ],
 )
 

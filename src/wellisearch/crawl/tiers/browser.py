@@ -86,7 +86,9 @@ class BrowserTier:
         timeout_s = s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S
         start = time.monotonic()
         resp = await page.goto(
-            url, wait_until="domcontentloaded", timeout=timeout_s * 1000
+            url,
+            wait_until="domcontentloaded",
+            timeout=timeout_s * 1000
         )
         status = resp.status if resp is not None else 200
         await settle(page)
@@ -110,7 +112,9 @@ class BrowserTier:
             if recovered is not None:
                 log.info("recovered walmart item: %s", recovered)
                 resp2 = await page.goto(
-                    recovered, wait_until="domcontentloaded", timeout=timeout_s * 1000
+                    recovered,
+                    wait_until="domcontentloaded",
+                    timeout=timeout_s * 1000
                 )
                 status = resp2.status if resp2 is not None else status
                 await settle(page)

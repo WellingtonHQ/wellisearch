@@ -83,7 +83,7 @@ assert not trunc and text == "x" * 100
 print("OK per-page trim")
 
 # ---------------------------------------------------------------------------
-# Timing Header (feature: response timing)
+# Timing Header (Feature: Response Timing)
 # ---------------------------------------------------------------------------
 
 # format_timing: None/empty -> no line
@@ -193,7 +193,7 @@ assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")
 
 # ---------------------------------------------------------------------------
-# URL Filter (garbage URL rejection)
+# URL Filter (Garbage URL Rejection)
 # ---------------------------------------------------------------------------
 
 # binary / non-page files must be rejected
@@ -249,17 +249,16 @@ from wellisearch.crawl.results import CrawlResult  # noqa: E402
 from wellisearch.crawler import failure_detail  # noqa: E402
 
 
-def _result(attempts):
+def _result(attempts: list[dict]) -> CrawlResult:
+    """Build a failed CrawlResult from tier attempts (failure_detail fixture)."""
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
 
 
 d = failure_detail(
-    _result(
-        [
-            {"tier": "http", "error": "ssl.SSLCertVerificationError: certificate has expired"},
-            {"tier": "browser", "error": "botwall: turnstile-challenge", "status": 403},
-        ]
-    )
+    _result([
+        {"tier": "http", "error": "ssl.SSLCertVerificationError: certificate has expired"},
+        {"tier": "browser", "error": "botwall: turnstile-challenge", "status": 403},
+    ])
 )
 assert d.startswith("http: ssl.SSLCertVerificationError"), d
 assert "(http 403)" in d, d
@@ -287,6 +286,7 @@ print("OK failure detail")
 # of truth (wellisearch.__version__). Skipped for source-tree dev runs where
 # the package is not installed.
 import importlib.metadata as _im
+
 import wellisearch as _ws
 
 try:

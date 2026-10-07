@@ -93,7 +93,8 @@ def detect_cpu() -> str:
     try:
         if sys.platform == "darwin":
             return subprocess.check_output(
-                ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                text=True
             ).strip()
         name = _read_proc_cpuinfo()
         if name is not None:
@@ -194,7 +195,10 @@ class TorchRunner:
     def encode(self, texts: list[str]) -> np.ndarray:
         """Encode a batch of texts to L2-normalized float32 vectors."""
         X = self.model.encode(
-            texts, batch_size=self.batch, normalize_embeddings=True, show_progress_bar=False
+            texts,
+            batch_size=self.batch,
+            normalize_embeddings=True,
+            show_progress_bar=False
         )
         return _l2_normalize(np.asarray(X, dtype=np.float32))
 
@@ -224,7 +228,9 @@ class FastEmbedRunner:
         cache_dir = os.environ.get("FASTEMBED_CACHE_DIR") or str(Path.home() / ".cache" / "fastembed")
         t0 = time.perf_counter()
         self.model = TextEmbedding(
-            model_name=self.model_name, cache_dir=cache_dir, threads=args.threads
+            model_name=self.model_name,
+            cache_dir=cache_dir,
+            threads=args.threads
         )
         self.load_s = time.perf_counter() - t0
         self.tok = AutoTokenizer.from_pretrained(self.model_name)
@@ -278,11 +284,7 @@ def score_quality(
     for i, q in enumerate(queries):
         rel = truth[q["q"]]
         idx = np.argsort(-S[i])[:topk]
-        best = 0
-        for rank, d in enumerate(idx, start=1):
-            if chunks[order[d]]["id"] in rel:
-                best = rank
-                break
+        best = _best_rank(idx, order, chunks, rel)
         for k in (1, 5, 10):
             recall[k] += 1 if (best and best <= k) else 0
         if best:
@@ -419,10 +421,13 @@ def print_report(results: list[dict], total_wall: float) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI args (models, batch, max-len, threads, topk, latency, dirs)."""
     p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument(
-        "--model", action="append", default=None,
+        "--model",
+        action="append",
+        default=None,
         help="Model id (repeatable). Default: MiniLM baseline + nomic + qwen3-embed.",
     )
     p.add_argument("--batch", type=int, default=16, help="encode batch size (default 16)")
@@ -572,6 +577,18 @@ def _read_proc_cpuinfo() -> str | None:
             return next(nextGenerator, None)
     except Exception:
         return None
+
+def _best_rank(
+    idx: np.ndarray,
+    order: list[int],
+    chunks: list[dict],
+    rel: set[str],
+) -> int:
+    """The 1-based rank of the first relevant doc in idx (0 if none)."""
+    for rank, d in enumerate(idx, start=1):
+        if chunks[order[d]]["id"] in rel:
+            return rank
+    return 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

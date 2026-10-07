@@ -50,24 +50,33 @@ def _visible_text_markdown(html: str) -> str:
     """
     try:
         soup = _soup(html)
-        for tag in soup(["script", "style", "noscript", "template"]):
+        for tag in soup(["noscript", "script", "style", "template"]):
             tag.decompose()
         root = soup.body or soup
-        lines: list[str] = []
-        seen: set[str] = set()
-        for el in root.find_all(True):
-            if el.find(True) is not None:
-                continue  # has a nested element — its text is emitted deeper down
-            text = " ".join(el.get_text().split())
-            if text and text not in seen:
-                seen.add(text)
-                lines.append(text)
-        return "\n".join(lines)
+        return "\n".join(_visible_lines(root))
     except Exception:
         return ""
 
 
-def _soup(html: str):
+def _visible_lines(root: object) -> list[str]:
+    """One whitespace-collapsed line per terminal element, deduped in order.
+
+    Emits each element that contains only inline children (no nested block
+    elements), so container text is never counted twice and repeated nav
+    labels dedupe."""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for el in root.find_all(True):
+        if el.find(True) is not None:
+            continue  # has a nested element — its text is emitted deeper down
+        text = " ".join(el.get_text().split())
+        if text and text not in seen:
+            seen.add(text)
+            lines.append(text)
+    return lines
+
+
+def _soup(html: str) -> BeautifulSoup:
     """BeautifulSoup (lxml) parse; the repo's shared parser choice."""
     from bs4 import BeautifulSoup
 
