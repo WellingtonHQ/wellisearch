@@ -38,7 +38,8 @@ def embed(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
     m = _get_model()
-    return [list(v) for v in m.embed(list(texts))]
+    with _lock:
+        return [list(v) for v in m.embed(list(texts))]
 
 
 def embed_one(text: str) -> list[float]:
