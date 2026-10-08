@@ -286,6 +286,7 @@ class StubGateway:
         query: str,
         num: int,
     ) -> tuple[list[Result], str, list[dict]]:
+        """Record the call and return canned results (Apollo leads on Q2)."""
         self.calls.append((query, num))
         return (
             [

@@ -21,12 +21,15 @@ class FakeDB:
         self.paused = False
 
     async def page_get(self, url: str) -> dict | None:
+        """Always report the URL as unindexed so fetch takes the on-demand crawl path."""
         return None  # not indexed yet: force the on-demand crawl path
 
     async def worker_paused(self) -> bool:
+        """Report whether indexing is paused (set per scenario)."""
         return self.paused
 
     async def queue_challenge_in_flight(self, url: str) -> bool:
+        """Report whether a CF challenge row is already in flight."""
         return self.challenge_in_flight
 
     async def queue_enqueue(
@@ -35,6 +38,7 @@ class FakeDB:
         source: str = "fetch",
         lane: str | None = None,
     ) -> bool:
+        """Record the enqueue and report success."""
         self.enqueued.append((url, source, lane))
         return True
 
@@ -81,6 +85,7 @@ fetch_log.setLevel(logging.INFO)  # capture INFO records too (grace expiry, stor
 
 
 async def failing_slow_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Simulate a crawl that outlives the deadline, then fails."""
     await asyncio.sleep(0.6)  # longer than the 0.3 s deadline
     raise crawler.CrawlError(url, "simulated tier failure after client gave up")
 
@@ -93,6 +98,7 @@ fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
 async def scenario_deadline() -> Exception | None:
+    """Resolve a slow URL past its deadline and return the client-facing error."""
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL)
@@ -121,6 +127,7 @@ print("OK deadline path (hint + re-enqueue + kick + background watch)")
 
 
 async def slow_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Simulate a crawl slow enough that a client disconnect lands mid-crawl."""
     await asyncio.sleep(1.0)  # long enough that cancellation lands mid-wait
     return {"url": url}
 
@@ -133,6 +140,7 @@ fetch_mod.get_settings = lambda: _CANCEL_S  # long deadline: cancel must win, no
 
 
 async def scenario_cancel() -> str:
+    """Cancel a mid-flight resolve and report whether CancelledError survived."""
     fetch_task = asyncio.create_task(fetch_mod._resolve_page(URL))
     await asyncio.sleep(0.05)  # _resolve_page is inside its deadline wait now
     fetch_task.cancel()
@@ -162,6 +170,7 @@ hang_cancelled: list[bool] = []
 
 
 async def grace_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Hang forever on one URL; finish just past the deadline on the other."""
     if url == URL_G2:
         await asyncio.sleep(0.5)  # past the 0.3 s deadline but inside the 1.0 s grace
         return {"url": url}
@@ -184,6 +193,7 @@ fetch_mod.get_settings = lambda: _GRACE_S
 
 
 async def scenario_grace(url: str) -> Exception | None:
+    """Resolve a URL through the grace window and return the client-facing error."""
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(url)
@@ -235,6 +245,7 @@ fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
 async def scenario_paused_timeout() -> Exception | None:
+    """Resolve a slow URL while indexing is paused and return the client-facing error."""
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL_P)
@@ -262,6 +273,7 @@ called_crawls: list[str] = []
 
 
 async def no_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record any call so a test can assert no crawl started."""
     called_crawls.append(url)
     return {"url": url}
 
@@ -276,6 +288,7 @@ fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
 async def scenario_paused_fastfail() -> Exception | None:
+    """Resolve the challenge URL and return the client-facing error."""
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL_CF)
@@ -299,6 +312,7 @@ print("OK paused fast-fail (pending CF row; no seconds ETA)")
 
 
 async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Simulate a probe that immediately hits a bot-wall."""
     raise ChallengeDetected(url)
 
 

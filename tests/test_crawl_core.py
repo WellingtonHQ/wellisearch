@@ -174,6 +174,8 @@ BOTWALL_HTML = '<html><body>Just a moment...<div class="cf-turnstile"></div></bo
 
 
 class FakeTier:
+    """Fake http tier whose fetch always succeeds with a clean page."""
+
     name = "http"
 
     async def fetch(
@@ -249,6 +251,8 @@ assert listing_result.flags.get("extractor") == "generic"
 
 
 class BotwallHttpTier:
+    """Fake http tier whose fetch always hits a bot-wall."""
+
     name = "http"
 
     async def fetch(
@@ -261,6 +265,8 @@ class BotwallHttpTier:
 
 
 class FakeBotwallTier:
+    """Fake browser tier whose fetch always hits a bot-wall."""
+
     name = "browser"
 
     async def fetch(

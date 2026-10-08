@@ -34,12 +34,16 @@ CLEAN_HTML = (
 # ---------------------------------------------------------------------------
 
 class FakeResp:
+    """Fake page.goto() response carrying only its status code."""
+
     def __init__(self, status: int) -> None:
         """Initialize a fake response with a status."""
         self.status = status
 
 
 class FakeMouse:
+    """Fake page mouse that counts clicks and ignores moves."""
+
     def __init__(self) -> None:
         """Initialize a fake mouse click counter."""
         self.clicks = 0
@@ -117,6 +121,8 @@ class FakePage:
 
 
 class FakeContext:
+    """Fake browser context whose new_page() always yields the same fake page."""
+
     def __init__(self, page: FakePage) -> None:
         """Initialize a fake context wrapping a page."""
         self._page = page
@@ -127,6 +133,8 @@ class FakeContext:
 
 
 class FakePool:
+    """Fake pool that hands out one shared context and counts acquires."""
+
     def __init__(self, page: FakePage) -> None:
         """Initialize a fake pool wrapping a fake context."""
         self._ctx = FakeContext(page)
@@ -241,6 +249,8 @@ called = []
 
 
 class FakeSem:
+    """Fake semaphore that records its name when entered."""
+
     def __init__(self, name: str) -> None:
         """Initialize a fake semaphore with a name."""
         self.name = name
@@ -296,6 +306,8 @@ print("OK crawl_deduped picks semaphore by lane")
 # ---------------------------------------------------------------------------
 
 class ChallengeTier:
+    """Fake http tier whose fetch always raises ChallengeDetected."""
+
     name = "http"
 
     async def fetch(
@@ -330,6 +342,8 @@ print("OK engine propagates ChallengeDetected")
 # ---------------------------------------------------------------------------
 
 class FakeDB:
+    """Fake db serving one pending challenge row; records claim, done, and CF routing."""
+
     def __init__(self) -> None:
         """Initialize a fake db with recorded calls."""
         self.routed = []
@@ -393,6 +407,8 @@ print("OK worker routes ChallengeDetected to CF lane")
 
 
 class BackoffDB:
+    """Fake db that records refresh-failure streak bumps."""
+
     def __init__(self) -> None:
         """Initialize a fake db recording streak bumps."""
         self.bumped = []
@@ -463,6 +479,8 @@ WALLED = "https://example.com/walled"
 
 
 class FakeRefreshDB:
+    """Fake db for the refresh path: serves one stale page, records enqueues/routing/bumps."""
+
     def __init__(self, enqueue_ok: bool = True) -> None:
         """Initialize a fake db for the watchlist refresh path."""
         self.enqueue_ok = enqueue_ok
@@ -548,6 +566,8 @@ print("OK refresh routes the existing queue row to CF lane")
 
 
 class KickDB:
+    """Fake db that records enqueue/route calls and reports whether the insert was accepted."""
+
     def __init__(self, insert_ok: bool) -> None:
         """Initialize a fake db that records enqueue/route calls."""
         self.inserted = []
@@ -652,10 +672,12 @@ async def _orphan_release() -> str:
     started = asyncio.Event()
 
     async def owner_fn() -> None:
+        """The deduped owner crawl: signal start, then hang until cancelled."""
         started.set()
         await asyncio.sleep(30.0)  # hangs until its task is cancelled
 
     async def unused_fn() -> None:
+        """Placeholder for the joiner's crawl; it is never invoked."""
         return None  # joiners never run fn — they dedup onto the in-flight future
 
     owner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "fetch", owner_fn))

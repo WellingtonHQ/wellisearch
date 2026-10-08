@@ -28,12 +28,15 @@ class FakeDB:
         self.paused = False
 
     async def page_get(self, url: str) -> dict | None:
+        """Return the stored row, if any."""
         return self.page
 
     async def worker_paused(self) -> bool:
+        """Report whether indexing is paused (set per scenario)."""
         return self.paused
 
     async def queue_challenge_in_flight(self, url: str) -> bool:
+        """Report whether a CF challenge row is already in flight."""
         return self.challenge_in_flight
 
     async def queue_enqueue(
@@ -42,10 +45,12 @@ class FakeDB:
         source: str = "fetch",
         lane: str | None = None,
     ) -> bool:
+        """Record the enqueue and report success."""
         self.enqueued.append((url, source, lane))
         return True
 
     async def refresh_fail_bump(self, url: str) -> int | None:
+        """Record a refresh-failure bump and return the new streak."""
         self.bumped.append(url)
         return 1
 
@@ -64,6 +69,7 @@ class TwoPhaseDB(FakeDB):
         self._calls = 0
 
     async def page_get(self, url: str) -> dict | None:
+        """Return `first` on the first call, then `second`."""
         self._calls += 1
         return self.page if self._calls == 1 else self._second
 
@@ -116,6 +122,7 @@ calls: list[str] = []
 
 
 async def failing_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call, then fail with a plain tier error."""
     calls.append(url)
     raise crawler.CrawlError(url, "simulated tier failure on both tiers")
 
@@ -162,6 +169,7 @@ print("OK backoff expired (re-crawl ran, failure bumped)")
 
 
 async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call, then hit a bot-wall."""
     calls.append(url)
     raise ChallengeDetected(url)
 
@@ -208,6 +216,7 @@ print("OK unindexed (no bump on first-time crawl failure)")
 
 
 async def ok_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call and succeed."""
     calls.append(url)
     return {"url": url}
 
