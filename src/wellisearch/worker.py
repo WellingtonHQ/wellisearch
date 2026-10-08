@@ -235,7 +235,7 @@ async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
                 await crawl_url(url, "search")
                 await db.queue_done(url, ok=True)
             except ChallengeDetected:
-                log.info("challenge detected — routing %s to the CF lane", url)
+                log.warning("challenge detected — routing %s to the CF lane", url)
                 await db.queue_route_to_cf(url)
             except Exception as e:
                 log.warning("queue crawl failed for %s: %s", url, e)
@@ -360,7 +360,7 @@ async def _refresh_watchlist(deadline: float) -> dict:
             if not await db.queue_enqueue(url, "refresh", lane=CF):
                 await db.queue_route_to_cf(url)
             await db.refresh_fail_bump(url)
-            log.info("refresh: %s hit a bot-wall; routed to the CF challenge lane", url)
+            log.warning("refresh: %s hit a bot-wall; routed to the CF challenge lane", url)
             results.append({"url": url, "status": "challenge"})
         except Exception as e:
             log.warning("refresh failed for %s: %s", url, e)

@@ -393,7 +393,7 @@ async def _probe_crawl(url: str, paused: bool = False) -> dict:
     except ChallengeDetected:
         if not await queue.enqueue(url, source="fetch", lane="cf"):
             await db.queue_route_to_cf(url)
-        log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
+        log.warning("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
         raise crawler.CrawlError(url, _botwall_error(get_settings(), paused)) from None
 
 
