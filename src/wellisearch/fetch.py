@@ -23,10 +23,14 @@ from psycopg_pool import PoolTimeout
 
 from . import crawler, queue
 from .config import Settings, get_settings
+from .crawl.extractors.amazon import needs_refresh as amazon_needs_refresh
 from .crawl.extractors.base import title_from_markdown
+from .crawl.extractors.homedepot import needs_refresh as homedepot_needs_refresh
 from .crawl.extractors.reddit import needs_refresh as reddit_needs_refresh
+from .crawl.extractors.walmart import needs_refresh as walmart_needs_refresh
 from .crawl.probe import reset_probe_budget, set_probe_budget
 from .crawl.results import ChallengeDetected
+from .crawl.shorturl import resolve_short_url
 from .db import db
 from .serialize import format_timing
 from .truncation import (
@@ -35,6 +39,7 @@ from .truncation import (
     truncate_page,
     truncation_marker,
 )
+from .urlnorm import normalize_url
 from .worker import crawl_url
 
 log = logging.getLogger("wellisearch.fetch")
@@ -154,7 +159,8 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
         log.warning("fetch_page failed for %s: %s", url, e)
         return {"ok": False, "error": _friendly_error(e), "url": url, "timing": _timing()}
 
-    await db.bump_fetch_count(url)
+    # Bump the canonical row (a short-URL request serves its final URL's content).
+    await db.bump_fetch_count(normalize_url(page["url"]))
 
     truncated = False
     omitted = 0
@@ -171,7 +177,8 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
 
     return {
         "ok": True,
-        "url": url,
+        # The canonical URL: short-URL requests resolve to their final destination.
+        "url": page["url"],
         "title": page["title"],
         "markdown": text,
         "chars": len(text),
@@ -241,7 +248,7 @@ async def fetch_pages(
 
     # bump fetch_count for every successfully fetched page
     for p in resolved:
-        await db.bump_fetch_count(p["url"])
+        await db.bump_fetch_count(normalize_url(p["url"]))
 
     # --- allocate the budget per strategy
     pages_out, total_chars, any_truncated = _allocate_pages(resolved, strat, budget, per_page)
@@ -300,7 +307,7 @@ async def _record_failed_refresh(url: str, needed_refresh: bool) -> None:
     if not needed_refresh:
         return
     try:
-        await db.refresh_fail_bump(url)
+        await db.refresh_fail_bump(normalize_url(url))
     except Exception as e:
         log.warning("refresh backoff bump failed for %s: %s", url, e)
 
@@ -308,16 +315,34 @@ async def _record_failed_refresh(url: str, needed_refresh: bool) -> None:
 async def _resolve_page(url: str) -> dict:
     """Content for one URL: from index when present, else crawl on demand.
 
-    A reddit post whose stored markdown is stale (reddit_needs_refresh) normally
-    re-crawls inline; while a refresh-failure backoff is active it serves the
-    stored copy instead, so a walled page can't burn a full browser crawl on
-    every fetch."""
+    A stored page whose markdown is stale (reddit_needs_refresh for posts,
+    amazon/homedepot/walmart needs_refresh for product pages) normally re-crawls inline;
+    while a refresh-failure backoff is active it serves the stored copy instead,
+    so a walled page can't burn a full browser crawl on every fetch.
+
+    Short URLs (e.g. a.co) resolve to their final destination first: they are
+    never indexed, so the stored lookup, on-demand crawl, and read-back all key
+    on the canonical URL."""
     s = get_settings()
     t_index = time.monotonic()
-    page = await db.page_get(url)
+    original = url
+    resolved = await resolve_short_url(url)
+    if resolved is None:
+        raise crawler.CrawlError(original, "could not resolve short URL to its final destination")
+    # A resolved short URL lands on a tracking-laden redirect target; canonicalize it
+    # so the stored lookup, read-back, and reported URL all key on the index row.
+    url = normalize_url(resolved) if resolved != original else resolved
+    # Look up by canonical URL: a tracking-param variant of an indexed page
+    # must hit the stored row instead of triggering a re-crawl.
+    page = await db.page_get(normalize_url(url))
     index_ms = int((time.monotonic() - t_index) * 1000)
     stored_md = page.get("fit_markdown") if page and not page.get("disabled") else None
-    needs_refresh = bool(stored_md) and reddit_needs_refresh(url, stored_md)
+    needs_refresh = bool(stored_md) and (
+        reddit_needs_refresh(url, stored_md)
+        or amazon_needs_refresh(url, stored_md)
+        or homedepot_needs_refresh(url, stored_md)
+        or walmart_needs_refresh(url, stored_md)
+    )
     if stored_md and (not needs_refresh or _refresh_backoff_active(page)):
         if needs_refresh:
             log.debug(
@@ -339,7 +364,7 @@ async def _resolve_page(url: str) -> dict:
     # of quoting a seconds-based retry ETA that would never come true.
     paused = await db.worker_paused()
 
-    if await db.queue_challenge_in_flight(url):
+    if await db.queue_challenge_in_flight(normalize_url(url)):
         raise crawler.CrawlError(url, _botwall_error(s, paused))
 
     t_crawl = time.monotonic()
@@ -370,7 +395,8 @@ async def _resolve_page(url: str) -> dict:
         # backoff bump the next fetch would run the same full browser crawl.
         await _record_failed_refresh(url, needs_refresh)
         raise
-    page = await db.page_get(url)
+    # store_page canonicalized the URL, so read back by the canonical form.
+    page = await db.page_get(normalize_url(url))
     crawl_ms = int((time.monotonic() - t_crawl) * 1000)
     md = (page or {}).get("fit_markdown") or ""
     if not md:
@@ -392,7 +418,7 @@ async def _probe_crawl(url: str, paused: bool = False) -> dict:
         return await crawl_url(url, trigger="fetch")
     except ChallengeDetected:
         if not await queue.enqueue(url, source="fetch", lane="cf"):
-            await db.queue_route_to_cf(url)
+            await db.queue_route_to_cf(normalize_url(url))
         log.info("fetch: %s hit a bot-wall; routed to the CF challenge lane", url)
         raise crawler.CrawlError(url, _botwall_error(get_settings(), paused)) from None
 

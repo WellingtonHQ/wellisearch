@@ -15,6 +15,7 @@ from . import botwall, extractors, tiers
 from .lane import CF, get_lane
 from .policy import DEFAULT_POLICY, Policy, match
 from .results import ChallengeDetected, CrawlResult, Escalate, Fitted
+from .shorturl import resolve_short_url
 
 log = logging.getLogger("wellisearch.crawl.engine")
 
@@ -26,6 +27,12 @@ async def crawl(url: str) -> CrawlResult:
     moves to the next tier (an Escalate jumps to the named tier). Returns
     ok=True on the first accepted fit, else the best partial (or empty).
     """
+    original = url
+    # Shorteners (e.g. a.co) resolve to their final URL so policy/extractor
+    # selection sees the real site; short URLs are never crawled as-is.
+    url = await resolve_short_url(url)
+    if url is None:
+        raise RuntimeError(f"could not resolve short url {original} to its final destination")
     p = match(url)
     ex = extractors.for_url(url)
     request_url = url
@@ -35,6 +42,18 @@ async def crawl(url: str) -> CrawlResult:
         if extractors.reddit.is_post_url(url):
             request_url = extractors.reddit.comment_request_url(url)
         else:
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
+    if p.name == "homedepot":
+        # Only product detail pages carry the JSON-LD Product node; category and
+        # review pages keep the standard generic path.
+        if not extractors.homedepot.is_product_url(url):
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
+    if p.name == "walmart":
+        # Only product detail pages carry the JSON-LD ProductGroup node; search and
+        # category pages keep the standard generic path.
+        if not extractors.walmart.is_product_url(url):
             p = DEFAULT_POLICY
             ex = extractors.GenericExtractor()
     attempts: list[dict] = []

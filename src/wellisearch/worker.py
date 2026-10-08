@@ -22,11 +22,16 @@ Tick triggers:
   - debounced kick whenever the queue receives items (queue.kick_worker)
   - per-tick wall-clock budget WORKER_TICK_BUDGET_MIN
 
+At the end of every tick, freed glibc arena memory is returned to the OS
+(malloc_trim) so consecutive crawl bursts don't ratchet RSS upward.
+
 `python -m wellisearch.worker --once` runs one tick and exits (manual runs).
 """
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+import ctypes
 import datetime as dt
 import logging
 import time
@@ -36,14 +41,17 @@ from .config import get_settings
 from .crawl.extractors.base import title_from_markdown
 from .crawl.lane import CF, FAST, reset_lane, set_lane
 from .crawl.results import ChallengeDetected
+from .crawl.shorturl import resolve_short_url
 from .db import db
 from .index import store_page
+from .urlnorm import normalize_url
 
 log = logging.getLogger("wellisearch.worker")
 
 ERROR_DETAIL_MAX_LEN = 1000    # max chars kept in a crawl error detail (crawl_log)
 ERROR_REPR_MAX_LEN = 500       # max chars kept in a crash repr (crawl_log)
 REFRESH_ERROR_MAX_LEN = 200    # max chars kept in a refresh-stats error entry
+TRIM_THRESHOLD = 0             # malloc_trim threshold: 0 releases all returnable memory
 
 # runtime state for the dashboard "Now" panel
 STATE: dict = {
@@ -57,10 +65,28 @@ STATE: dict = {
 # load. Claims are atomic either way, so the lock is about load, not races.
 _tick_lock = asyncio.Lock()
 
+# Resolved glibc malloc_trim callable; None = not yet resolved, False = unavailable.
+_malloc_trim: Callable[[int], int] | bool | None = None
+
 
 async def crawl_url(url: str, trigger: str) -> dict:
-    """Public entry: crawl one URL, never twice concurrently (shared set)."""
-    return await queue.crawl_deduped(url, trigger, lambda: _crawl_and_store(url, trigger))
+    """Public entry: crawl one URL, never twice concurrently (shared set).
+
+    Short URLs (e.g. a.co) resolve to their final destination first, so dedup,
+    storage, and refresh all key on the canonical URL — short forms are never
+    indexed. An unresolvable short URL fails the crawl instead of falling back."""
+    url = normalize_url(url)
+    original = url
+    resolved = await resolve_short_url(url)
+    if resolved is None:
+        raise crawler.CrawlError(original, "could not resolve short URL to its final destination")
+    # A resolved short URL lands on a tracking-laden redirect target; canonicalize it
+    # so dedup and storage key on the same row as direct fetches of the final URL.
+    resolved = normalize_url(resolved) if resolved != original else resolved
+    result = await queue.crawl_deduped(resolved, trigger, lambda: _crawl_and_store(resolved, trigger))
+    if resolved != original:
+        await _delete_short_url_row(original)
+    return result
 
 
 async def tick() -> dict:
@@ -93,6 +119,7 @@ async def tick() -> dict:
         log.info("tick done: %s", stats)
         await _log_event("worker tick", stats)
         await _retention_sweep()
+        await asyncio.to_thread(_trim_memory)
         return stats
 
 
@@ -142,8 +169,23 @@ def main() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
+async def _delete_short_url_row(url: str) -> None:
+    """Best-effort: delete a pre-existing page row stored under a short URL form.
+
+    Rows indexed before short-URL resolution existed are duplicates of the
+    canonical row, which now owns the content (short forms must never linger in
+    the index). Chunks cascade with the page row."""
+    try:
+        n = await db.execute("DELETE FROM pages WHERE url = %s", (url,))
+        if n:
+            log.info("deleted stale short-url row %s (content now lives under its final URL)", url)
+    except Exception as e:
+        log.warning("deleting short-url row failed for %s: %s", url, e)
+
+
 async def _crawl_and_store(url: str, trigger: str) -> dict:
     """One crawl+store attempt (in-flight-deduped by the caller)."""
+    url = normalize_url(url)
     t0 = time.monotonic()
     ms = 0
     try:
@@ -387,6 +429,47 @@ async def _retention_sweep() -> None:
             log.info("pruned %d old log rows", total)
     except Exception as e:
         log.warning("retention sweep failed: %s", e)
+
+
+def _trim_memory() -> None:
+    """Return freed glibc arena memory to the OS (malloc_trim(0)).
+
+    Called once at the end of every worker tick so a crawl burst's released
+    memory is not retained between bursts — glibc keeps freed chunks in its
+    arenas and never returns them on its own. No-op when malloc_trim is
+    unavailable (e.g. Windows dev machines); never raises."""
+    global _malloc_trim
+    if _malloc_trim is None:
+        _malloc_trim = _resolve_malloc_trim()
+    if not _malloc_trim:
+        return
+    try:
+        _malloc_trim(TRIM_THRESHOLD)
+    except Exception as e:  # defensive: trimming must never break a tick
+        log.debug("malloc_trim failed: %s", e)
+        return
+    log.debug("returned freed memory to OS after tick")
+
+
+def _resolve_malloc_trim() -> Callable[[int], int] | bool:
+    """Resolve glibc malloc_trim via ctypes; False when unavailable (no-op mode).
+
+    Tries libc.so.6 first, then the process's own symbol table (CDLL(None));
+    logs at debug level and gives up if neither exposes the symbol. CDLL(None)
+    raises TypeError on Windows (LoadLibrary needs a path), so both load
+    failures are caught."""
+    for lib_name in ("libc.so.6", None):
+        try:
+            fn = getattr(ctypes.CDLL(lib_name), "malloc_trim", None)
+        except (OSError, TypeError) as e:
+            log.debug("malloc_trim unavailable (CDLL %s failed): %s", lib_name, e)
+            continue
+        if fn is not None:
+            fn.argtypes = [ctypes.c_size_t]
+            fn.restype = ctypes.c_int
+            return fn
+    log.debug("malloc_trim symbol not found; memory trim disabled")
+    return False
 
 
 async def _once() -> dict:

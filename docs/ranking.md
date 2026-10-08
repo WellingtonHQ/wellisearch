@@ -16,7 +16,8 @@ images/ranking.svg
 
 Each leg returns the **top 50 chunks** (by its own relevance order) for the
 query. Chunks are the unit of ranking; pages are then built from their
-chunks.
+chunks. Chunk text includes the page title as an H1 (`store_page` prepends
+it — see indexing.md), so titles participate in all three legs.
 
 ### Leg 1 — Full-text (tsvector)
 
@@ -195,6 +196,24 @@ decision is made by three `fn_search_local` columns, all computed in Postgres:
   when there are none). Answers "is it topically about it, or just a body
   that happens to contain those words?"
 
+The gate only sees what `fn_search_local` returns, so auto-mode `search_web`
+calls it with `max(k, SEARCH_GATE_MIN_K + SEARCH_TOP_BY_SIM)` rows — default
+**120**, including the **100**-row score window and **20** similarity candidates. Score is
+rank-only, and a semantically strong page can sit far down the score order
+behind pages that accumulate RRF mass from many lexically matching chunks
+(measured 2026-09-29: on-topic articles ranked 17–44 behind LinkedIn job
+postings for "Transitioning from Staff to Principal Software Engineer"). The
+extra rows cost only the final `LIMIT` and per-row gate columns (~+160 ms at
+50 rows on the ~178k-chunk index, well inside the statement timeout).
+
+Among passing rows, serving order is **similarity desc, score as tie-break** —
+not raw score. Every served row already clears the three topical conditions;
+within that set the primary topical signal (similarity) decides which answers
+lead, and rank-only score only breaks ties. This also demotes pages like the
+wasp-removal article in [problematic-searches.md](../problematic-searches.md)
+case 3, whose best-chunk similarity (0.417) sits below the on-topic honey
+pages (0.59–0.71).
+
 `search_web` (auto mode) serves a full set when **at least k rows** each clear
 all three conditions — `coverage >= LOCAL_MIN_COVERAGE` (default **0.5**),
 `distinctive_coverage >= LOCAL_MIN_DISTINCTIVE_COVERAGE` (default **1.0**; a
@@ -328,6 +347,45 @@ embedding is **not** a query embedding and will corrupt the probe). Place
 similarity. Keep `LOCAL_MIN_COVERAGE` at its weak lexical floor (0.5) — do not
 raise it to separate clusters: qualifier words ("best", "top") that catalog
 pages omit would veto the most relevant results (see above).
+
+## Auto-mode serving policies (`search_web`)
+
+`fn_search_local` returns raw hybrid scores; auto mode applies three serving
+policies before gating/serving. Local mode serves the raw index order
+untouched — no window, penalty, or cap.
+
+### Union candidate window
+
+Auto mode considers the top `SEARCH_GATE_MIN_K` rows by score **plus** the
+`SEARCH_TOP_BY_SIM` most similar (non-NULL similarity) rows not already in it;
+the index fetches `SEARCH_GATE_MIN_K + SEARCH_TOP_BY_SIM` rows in one call. A
+semantically close page whose score is buried by lexical mass (a vec-leg-only
+article behind dozens of verbatim job postings) always reaches the gate this
+way, instead of needing an ever-larger fixed window.
+
+### Job-board de-rank (with intent bypass)
+
+Rows whose URL matches `SEARCH_JOB_BOARDS` (comma-separated host[/path]
+prefixes; hosts match by suffix so subdomains count) get score and similarity
+multiplied by `SEARCH_JOB_BOARD_PENALTY`. Coverage is untouched, so the gate
+still sees them. A query matching any `SEARCH_JOB_INTENT_TERMS` term
+(word-boundary, case-insensitive) skips the penalty entirely — "principal
+software engineer jobs" should surface job postings.
+
+### Per-domain cap
+
+The final auto-mode serving list keeps at most `SEARCH_MAX_PER_DOMAIN` results
+per registrable domain (last two host labels; three for common two-part TLDs
+like co.uk), so one site's many near-duplicate pages cannot flood the answer
+set. Rows with unparseable domains always pass.
+
+### Widened vector leg
+
+`fn_search_local`'s `vec_limit` parameter (default 50; auto mode passes
+`SEARCH_VECTOR_LEG_LIMIT`, default 200) widens the vector-leg row cap so
+semantically close but lexically thin pages enter the fusion at all. Rows past
+rank 50 earn only small RRF credit (`1/(60+rank)`), and HNSW early-stop keeps
+the cost low.
 
 ## Changing the ranking
 

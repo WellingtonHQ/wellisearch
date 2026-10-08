@@ -54,13 +54,23 @@ class Settings(BaseSettings):
     # cores) × 3-4 concurrent sessions oversubscribes the host and starves
     # Postgres. MiniLM is small — a couple of threads per session is plenty.
     EMBED_THREADS: int = 2
+    # Reindex batch size (url-keyset pages): only one batch of fit_markdown is
+    # resident at a time, so peak RSS stays flat regardless of index size
+    # (loading the whole stale set up front OOM-killed long reindexes).
+    REINDEX_BATCH_SIZE: int = 1000
 
     # --- search ---
     SEARCH_K: int = 5
     SEARCH_MAX_CRAWL: int = 5
     # Local-hit gate: fetch at least this many rows so the gate can see a
-    # passing page that ranks just outside the top-k by score.
-    SEARCH_GATE_MIN_K: int = 10
+    # passing page that ranks well outside the top-k by score (score is
+    # rank-only; semantically strong pages often sit far down it — e.g. a
+    # vec-leg-only article behind dozens of lexically matching job postings).
+    # Auto mode fetches SEARCH_GATE_MIN_K + SEARCH_TOP_BY_SIM rows so the union
+    # candidate window has its full pool (docs/ranking.md). Cost: only the final
+    # LIMIT and per-row gate columns grow (~+160 ms per 50 rows on the ~178k-chunk
+    # index, well inside SEARCH_STATEMENT_TIMEOUT_MS).
+    SEARCH_GATE_MIN_K: int = 100
     # Local-hit gate (condition 1): a passing row must cover at least this
     # fraction of the query's content words (`coverage` column, see
     # docs/ranking.md). Kept deliberately low: generic qualifier words ("best",
@@ -89,6 +99,27 @@ class Settings(BaseSettings):
     # Several ordinary gate-passing pages can also serve a partial answer,
     # even when no single chunk meets the stronger similarity threshold.
     LOCAL_PARTIAL_MIN_PASSING: int = 3
+    # Auto-mode serving policies (docs/ranking.md): a union candidate window —
+    # top-SEARCH_GATE_MIN_K by score plus the SEARCH_TOP_BY_SIM most similar
+    # rows not already in it — so a semantically close page is always
+    # considered even when lexical mass buries its score. Local mode serves
+    # the raw index order untouched.
+    SEARCH_TOP_BY_SIM: int = 20
+    # Max results per registrable domain in auto-mode serving, so one site's
+    # many near-duplicate pages (e.g. job-board postings) cannot flood the
+    # answer set; local mode is uncapped.
+    SEARCH_MAX_PER_DOMAIN: int = 2
+    # Job-board de-rank for non-job-intent queries: rows whose URL matches a
+    # SEARCH_JOB_BOARDS entry get score AND similarity multiplied by this
+    # (coverage untouched, so the gate still sees them). A query matching any
+    # SEARCH_JOB_INTENT_TERMS skips the penalty entirely.
+    SEARCH_JOB_BOARD_PENALTY: float = 0.5
+    SEARCH_JOB_BOARDS: str = "linkedin.com/jobs,indeed.com,glassdoor.com/Job,ziprecruiter.com/Jobs,monster.com,naukri.com,jobs.lever.co,boards.greenhouse.io"
+    SEARCH_JOB_INTENT_TERMS: str = "job, jobs, hiring, open roles, careers"
+    # Vector-leg row cap for fn_search_local (HNSW early-stop keeps it cheap);
+    # a wider leg lets semantically close but lexically thin pages enter the
+    # fusion at all instead of missing the pool entirely.
+    SEARCH_VECTOR_LEG_LIMIT: int = 200
     # Legacy local-hit cutoff; now only for ranking (see docs/ranking.md).
     SEARCH_MIN_SCORE: float = 0.06
     STALE_HOURS: int = 72
@@ -130,6 +161,7 @@ class Settings(BaseSettings):
     LOG_RETENTION_DAYS: int = 90  # event_log / crawl_log / search_log prune age
 
     # --- native crawl engine (replaces the Crawl4AI path; design §6) ---
+    CRAWL_MAX_REVIEWS: int = 5  # top reviews kept per product page (amazon, homedepot, ...)
     # CF (challenge) lane: a dedicated low-concurrency, high-timeout lane so a
     # Cloudflare/turnstile crawl never blocks the fast lane. The fast lane only
     # probes for a bot-wall and routes it here; the CF lane runs the full
@@ -149,6 +181,9 @@ class Settings(BaseSettings):
     CRAWL_REDDIT_COMMENT_RANKING: Literal["best", "score"] = "score"
     CRAWL_REDDIT_MAX_COMMENTS: int = 25  # highest-ranked comments kept per post
     CRAWL_SETTLE_S: float = 2.0
+    # Hosts of known URL shorteners (e.g. Amazon's a.co): resolved to their final
+    # URL before crawling, so policy/extractor selection sees the real site. Comma list.
+    CRAWL_SHORT_URL_HOSTS: str = "a.co"
     CRAWL_STEALTH_TIER: bool = True
     CRAWL_STEALTH_TIMEOUT_S: int = 120
     # Crawl tiers only fetch read-only pages, so untrusted TLS certs are accepted by default.
@@ -167,6 +202,21 @@ class Settings(BaseSettings):
         """Provider failover order from SEARCH_PROVIDERS (comma list, lowercased)."""
         names = [p.strip().lower() for p in self.SEARCH_PROVIDERS.split(",")]
         return [n for n in names if n]
+
+    @property
+    def job_boards(self) -> tuple[str, ...]:
+        """Job-board host[/path] prefixes from SEARCH_JOB_BOARDS (comma list)."""
+        return tuple(e.strip() for e in self.SEARCH_JOB_BOARDS.split(",") if e.strip())
+
+    @property
+    def job_intent_terms(self) -> tuple[str, ...]:
+        """Job-intent terms from SEARCH_JOB_INTENT_TERMS (comma list)."""
+        return tuple(t.strip() for t in self.SEARCH_JOB_INTENT_TERMS.split(",") if t.strip())
+
+    @property
+    def short_url_hosts(self) -> frozenset[str]:
+        """Shortener hosts from CRAWL_SHORT_URL_HOSTS (comma list, lowercased)."""
+        return frozenset(h.strip().lower() for h in self.CRAWL_SHORT_URL_HOSTS.split(",") if h.strip())
 
     def env_quota_limit(self, provider: str) -> int | None:
         """Default monthly quota for a provider (env-backed). None = unknown."""
