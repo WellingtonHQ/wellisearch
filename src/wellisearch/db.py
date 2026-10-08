@@ -119,11 +119,9 @@ class Database:
                     (s.POSTGRES_DB,),
                 )
                 exists = await cur.fetchone()
-                if not exists:
-                    # identifier must be safe: it comes from our own config
-                    safe = s.POSTGRES_DB.replace('"', '""')
-                    await cur.execute(f'CREATE DATABASE "{safe}"')
-                    log.info("created database %s", s.POSTGRES_DB)
+            if not exists:
+                # identifier must be safe: it comes from our own config
+                await _create_database(admin, s.POSTGRES_DB)
         finally:
             await admin.close()
 
@@ -160,6 +158,30 @@ class Database:
             cur = await conn.execute(sql, params or ())
             return cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
 
+    async def _select(
+        self,
+        conn: psycopg.AsyncConnection,
+        sql: str,
+        params: tuple | list | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run a SELECT on the given connection and return all rows."""
+        cur = await conn.execute(sql, params or ())
+        return list(await cur.fetchall())
+
+    async def _select_timed(
+        self,
+        conn: psycopg.AsyncConnection,
+        sql: str,
+        timeout_ms: int,
+        params: tuple | list | None = None,
+    ) -> list[dict[str, Any]]:
+        """SELECT with a per-statement backstop (SET LOCAL in one explicit transaction)."""
+        # SET does not accept parameter placeholders — inline the
+        # (int-coerced) value instead.
+        async with conn.transaction():
+            await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
+            return await self._select(conn, sql, params)
+
     async def fetch_all(
         self,
         sql: str,
@@ -172,14 +194,8 @@ class Database:
         psycopg.errors.QueryCanceled on expiry."""
         async with self.pool.connection() as conn:
             if timeout_ms is not None:
-                # SET does not accept parameter placeholders — inline the
-                # (int-coerced) value instead.
-                async with conn.transaction():
-                    await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
-                    cur = await conn.execute(sql, params or ())
-                    return list(await cur.fetchall())
-            cur = await conn.execute(sql, params or ())
-            return list(await cur.fetchall())
+                return await self._select_timed(conn, sql, timeout_ms, params)
+            return await self._select(conn, sql, params)
 
     async def fetch_one(
         self,
@@ -606,3 +622,11 @@ async def _register_vector(conn: psycopg.AsyncConnection) -> None:
     from pgvector.psycopg import register_vector_async
 
     await register_vector_async(conn)
+
+
+async def _create_database(conn: psycopg.AsyncConnection, name: str) -> None:
+    """CREATE DATABASE via a fresh cursor (the identifier comes from our own config)."""
+    safe = name.replace('"', '""')
+    async with conn.cursor() as cur:
+        await cur.execute(f'CREATE DATABASE "{safe}"')
+    log.info("created database %s", name)

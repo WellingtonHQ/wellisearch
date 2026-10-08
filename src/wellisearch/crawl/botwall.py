@@ -78,14 +78,11 @@ def is_botwall(
     if _is_non_html(content_type):
         return None
     visible = _visible_text(html).lower()
-    for marker in PHRASE_MARKERS:
-        if re.search(r"\b" + re.escape(marker) + r"\b", visible):
-            return marker
+    hit = _first_marker(PHRASE_MARKERS, visible)
+    if hit is not None:
+        return hit
     if len(visible) <= _STRUCTURAL_MAX_VISIBLE_CHARS:
-        low = html.lower()
-        for marker in STRUCTURAL_MARKERS:
-            if re.search(r"\b" + re.escape(marker) + r"\b", low):
-                return marker
+        return _first_marker(STRUCTURAL_MARKERS, html.lower())
     return None
 
 
@@ -100,6 +97,14 @@ def _visible_text(html: str) -> str:
         html = rx.sub(" ", html)
     html = _ATTR_RE.sub(" ", html)
     return re.sub(r"\s+", " ", _TAG_RE.sub(" ", html)).strip()
+
+
+def _first_marker(markers: tuple[str, ...], text: str) -> str | None:
+    """First marker found in the text (word-boundary matched), or None."""
+    for marker in markers:
+        if re.search(r"\b" + re.escape(marker) + r"\b", text):
+            return marker
+    return None
 
 
 def _is_non_html(content_type: str | None) -> bool:

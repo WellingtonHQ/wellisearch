@@ -52,14 +52,19 @@ def _jsonld_price(html: str) -> str | None:
     return None
 
 
+def _first_nested_price(items: list[object]) -> str | None:
+    """First non-None price found by recursing into each item, in order."""
+    for item in items:
+        price = _product_price(item)
+        if price is not None:
+            return price
+    return None
+
+
 def _product_price(data: object) -> str | None:
     """offers.price for a @type Product node (lists, @graph, offer lists)."""
     if isinstance(data, list):
-        for item in data:
-            price = _product_price(item)
-            if price is not None:
-                return price
-        return None
+        return _first_nested_price(data)
     if not isinstance(data, dict):
         return None
     if data.get("@type") == "Product":
@@ -73,15 +78,29 @@ def _product_price(data: object) -> str | None:
     return None
 
 
+def _offer_price(offer: object) -> str | None:
+    """The price of a single offer dict, or None when it has none."""
+    if isinstance(offer, dict) and offer.get("price") is not None:
+        return str(offer["price"])
+    return None
+
+
 def _offers_price(offers: object) -> str | None:
     """price from a single offer dict or a list of offers, else None."""
     if isinstance(offers, dict):
         price = offers.get("price")
         return str(price) if price is not None else None
     if isinstance(offers, list):
-        for offer in offers:
-            if isinstance(offer, dict) and offer.get("price") is not None:
-                return str(offer["price"])
+        return _first_offer_price(offers)
+    return None
+
+
+def _first_offer_price(offers: list[object]) -> str | None:
+    """First non-None price among the offer dicts."""
+    for offer in offers:
+        price = _offer_price(offer)
+        if price is not None:
+            return price
     return None
 
 

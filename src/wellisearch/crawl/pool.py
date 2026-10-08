@@ -156,31 +156,35 @@ class BrowserPool:
             pw = await self._ensure_playwright()
         async with self._launch_lock(key):
             async with self._lock:
-                if key in self._contexts:
-                    self._last_used[key] = time.monotonic()
-                    return self._contexts[key]
-                retry_after_s = get_settings().CRAWL_LAUNCH_RETRY_AFTER_S
-                failed_at = self._launch_failed_at.get(key)
-                if (
-                    failed_at is not None
-                    and time.monotonic() - failed_at < retry_after_s
-                ):
-                    raise LaunchBackoffError(
-                        f"browser launch for {key!r} recently failed; "
-                        f"backing off {retry_after_s:.0f}s to avoid a relaunch storm"
-                    )
-                await self._evict_lru_if_needed()
-                try:
-                    ctx = await self._launch(key, pw)
-                except BaseException:
-                    # Record the failure (also on cancellation: a launch cut
-                    # short may have left an orphaned chromium behind).
-                    self._launch_failed_at[key] = time.monotonic()
-                    raise
-                self._launch_failed_at.pop(key, None)
-                self._contexts[key] = ctx
-                self._last_used[key] = time.monotonic()
-                return ctx
+                return await self._get_or_launch_locked(key, pw)
+
+    async def _get_or_launch_locked(self, key: str, pw: Playwright) -> BrowserContext:
+        """Cache check + launch (with backoff), called while holding the pool lock."""
+        if key in self._contexts:
+            self._last_used[key] = time.monotonic()
+            return self._contexts[key]
+        retry_after_s = get_settings().CRAWL_LAUNCH_RETRY_AFTER_S
+        failed_at = self._launch_failed_at.get(key)
+        if (
+            failed_at is not None
+            and time.monotonic() - failed_at < retry_after_s
+        ):
+            raise LaunchBackoffError(
+                f"browser launch for {key!r} recently failed; "
+                f"backing off {retry_after_s:.0f}s to avoid a relaunch storm"
+            )
+        await self._evict_lru_if_needed()
+        try:
+            ctx = await self._launch(key, pw)
+        except BaseException:
+            # Record the failure (also on cancellation: a launch cut
+            # short may have left an orphaned chromium behind).
+            self._launch_failed_at[key] = time.monotonic()
+            raise
+        self._launch_failed_at.pop(key, None)
+        self._contexts[key] = ctx
+        self._last_used[key] = time.monotonic()
+        return ctx
 
     async def _evict_lru_if_needed(self) -> None:
         """Evict the least recently used idle context when at capacity."""
@@ -304,6 +308,14 @@ def _kill_pid(pid: str) -> None:
         pass
 
 
+def _kill_orphan_chromiums(profile_dir: str) -> None:
+    """SIGKILL every /proc entry that is a chromium holding the given profile."""
+    marker = f"--user-data-dir={profile_dir}"
+    for entry in os.listdir("/proc"):
+        if entry.isdigit() and _is_orphan_chromium(entry, marker):
+            _kill_pid(entry)
+
+
 def _reap_orphans(profile_dir: str) -> None:
     """Kill leftover chromium holding the profile + drop its SingletonLock.
 
@@ -312,8 +324,5 @@ def _reap_orphans(profile_dir: str) -> None:
     SingletonLock; the next launch then hangs on the locked profile.
     """
     if os.path.isdir("/proc"):
-        marker = f"--user-data-dir={profile_dir}"
-        for entry in os.listdir("/proc"):
-            if entry.isdigit() and _is_orphan_chromium(entry, marker):
-                _kill_pid(entry)
+        _kill_orphan_chromiums(profile_dir)
     _remove_singleton_lock(profile_dir)

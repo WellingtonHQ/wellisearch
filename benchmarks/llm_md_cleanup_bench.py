@@ -164,6 +164,21 @@ class Config:
         self.results_file = self.out_dir / "llm-cleanup.results.json"
         self.report_file = self.out_dir / "llm-cleanup.report.md"
 
+def _parse_model_specs(spec: str) -> list[tuple[str, str]]:
+    """Split 'label=tag,label2' into (label, tag) pairs; bare names use name for both."""
+    models: list[tuple[str, str]] = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" in part:
+            label, tag = [p.strip() for p in part.split("=", 1)]
+        else:
+            label = tag = part
+        models.append((label, tag))
+    return models
+
+
 def load_config(args: argparse.Namespace) -> Config:
     """Build a Config from CLI args + env, validating the judge is configured when needed."""
     pg_host = os.environ.get("POSTGRES_HOST", "127.0.0.1")
@@ -178,16 +193,7 @@ def load_config(args: argparse.Namespace) -> Config:
 
     models = DEFAULT_MODELS
     if args.models:
-        models = []
-        for part in args.models.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            if "=" in part:
-                label, tag = [p.strip() for p in part.split("=", 1)]
-            else:
-                label = tag = part
-            models.append((label, tag))
+        models = _parse_model_specs(args.models)
 
     out_dir = Path(args.out_dir or os.environ.get("BENCH_OUT_DIR") or (HERE / "results"))
 
@@ -242,6 +248,26 @@ PER_DOMAIN_CAP = 3
 # index.
 SAMPLE_POOL_LIMIT = 200
 
+
+def _pick_round(
+    domains: list[str],
+    by_domain: dict[str, list[dict[str, Any]]],
+    round_idx: int,
+    cap: int,
+    seen: set[str],
+    picked: list[dict[str, Any]],
+    target: int,
+) -> bool:
+    """One round-robin pass over domains; True when at least one page was picked."""
+    progressed = False
+    for d in domains:
+        if len(picked) >= target:
+            break
+        if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
+            progressed = True
+    return progressed
+
+
 def select_random_pages(
     by_domain: dict[str, list[dict[str, Any]]], target: int
 ) -> list[dict[str, Any]]:
@@ -259,13 +285,7 @@ def select_random_pages(
     seen: set[str] = set()
     round_idx = 0
     while len(picked) < target:
-        progressed = False
-        for d in domains:
-            if len(picked) >= target:
-                break
-            if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
-                progressed = True
-        if not progressed:
+        if not _pick_round(domains, by_domain, round_idx, cap, seen, picked, target):
             break
         round_idx += 1
     return picked
@@ -472,6 +492,30 @@ def deterministic_metrics(original: str, cleaned: str) -> dict[str, Any]:
 # Run
 # ---------------------------------------------------------------------------
 
+async def _maybe_judge(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    original: str,
+    cleaned: str,
+    who: str,
+    stats: str,
+    rec: dict[str, Any],
+) -> None:
+    """Call the judge when configured and log progress; stores result on rec['judge']."""
+    if not (cfg.use_judge and cleaned.strip()):
+        log(f"{who} — {stats}")
+        return
+    log(f"{who} — {stats} → awaiting judge …")
+    rec["judge"] = await judge_call(client, cfg, original, cleaned)
+    sc = rec["judge"].get("scores") or {}
+    log(
+        f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
+        f"(faith={sc.get('faithfulness')} "
+        f"noise={sc.get('noise_removal')} "
+        f"presv={sc.get('preservation')})"
+    )
+
+
 async def run_model(
     client: httpx.AsyncClient,
     cfg: Config,
@@ -511,18 +555,7 @@ async def run_model(
                 stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
                          f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
                          f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
-                if cfg.use_judge and out["text"].strip():
-                    log(f"{who} — {stats} → awaiting judge …")
-                    rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
-                    sc = rec["judge"].get("scores") or {}
-                    log(
-                        f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
-                        f"(faith={sc.get('faithfulness')} "
-                        f"noise={sc.get('noise_removal')} "
-                        f"presv={sc.get('preservation')})"
-                    )
-                else:
-                    log(f"{who} — {stats}")
+                await _maybe_judge(client, cfg, page["fit_markdown"], out["text"], who, stats, rec)
             except Exception as e:
                 rec["error"] = f"{type(e).__name__}: {e}"
                 log(f"{who} — ERROR: {rec['error']}")
@@ -854,18 +887,18 @@ def _process_stream_line(
 def _parse_judge_scores(text: str) -> dict[str, Any]:
     """Extract the judge's 1-5 scores (and note) from a free-text reply."""
     m = re.search(r"\{.*\}", text, re.DOTALL)
-    scores: dict[str, Any] = {}
     if not m:
-        return scores
+        return {}
     try:
         obj = json.loads(m.group(0))
-        for k in ("faithfulness", "noise_removal", "preservation"):
-            if isinstance(obj.get(k), (int, float)):
-                scores[k] = int(obj[k])
-        if isinstance(obj.get("note"), str):
-            scores["note"] = obj["note"]
     except json.JSONDecodeError:
-        return scores
+        return {}
+    scores: dict[str, Any] = {}
+    for k in ("faithfulness", "noise_removal", "preservation"):
+        if isinstance(obj.get(k), (int, float)):
+            scores[k] = int(obj[k])
+    if isinstance(obj.get("note"), str):
+        scores["note"] = obj["note"]
     return scores
 
 # ---------------------------------------------------------------------------
@@ -988,6 +1021,24 @@ def _report_table_lines(
     lines.append("")
     return lines
 
+def _detail_row(r: dict[str, Any]) -> str:
+    """One markdown table row for a per-page result record."""
+    if "error" in r:
+        return f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |"
+    mt = r.get("metrics", {})
+    js = r.get("judge", {}).get("scores", {})
+    judge_cell = (
+        f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
+        f"{js.get('preservation','–')}"
+        if js else "—"
+    )
+    return (
+        f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
+        f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
+        f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
+    )
+
+
 def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str]:
     """The per-page detail tables (one per model)."""
     lines = ["## Per-page detail", ""]
@@ -999,21 +1050,7 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
         )
         lines.append("|---|---|---|---|---|---|---|---|---|")
         for r in payload["results"][label]:
-            if "error" in r:
-                lines.append(f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |")
-                continue
-            mt = r.get("metrics", {})
-            js = r.get("judge", {}).get("scores", {})
-            judge_cell = (
-                f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
-                f"{js.get('preservation','–')}"
-                if js else "—"
-            )
-            lines.append(
-                f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
-                f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
-                f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
-            )
+            lines.append(_detail_row(r))
         lines.append("")
     return lines
 

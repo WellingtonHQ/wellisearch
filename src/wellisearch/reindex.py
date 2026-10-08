@@ -51,6 +51,17 @@ async def _reembed_page(p: dict[str, Any]) -> str:
     return "unchanged" if status == "unchanged" else "ok"
 
 
+async def _reembed_one(i: int, p: dict[str, Any], total: int, stats: dict[str, int]) -> None:
+    """Re-embed one stale page, tally the outcome, and print progress on interval."""
+    outcome = await _reembed_page(p)
+    stats[outcome] += 1
+    if i % PROGRESS_INTERVAL == 0 or i == total:
+        print(
+            f"  {i}/{total} (ok={stats['ok']} unchanged={stats['unchanged']} "
+            f"failed={stats['failed']})"
+        )
+
+
 async def _run(force: bool, dry_run: bool) -> None:
     """Find pages needing (re)embedding (all when --force) and re-chunk +
     re-embed each, reporting progress."""
@@ -78,13 +89,7 @@ async def _run(force: bool, dry_run: bool) -> None:
 
         stats = {"failed": 0, "ok": 0, "unchanged": 0}
         for i, p in enumerate(stale, 1):
-            outcome = await _reembed_page(p)
-            stats[outcome] += 1
-            if i % PROGRESS_INTERVAL == 0 or i == len(stale):
-                print(
-                    f"  {i}/{len(stale)} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                    f"failed={stats['failed']})"
-                )
+            await _reembed_one(i, p, len(stale), stats)
 
         print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
     finally:

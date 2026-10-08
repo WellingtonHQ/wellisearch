@@ -227,20 +227,26 @@ async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
             return
         if not await db.queue_claim(url):
             return
+
+        async def _crawl_row() -> None:
+            """Crawl the claimed row; route challenges to CF, mark done, tally."""
+            nonlocal processed
+            try:
+                await crawl_url(url, "search")
+                await db.queue_done(url, ok=True)
+            except ChallengeDetected:
+                log.info("challenge detected — routing %s to the CF lane", url)
+                await db.queue_route_to_cf(url)
+            except Exception as e:
+                log.warning("queue crawl failed for %s: %s", url, e)
+                await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
+            finally:
+                processed += 1
+
         token = set_lane(FAST)
         try:
             async with sem:
-                try:
-                    await crawl_url(url, "search")
-                    await db.queue_done(url, ok=True)
-                except ChallengeDetected:
-                    log.info("challenge detected — routing %s to the CF lane", url)
-                    await db.queue_route_to_cf(url)
-                except Exception as e:
-                    log.warning("queue crawl failed for %s: %s", url, e)
-                    await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
-                finally:
-                    processed += 1
+                await _crawl_row()
         finally:
             reset_lane(token)
 

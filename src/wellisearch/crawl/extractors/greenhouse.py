@@ -72,6 +72,14 @@ def _soup(html: str) -> BeautifulSoup:
     return BeautifulSoup(html, "lxml")
 
 
+def _first_job_posting(items: list[object]) -> dict | None:
+    """First JobPosting dict in a parsed JSON-LD payload; None when absent."""
+    for item in items:
+        if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
+            return item
+    return None
+
+
 def _job_posting(soup: BeautifulSoup) -> dict | None:
     """First JobPosting JSON-LD block in the page; None when absent or broken."""
     for tag in soup.find_all("script", type="application/ld+json"):
@@ -80,9 +88,9 @@ def _job_posting(soup: BeautifulSoup) -> dict | None:
         except (TypeError, ValueError):
             continue
         items = data if isinstance(data, list) else [data]
-        for item in items:
-            if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
-                return item
+        hit = _first_job_posting(items)
+        if hit is not None:
+            return hit
     return None
 
 
@@ -114,6 +122,17 @@ def _title(posting: dict, soup: BeautifulSoup) -> str | None:
     return None
 
 
+def _location_text(addr: dict) -> str | None:
+    """Deduped 'street, region, country' pieces of an address; None when empty."""
+    seen: list[str] = []
+    primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
+    candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
+    for piece in candidates:
+        if piece and piece not in seen:
+            seen.append(piece)
+    return ", ".join(seen) if seen else None
+
+
 def _location(posting: dict) -> str | None:
     """First jobLocation as 'Remote, Nationwide, US' style text; None when absent."""
     locs = posting.get("jobLocation")
@@ -123,14 +142,9 @@ def _location(posting: dict) -> str | None:
         addr = (loc or {}).get("address")
         if not isinstance(addr, dict):
             continue
-        seen: list[str] = []
-        primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
-        candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
-        for piece in candidates:
-            if piece and piece not in seen:
-                seen.append(piece)
-        if seen:
-            return ", ".join(seen)
+        text = _location_text(addr)
+        if text:
+            return text
     return None
 
 

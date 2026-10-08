@@ -385,6 +385,31 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
 # Worker pause / resume
 # ---------------------------------------------------------------------------
 
+def _seed_row_fresh(row: dict, seeded_at: dt.datetime) -> bool:
+    """True when the row's last_crawled is at/after seed time (minus 5s skew)."""
+    ts = dt.datetime.fromisoformat(str(row["last_crawled"]))
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=dt.timezone.utc)
+    return ts >= seeded_at - dt.timedelta(seconds=5)
+
+
+async def _wait_for_seed_crawled(c: httpx.AsyncClient, url: str, seeded_at: dt.datetime) -> bool:
+    """Poll /api/pages until the seed row's last_crawled is fresh (or 30 tries pass)."""
+    drained = False
+    for _ in range(30):
+        rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
+        rows = rr.json().get("pages", []) if rr.status_code == 200 else []
+        hit = next((p for p in rows if p["url"] == url and p.get("last_crawled")), None)
+        if not hit:
+            await asyncio.sleep(2)
+            continue
+        drained = _seed_row_fresh(hit, seeded_at)
+        if drained:
+            break
+        await asyncio.sleep(2)
+    return drained
+
+
 async def test_worker_pause(c: httpx.AsyncClient) -> None:
     """PATCH /api/worker roundtrip, state on both /api/stats surfaces, and the
     carve-out: while paused, on-demand refresh (inline crawl) and manual seeds
@@ -461,19 +486,7 @@ async def test_worker_pause(c: httpx.AsyncClient) -> None:
 
         # the seeded row was crawled (drained by a paused or resumed tick):
         # poll until its last_crawled is at/after seed time (kick debounce ~5s)
-        drained = False
-        for _ in range(30):
-            rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
-            rows = rr.json().get("pages", []) if rr.status_code == 200 else []
-            hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
-            if hit:
-                ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=dt.timezone.utc)
-                drained = ts >= seeded_at - dt.timedelta(seconds=5)
-                if drained:
-                    break
-            await asyncio.sleep(2)
+        drained = await _wait_for_seed_crawled(c, seed_probe, seeded_at)
         check(
             "manual seed while paused got crawled (carve-out end-to-end)",
             drained,
@@ -768,19 +781,24 @@ async def _mcp_http_auth_checks() -> None:
         check("mcp/messages/: removed -> 404", r.status_code == 404, str(r.status_code))
 
 
-async def _mcp_http_session_checks() -> None:
-    """Open one Streamable-HTTP session; drive the handshake + tool checks."""
+async def _drive_mcp_session(http: object) -> None:
+    """Open a Streamable-HTTP session on the given client and drive its checks."""
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
+    async with streamable_http_client(f"{BASE}/mcp/http", http_client=http) as (read, write):
+        async with ClientSession(read, write) as session:
+            await _mcp_http_handshake_checks(session)
+            await _mcp_http_tool_call_checks(session)
+
+
+async def _mcp_http_session_checks() -> None:
+    """Open one Streamable-HTTP session; drive the handshake + tool checks."""
     # the SDK's streamable client takes its own httpx2 client (for headers)
     import httpx2
 
     async with httpx2.AsyncClient(headers={"X-API-Key": KEY}) as http:
-        async with streamable_http_client(f"{BASE}/mcp/http", http_client=http) as (read, write):
-            async with ClientSession(read, write) as session:
-                await _mcp_http_handshake_checks(session)
-                await _mcp_http_tool_call_checks(session)
+        await _drive_mcp_session(http)
 
 
 async def _mcp_http_handshake_checks(session: ClientSession) -> None:

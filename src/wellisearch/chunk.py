@@ -72,8 +72,7 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
         if in_fence:
             current.append(line)
             current_tokens += _tokens(line)
-            if fence_match and fence_match.group(1) == fence_marker:
-                in_fence = False
+            in_fence = not (fence_match and fence_match.group(1) == fence_marker)
             i += 1
             continue
 
