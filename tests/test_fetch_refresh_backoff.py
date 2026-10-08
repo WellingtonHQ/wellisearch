@@ -10,9 +10,9 @@ import asyncio
 import datetime as dt
 
 from wellisearch import crawler
+from wellisearch.config import get_settings as real_get_settings
 from wellisearch.crawl.extractors.reddit import _comments_heading, needs_refresh
 from wellisearch.crawl.results import ChallengeDetected
-from wellisearch.config import get_settings as real_get_settings
 import wellisearch.fetch as fetch_mod
 import wellisearch.queue as queue_mod
 
