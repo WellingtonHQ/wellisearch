@@ -156,6 +156,32 @@ class StubGateway:
         )
 
 
+async def main() -> None:
+    """Run the search regression suite against a fresh throwaway database."""
+    await _fresh_database()
+    await db.startup()
+    print("OK startup (test DB rebuilt, schema applied)")
+    await _seed_dataset()
+
+    stub = StubGateway()
+    sw.get_gateway = lambda: stub  # no network: the gateway is canned
+    try:
+        await _check_provider_warms_strong_partial(stub)
+        await _check_gate_columns()
+        await _check_distinctive_coverage_offbrand()
+        await _check_local_hit_full_set(stub)
+        await _check_marginal_partial_defers(stub)
+        await _check_multiple_partial_serves(stub)
+        await _check_distinctive_gate_defers(stub)
+        await _check_distinctive_gate_serves(stub)
+        await _check_word_dump_never_serves(stub)
+        await _check_catalog_reaches_coverage_floor(stub)
+        await _check_local_mode_bypasses_gate()
+    finally:
+        await db.close()
+    print("ALL SEARCH REGRESSION TESTS PASSED")
+
+
 # ---------------------------------------------------------------------------
 # Checks
 # ---------------------------------------------------------------------------
@@ -452,32 +478,6 @@ async def _check_local_mode_bypasses_gate() -> None:
     urls = [r["url"] for r in out["results"]]
     assert APOLLO_1202 in urls, urls
     print("OK local mode bypasses the gate")
-
-
-async def main() -> None:
-    """Run the search regression suite against a fresh throwaway database."""
-    await _fresh_database()
-    await db.startup()
-    print("OK startup (test DB rebuilt, schema applied)")
-    await _seed_dataset()
-
-    stub = StubGateway()
-    sw.get_gateway = lambda: stub  # no network: the gateway is canned
-    try:
-        await _check_provider_warms_strong_partial(stub)
-        await _check_gate_columns()
-        await _check_distinctive_coverage_offbrand()
-        await _check_local_hit_full_set(stub)
-        await _check_marginal_partial_defers(stub)
-        await _check_multiple_partial_serves(stub)
-        await _check_distinctive_gate_defers(stub)
-        await _check_distinctive_gate_serves(stub)
-        await _check_word_dump_never_serves(stub)
-        await _check_catalog_reaches_coverage_floor(stub)
-        await _check_local_mode_bypasses_gate()
-    finally:
-        await db.close()
-    print("ALL SEARCH REGRESSION TESTS PASSED")
 
 
 asyncio.run(main())
