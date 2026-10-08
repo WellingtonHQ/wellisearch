@@ -150,6 +150,7 @@ may increase provider calls; queries with no rare words are unaffected.
 | `CRAWL_LAUNCH_RETRY_AFTER_S` | `30` | relaunch backoff after a failed browser launch; keep equal to the entrypoint.sh Xvfb self-heal poll interval |
 | `CRAWL_REDDIT_COMMENT_RANKING` | `score` | `score` selects the highest scored rendered comments; `best` keeps Reddit's Best order |
 | `CRAWL_REDDIT_MAX_COMMENTS` | `25` | maximum ranked comments included per Reddit post; fewer are returned when Reddit renders fewer; changing this or the ranking recrawls an indexed post on its next fetch |
+| `CRAWL_SHORT_URL_HOSTS` | `a.co` | comma list of URL-shortener hosts resolved to their final URL before crawling (policy/extractor selection sees the real site); short forms are never stored or indexed, and an unresolvable short URL fails the crawl |
 
 ### Server
 | Var | Default | Notes |

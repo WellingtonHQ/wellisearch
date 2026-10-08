@@ -71,6 +71,10 @@ assert normalize_url("https://ex.com/a?x=1") == "https://ex.com/a?x=1", \
 assert normalize_url(
     "https://ex.com/a?utm_source=x&utm_medium=y&refId=abc&trackingId=z&gi=h&mode=location"
 ) == "https://ex.com/a?mode=location", "tracking params dropped, content kept"
+assert normalize_url(
+    "https://www.amazon.com/dp/B0HDBD77SD?ref=x&ref_=y&social_share=z&rsd=w&edk=v&psc=1"
+) == "https://www.amazon.com/dp/B0HDBD77SD", \
+    "amazon a.co redirect tracking params dropped"
 assert normalize_url("https://ex.com/a?x=1&amp;y=2") == "https://ex.com/a?x=1&y=2", \
     "&amp; unescaped"
 assert normalize_url("https://ex.com/a#frag") == "https://ex.com/a", "fragment dropped"

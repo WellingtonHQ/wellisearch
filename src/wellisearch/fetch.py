@@ -30,6 +30,7 @@ from .crawl.extractors.reddit import needs_refresh as reddit_needs_refresh
 from .crawl.extractors.walmart import needs_refresh as walmart_needs_refresh
 from .crawl.probe import reset_probe_budget, set_probe_budget
 from .crawl.results import ChallengeDetected
+from .crawl.shorturl import resolve_short_url
 from .db import db
 from .serialize import format_timing
 from .truncation import (
@@ -158,7 +159,8 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
         log.warning("fetch_page failed for %s: %s", url, e)
         return {"ok": False, "error": _friendly_error(e), "url": url, "timing": _timing()}
 
-    await db.bump_fetch_count(normalize_url(url))
+    # Bump the canonical row (a short-URL request serves its final URL's content).
+    await db.bump_fetch_count(normalize_url(page["url"]))
 
     truncated = False
     omitted = 0
@@ -175,7 +177,8 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
 
     return {
         "ok": True,
-        "url": url,
+        # The canonical URL: short-URL requests resolve to their final destination.
+        "url": page["url"],
         "title": page["title"],
         "markdown": text,
         "chars": len(text),
@@ -315,9 +318,20 @@ async def _resolve_page(url: str) -> dict:
     A stored page whose markdown is stale (reddit_needs_refresh for posts,
     amazon/homedepot/walmart needs_refresh for product pages) normally re-crawls inline;
     while a refresh-failure backoff is active it serves the stored copy instead,
-    so a walled page can't burn a full browser crawl on every fetch."""
+    so a walled page can't burn a full browser crawl on every fetch.
+
+    Short URLs (e.g. a.co) resolve to their final destination first: they are
+    never indexed, so the stored lookup, on-demand crawl, and read-back all key
+    on the canonical URL."""
     s = get_settings()
     t_index = time.monotonic()
+    original = url
+    resolved = await resolve_short_url(url)
+    if resolved is None:
+        raise crawler.CrawlError(original, "could not resolve short URL to its final destination")
+    # A resolved short URL lands on a tracking-laden redirect target; canonicalize it
+    # so the stored lookup, read-back, and reported URL all key on the index row.
+    url = normalize_url(resolved) if resolved != original else resolved
     # Look up by canonical URL: a tracking-param variant of an indexed page
     # must hit the stored row instead of triggering a re-crawl.
     page = await db.page_get(normalize_url(url))

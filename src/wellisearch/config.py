@@ -181,6 +181,9 @@ class Settings(BaseSettings):
     CRAWL_REDDIT_COMMENT_RANKING: Literal["best", "score"] = "score"
     CRAWL_REDDIT_MAX_COMMENTS: int = 25  # highest-ranked comments kept per post
     CRAWL_SETTLE_S: float = 2.0
+    # Hosts of known URL shorteners (e.g. Amazon's a.co): resolved to their final
+    # URL before crawling, so policy/extractor selection sees the real site. Comma list.
+    CRAWL_SHORT_URL_HOSTS: str = "a.co"
     CRAWL_STEALTH_TIER: bool = True
     CRAWL_STEALTH_TIMEOUT_S: int = 120
     # Crawl tiers only fetch read-only pages, so untrusted TLS certs are accepted by default.
@@ -209,6 +212,11 @@ class Settings(BaseSettings):
     def job_intent_terms(self) -> tuple[str, ...]:
         """Job-intent terms from SEARCH_JOB_INTENT_TERMS (comma list)."""
         return tuple(t.strip() for t in self.SEARCH_JOB_INTENT_TERMS.split(",") if t.strip())
+
+    @property
+    def short_url_hosts(self) -> frozenset[str]:
+        """Shortener hosts from CRAWL_SHORT_URL_HOSTS (comma list, lowercased)."""
+        return frozenset(h.strip().lower() for h in self.CRAWL_SHORT_URL_HOSTS.split(",") if h.strip())
 
     def env_quota_limit(self, provider: str) -> int | None:
         """Default monthly quota for a provider (env-backed). None = unknown."""

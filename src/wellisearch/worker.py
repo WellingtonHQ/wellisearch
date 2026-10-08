@@ -41,6 +41,7 @@ from .config import get_settings
 from .crawl.extractors.base import title_from_markdown
 from .crawl.lane import CF, FAST, reset_lane, set_lane
 from .crawl.results import ChallengeDetected
+from .crawl.shorturl import resolve_short_url
 from .db import db
 from .index import store_page
 from .urlnorm import normalize_url
@@ -69,9 +70,23 @@ _malloc_trim: Callable[[int], int] | bool | None = None
 
 
 async def crawl_url(url: str, trigger: str) -> dict:
-    """Public entry: crawl one URL, never twice concurrently (shared set)."""
+    """Public entry: crawl one URL, never twice concurrently (shared set).
+
+    Short URLs (e.g. a.co) resolve to their final destination first, so dedup,
+    storage, and refresh all key on the canonical URL — short forms are never
+    indexed. An unresolvable short URL fails the crawl instead of falling back."""
     url = normalize_url(url)
-    return await queue.crawl_deduped(url, trigger, lambda: _crawl_and_store(url, trigger))
+    original = url
+    resolved = await resolve_short_url(url)
+    if resolved is None:
+        raise crawler.CrawlError(original, "could not resolve short URL to its final destination")
+    # A resolved short URL lands on a tracking-laden redirect target; canonicalize it
+    # so dedup and storage key on the same row as direct fetches of the final URL.
+    resolved = normalize_url(resolved) if resolved != original else resolved
+    result = await queue.crawl_deduped(resolved, trigger, lambda: _crawl_and_store(resolved, trigger))
+    if resolved != original:
+        await _disable_short_url_row(original)
+    return result
 
 
 async def tick() -> dict:
@@ -153,6 +168,22 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _disable_short_url_row(url: str) -> None:
+    """Best-effort: disable a pre-existing page row stored under a short URL form.
+
+    Rows indexed before short-URL resolution existed would otherwise be served
+    stale and re-refreshed every tick (their last_crawled never updates, since
+    the crawl now stores under the final URL). The canonical row owns the content."""
+    try:
+        n = await db.execute(
+            "UPDATE pages SET disabled = true WHERE url = %s AND disabled = false", (url,)
+        )
+        if n:
+            log.info("disabled stale short-url row %s (content now lives under its final URL)", url)
+    except Exception as e:
+        log.warning("disabling short-url row failed for %s: %s", url, e)
+
 
 async def _crawl_and_store(url: str, trigger: str) -> dict:
     """One crawl+store attempt (in-flight-deduped by the caller)."""

@@ -13,11 +13,13 @@ from html import unescape
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Query parameters that carry no content: ad/campaign tracking + referrers.
-# utm_* is handled by prefix; the rest are exact (lowercased) matches.
+# utm_* is handled by prefix; the rest are exact (lowercased) matches. Amazon's
+# a.co redirect chain appends ref/ref_/social_share/rsd/edk to product URLs.
 _TRACKING_PARAMS = frozenset({
-    "cmpid", "dclid", "fbclid", "gbraid", "gclid", "gi", "hscta_tracker",
-    "icid", "igshid", "mkt_tok", "msclkid", "refid", "scm", "share_id",
-    "spm", "trackingid", "twclid", "wbraid", "yclid",
+    "cmpid", "dclid", "edk", "fbclid", "gbraid", "gclid", "gi", "hscta_tracker",
+    "icid", "igshid", "mkt_tok", "msclkid", "psc", "ref", "ref_", "refid",
+    "rsd", "scm", "share_id", "social_share", "spm", "trackingid", "twclid",
+    "wbraid", "yclid",
 })
 
 # LinkedIn job pages: /jobs/view/<slug>-<id> and locale subdomains all point
