@@ -140,9 +140,10 @@ class Database:
 
     async def close(self) -> None:
         """Close the pool (if open) and clear the reference."""
-        if self._pool is not None:
-            await self._pool.close()
-            self._pool = None
+        if self._pool is None:
+            return
+        await self._pool.close()
+        self._pool = None
 
     # ---------------------------------------------------------------------------
     # Raw API

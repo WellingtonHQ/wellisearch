@@ -404,9 +404,10 @@ def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
     grace = get_settings().FETCH_ORPHAN_GRACE_S
 
     def _expire() -> None:
-        if not task.done():
-            log.info("orphan grace expired; stopping abandoned fetch crawl for %s", url)
-            task.cancel()
+        if task.done():
+            return
+        log.info("orphan grace expired; stopping abandoned fetch crawl for %s", url)
+        task.cancel()
 
     timer = asyncio.get_running_loop().call_later(grace, _expire)
 
