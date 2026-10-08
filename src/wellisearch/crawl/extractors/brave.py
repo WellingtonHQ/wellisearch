@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
+from ...config import get_settings
 from ..results import Fitted, Rendered
 from . import register
-from .base import MIN_MD_CHARS, generic_md, trim_md
+from .base import generic_md, trim_md
 
 
 class BraveExtractor:
@@ -25,7 +26,7 @@ class BraveExtractor:
         """Hybrid markdown; when trafilatura yields too little (SPA shell), fall back to the body's visible text."""
         md = generic_md(r.html)
         flags: dict[str, bool] = {"extractor": "brave"}
-        if len(md.strip()) < MIN_MD_CHARS:
+        if len(md.strip()) < get_settings().CRAWL_MIN_MD_CHARS:
             fallback = _visible_text_markdown(r.html)
             if len(fallback.strip()) > len(md.strip()):
                 md = fallback
@@ -38,7 +39,7 @@ class BraveExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: markdown must clear the minimum length."""
-        return len(f.md.strip()) >= MIN_MD_CHARS
+        return len(f.md.strip()) >= get_settings().CRAWL_MIN_MD_CHARS
 
 
 def _visible_text_markdown(html: str) -> str:

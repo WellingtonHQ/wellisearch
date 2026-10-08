@@ -33,7 +33,7 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
     if not markdown or not markdown.strip():
         return []
 
-    budget = max(100, max_tokens)
+    budget = max(get_settings().MIN_CHUNK_BUDGET_TOKENS, max_tokens)
     lines = markdown.splitlines()
 
     chunks: list[str] = []

@@ -102,14 +102,6 @@ app = FastAPI(title="wellisearch", version=__version__, lifespan=_lifespan)
 
 _worker_task: asyncio.Task | None = None
 
-WINDOW_MIN_SECS = 600    # window floor: 10 minutes
-WINDOW_MAX_SECS = 86400  # window ceiling: 24 hours
-
-API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
-API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
-API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
-API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
-
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -382,7 +374,7 @@ async def api_page_delete(url: str) -> Any:
 
 
 @app.get("/api/pages")
-async def api_pages(sort: str = "fetch_count", limit: int = API_PAGES_DEFAULT_LIMIT) -> Any:
+async def api_pages(sort: str = "fetch_count", limit: int = get_settings().API_PAGES_DEFAULT_LIMIT) -> Any:
     """List indexed pages with a freshness histogram.
 
     ``sort`` picks the ordering (default fetch_count) and ``limit`` is capped
@@ -399,7 +391,7 @@ async def api_pages(sort: str = "fetch_count", limit: int = API_PAGES_DEFAULT_LI
         f"SELECT url, title, domain, fetch_count, search_hit_count, crawl_count, "
         f"last_crawled, last_status, disabled "
         f"FROM pages ORDER BY {order} LIMIT %s",
-        (min(limit, API_PAGES_MAX_LIMIT),),
+        (min(limit, get_settings().API_PAGES_MAX_LIMIT),),
     )
     freshness = await db.fetch_all(
         """
@@ -428,18 +420,18 @@ async def api_pages(sort: str = "fetch_count", limit: int = API_PAGES_DEFAULT_LI
 
 
 @app.get("/api/logs/crawls")
-async def api_logs_crawls(limit: int = API_LOGS_DEFAULT_LIMIT) -> Any:
+async def api_logs_crawls(limit: int = get_settings().API_LOGS_DEFAULT_LIMIT) -> Any:
     """Recent crawl log entries, newest first (limit capped at 500)."""
     rows = await db.fetch_all(
         "SELECT ts, url, trigger, status, ms, chunks_written, detail "
         "FROM crawl_log ORDER BY id DESC LIMIT %s",
-        (min(limit, API_LOGS_MAX_LIMIT),),
+        (min(limit, get_settings().API_LOGS_MAX_LIMIT),),
     )
     return {"crawls": rows}
 
 
 @app.get("/api/logs/searches")
-async def api_logs_searches(limit: int = API_LOGS_DEFAULT_LIMIT, offset: int = 0) -> Any:
+async def api_logs_searches(limit: int = get_settings().API_LOGS_DEFAULT_LIMIT, offset: int = 0) -> Any:
     """Paginated search log entries, newest first.
 
     limit caps the page size (max 500); offset skips the most recent rows for
@@ -447,7 +439,7 @@ async def api_logs_searches(limit: int = API_LOGS_DEFAULT_LIMIT, offset: int = 0
     LOG_RETENTION_DAYS). Each stored results JSONB is reduced to n_results +
     urls so the dashboard gets a slimmer payload than raw snippets.
     """
-    limit = max(1, min(int(limit), API_LOGS_MAX_LIMIT))
+    limit = max(1, min(int(limit), get_settings().API_LOGS_MAX_LIMIT))
     offset = max(0, int(offset))
     rows = await db.fetch_all(
         "SELECT id, ts, query, source, local_hits, results FROM search_log "
@@ -471,7 +463,7 @@ async def api_logs_searches(limit: int = API_LOGS_DEFAULT_LIMIT, offset: int = 0
 
 
 @app.get("/api/window")
-async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
+async def api_window(secs: int = get_settings().WINDOW_MAX_SECS) -> Any:
     """Windowed activity stats (searches + crawls), clamped to 10m..24h."""
     secs = _clamp_window(secs)
     srows = await db.fetch_all(
@@ -507,7 +499,7 @@ async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
 
 @app.get("/api/logs")
 async def api_logs(
-    secs: int = WINDOW_MAX_SECS,
+    secs: int = get_settings().WINDOW_MAX_SECS,
     limit: int = 200,
     q: str = "",
 ) -> Any:
@@ -518,7 +510,7 @@ async def api_logs(
     (case-insensitive substring); total then counts the matched rows.
     """
     secs = _clamp_window(secs)
-    limit = max(1, min(int(limit), API_LOGS_MAX_LIMIT))
+    limit = max(1, min(int(limit), get_settings().API_LOGS_MAX_LIMIT))
     cutoff = "ts >= now() - make_interval(secs => %s)"
     crawls = await db.fetch_all(
         "SELECT ts, url, trigger, status, ms, chunks_written, detail FROM crawl_log "
@@ -743,7 +735,7 @@ def _respond(
 
 def _clamp_window(secs: int) -> int:
     """Clamp a window (seconds) to the 10-minute..24-hour bounds."""
-    return max(WINDOW_MIN_SECS, min(int(secs), WINDOW_MAX_SECS))
+    return max(get_settings().WINDOW_MIN_SECS, min(int(secs), get_settings().WINDOW_MAX_SECS))
 
 
 def _short_url(url: str) -> str:

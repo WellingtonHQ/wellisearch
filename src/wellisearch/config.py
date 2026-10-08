@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     # 512-token input cap (chunk.py estimates tokens as len(text)//4, so the
     # headroom absorbs over-estimates and keeps long chunks from truncating).
     MAX_CHUNK_TOKENS: int = 500
+    # Floor applied to the chunk budget in chunk_markdown (chunk.py clamps
+    # max_tokens up to this) so a tiny caller-supplied budget can't produce
+    # degenerate one-line chunks.
+    MIN_CHUNK_BUDGET_TOKENS: int = 100
     # Per-statement backstop for the local search SQL (SET LOCAL, search only):
     # no query may hold a pooled connection for minutes. A timeout falls back
     # to the provider gateway (search_web.py) instead of stalling the request.
@@ -142,7 +146,21 @@ class Settings(BaseSettings):
     CRAWL_HTTP_TIER: bool = True
     # Launch backoff after a failed browser launch (see native-crawler-design.md §3.4).
     CRAWL_LAUNCH_RETRY_AFTER_S: float = 30.0
+    # A short body that still shows a "Loading..." placeholder is a client-rendered
+    # shell captured before JS ran; escalate to the browser tier instead of storing
+    # it. Real articles that merely mention loading are far longer than this.
+    CRAWL_LOADING_STUB_MAX_CHARS: int = 1500
     CRAWL_MD_MAX_CHARS: int = 150000
+    # Extractor quality gates (crawl/extractors/base.py). Minimum markdown
+    # length for a page to pass the generic gate.
+    CRAWL_MIN_MD_CHARS: int = 100
+    # News article body gate (ap/guardian/reuters): a real article body clears
+    # this; decoy/nav/related-links stubs do not.
+    CRAWL_MIN_NEWS_ARTICLE_BODY_CHARS: int = 800
+    # Retail product-page gate: full pages are 5k+ chars once extracted, so a
+    # thin/degraded render under this escalates to the browser tier instead of
+    # being stored as a stub (design §3.2 retail gate).
+    CRAWL_MIN_PRODUCT_CHARS: int = 3000
     CRAWL_POOL_SIZE: int = 3
     CRAWL_PROFILE_DIR: str = "/profiles"
     CRAWL_PROFILE_MAX: int = 8
@@ -151,12 +169,20 @@ class Settings(BaseSettings):
     CRAWL_SETTLE_S: float = 2.0
     CRAWL_STEALTH_TIER: bool = True
     CRAWL_STEALTH_TIMEOUT_S: int = 120
+    # Max chars kept when deriving a title from markdown.
+    CRAWL_TITLE_MAX_LEN: int = 120
     # Crawl tiers only fetch read-only pages, so untrusted TLS certs are accepted by default.
     CRAWL_IGNORE_SSL_ERRORS: bool = True
 
     # --- server ---
+    API_LOGS_DEFAULT_LIMIT: int = 50  # /api/logs* default limit
+    API_LOGS_MAX_LIMIT: int = 500  # /api/logs* limit cap
+    API_PAGES_DEFAULT_LIMIT: int = 20  # /api/pages default limit
+    API_PAGES_MAX_LIMIT: int = 100  # /api/pages limit cap
     BIND_PORT: int = 8780
     WELLISEARCH_API_KEY: str = ""  # empty = open; set = require on REST + MCP
+    WINDOW_MAX_SECS: int = 86400  # /api/window ceiling (24 hours)
+    WINDOW_MIN_SECS: int = 600  # /api/window floor (10 minutes)
 
     # ---------------------------------------------------------------------------
     # Helpers

@@ -1,9 +1,10 @@
 """APExtractor: hybrid fit-markdown + head-decoy trim (design §3.2)."""
 from __future__ import annotations
 
+from ...config import get_settings
 from ..results import Fitted, Rendered
 from . import register
-from .base import MIN_NEWS_ARTICLE_BODY_CHARS, generic_md, trim_md
+from .base import generic_md, trim_md
 
 HEAD_DECOYS = ("AP News", "Most Popular", "Newsletters", "Sign up")
 MIN_REAL_PARA_CHARS = 80  # a real article paragraph, not a nav/decoy line
@@ -25,7 +26,7 @@ class APExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: a real article body."""
-        return len(f.md.strip()) >= MIN_NEWS_ARTICLE_BODY_CHARS
+        return len(f.md.strip()) >= get_settings().CRAWL_MIN_NEWS_ARTICLE_BODY_CHARS
 
 
 def _drop_head_decoys(md: str) -> str:

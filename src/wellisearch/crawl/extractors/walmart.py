@@ -1,10 +1,11 @@
 """WalmartExtractor: hybrid fit-markdown + hero-price gate (design §3.2)."""
 from __future__ import annotations
 
+from ...config import get_settings
 from ..results import Fitted, Rendered
 from ..signals import find_price, find_stock
 from . import register
-from .base import MIN_PRODUCT_CHARS, generic_md, trim_md
+from .base import generic_md, trim_md
 
 
 class WalmartExtractor:
@@ -23,7 +24,7 @@ class WalmartExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: a price signal and real product content (not a stub)."""
-        return bool(f.signals.get("price")) and len(f.md.strip()) >= MIN_PRODUCT_CHARS
+        return bool(f.signals.get("price")) and len(f.md.strip()) >= get_settings().CRAWL_MIN_PRODUCT_CHARS
 
 
 register(WalmartExtractor(), "walmart.com")

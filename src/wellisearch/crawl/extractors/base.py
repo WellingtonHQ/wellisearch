@@ -1,9 +1,9 @@
 """GenericExtractor: the fallback extractor for unknown domains (design §3.2).
 
 trafilatura first, readability-lxml → markdownify as the fallback; the
-quality gate is a minimum markdown length (MIN_MD_CHARS). Also hosts the
-shared fit-markdown helpers (generic_md, trim_md, cut_at_first) that the
-site extractors build on.
+quality gate is a minimum markdown length (CRAWL_MIN_MD_CHARS setting). Also
+hosts the shared fit-markdown helpers (generic_md, trim_md, cut_at_first) that
+the site extractors build on.
 """
 from __future__ import annotations
 
@@ -12,23 +12,8 @@ import re
 from ...config import get_settings
 from ..results import Escalate, Fitted, Rendered
 
-MIN_MD_CHARS = 100
-# News article body gate (ap/guardian/reuters): a real article body clears this;
-# decoy/nav/related-links stubs do not.
-MIN_NEWS_ARTICLE_BODY_CHARS = 800
-# A short body that still shows a "Loading..." placeholder is a client-rendered
-# shell captured before JS ran (http tier); escalate to the browser tier, which
-# waits for settle/network-idle, instead of storing the stub. Real articles that
-# merely mention loading are far longer than this.
-LOADING_STUB_MAX_CHARS = 1500
 _LOADING_STUB_RE = re.compile(r"\bloading\s*(?:\.{2,}|…)", re.IGNORECASE)
 _SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
-# Retail product pages (buy-box + "About this item" + specs) are 5k+ chars once
-# extracted; a thin/degraded render (e.g. the HTTP tier's lazy buy-box) is well
-# under this. The gate uses it to reject thin renders so the engine escalates
-# to the browser tier instead of accepting a stub (design §3.2 retail gate).
-MIN_PRODUCT_CHARS = 3000
-TITLE_MAX_LEN = 120  # max chars kept when deriving a title from markdown
 
 
 class GenericExtractor:
@@ -51,7 +36,7 @@ class GenericExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: markdown must clear the minimum length."""
-        return len(f.md.strip()) >= MIN_MD_CHARS
+        return len(f.md.strip()) >= get_settings().CRAWL_MIN_MD_CHARS
 
 
 def generic_md(html: str) -> str:
@@ -97,11 +82,11 @@ def title_from_markdown(md: str) -> str | None:
             h1 = m
             break
     if h1 is not None and _is_title_candidate(h1.group(1)):
-        return h1.group(1).strip()[:TITLE_MAX_LEN]
+        return h1.group(1).strip()[:get_settings().CRAWL_TITLE_MAX_LEN]
     for line in lines:
         candidate = line.strip()
         if _is_title_candidate(candidate):
-            return candidate[:TITLE_MAX_LEN]
+            return candidate[:get_settings().CRAWL_TITLE_MAX_LEN]
     return None
 
 
@@ -115,7 +100,7 @@ def _is_loading_stub(md: str, html: str) -> bool:
     The pattern is searched in the raw HTML (scripts/styles stripped), not the
     extracted markdown: trafilatura drops short placeholder nodes, so the stub
     marker can be absent from md even though it drove the render."""
-    if len(md.strip()) > LOADING_STUB_MAX_CHARS:
+    if len(md.strip()) > get_settings().CRAWL_LOADING_STUB_MAX_CHARS:
         return False
     visible = _SCRIPT_STYLE_RE.sub("", html)
     return _LOADING_STUB_RE.search(visible) is not None

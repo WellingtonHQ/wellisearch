@@ -32,7 +32,7 @@ client-rendered shell ending in `Loading...` — the http tier captured the page
 before JS rendered the listings, and the generic gate (≥100 chars) accepted it.
 
 Fixed: `GenericExtractor.fit` now raises `Escalate("browser")` when the extracted
-markdown is short (`LOADING_STUB_MAX_CHARS=1500`) **and** the raw HTML (scripts/
+markdown is short (`CRAWL_LOADING_STUB_MAX_CHARS=1500`) **and** the raw HTML (scripts/
 styles stripped) still shows a `Loading...` placeholder — so the browser tier,
 which waits for settle/network-idle, renders the real content. Long pages that
 merely mention "loading" are unaffected.

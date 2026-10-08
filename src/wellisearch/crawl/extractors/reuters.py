@@ -1,9 +1,10 @@
 """ReutersExtractor: hybrid fit-markdown + related-links trim (design §3.2)."""
 from __future__ import annotations
 
+from ...config import get_settings
 from ..results import Fitted, Rendered
 from . import register
-from .base import MIN_NEWS_ARTICLE_BODY_CHARS, cut_at_first, generic_md, trim_md
+from .base import cut_at_first, generic_md, trim_md
 
 RELATED = ("Also Viewed", "More from Reuters", "Related", "Top Stories")
 
@@ -25,7 +26,7 @@ class ReutersExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: a real article body."""
-        return len(f.md.strip()) >= MIN_NEWS_ARTICLE_BODY_CHARS
+        return len(f.md.strip()) >= get_settings().CRAWL_MIN_NEWS_ARTICLE_BODY_CHARS
 
 
 register(ReutersExtractor(), "reuters.com")

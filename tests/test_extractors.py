@@ -5,12 +5,11 @@ import re
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from wellisearch.config import get_settings
 from wellisearch.crawl.extractors import for_url
 from wellisearch.crawl.extractors.amazon import AmazonExtractor
 from wellisearch.crawl.extractors.ap import APExtractor
 from wellisearch.crawl.extractors.base import (
-    MIN_MD_CHARS,
-    TITLE_MAX_LEN,
     generic_md,
     title_from_markdown,
 )
@@ -241,7 +240,7 @@ assert ex.accept(fb)
 vt = _visible_text_markdown(BRAVE_SERP_HTML)
 assert vt.count("Ask") == 1, vt[:200]
 assert "var q=1" not in vt
-assert len(vt.strip()) >= MIN_MD_CHARS
+assert len(vt.strip()) >= get_settings().CRAWL_MIN_MD_CHARS
 # a DOM with no visible text degrades to '' (never raises)
 assert _visible_text_markdown("<html><body></body></html>") == ""
 
@@ -525,7 +524,6 @@ print("OK ap")
 # ---------------------------------------------------------------------------
 
 from wellisearch.crawl.extractors.base import (
-    LOADING_STUB_MAX_CHARS,
     GenericExtractor,
     _is_loading_stub,
 )
@@ -563,7 +561,7 @@ long_body = (
     "</body></html>"
 )
 fitted = gen.fit(rendered(long_body))
-assert len(fitted.md.strip()) > LOADING_STUB_MAX_CHARS, len(fitted.md)
+assert len(fitted.md.strip()) > get_settings().CRAWL_LOADING_STUB_MAX_CHARS, len(fitted.md)
 print("OK generic loading stub")
 
 # ---------------------------------------------------------------------------
@@ -594,7 +592,10 @@ assert title_from_markdown(
     "---\nPlain Text Line\nMore body text."
 ) == "Plain Text Line", "symbol-only first line must be skipped"
 long_line = "w" * 200
-assert len(title_from_markdown(long_line)) == TITLE_MAX_LEN, "title must cap at TITLE_MAX_LEN"
+assert (
+    len(title_from_markdown(long_line)) == get_settings().CRAWL_TITLE_MAX_LEN,
+    "title must cap at CRAWL_TITLE_MAX_LEN",
+)
 assert title_from_markdown("") is None, "empty md must yield None"
 assert title_from_markdown("   \n") is None, "whitespace-only md must yield None"
 assert title_from_markdown("[a](b)\n[c](d)") is None, "all-link md must yield None"
