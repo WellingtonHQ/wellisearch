@@ -642,7 +642,7 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
         "fetch json: 200 + content-type json + envelope keys",
         r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
         and all(k in j for k in ("chars", "from_index", "markdown", "ok", "title", "truncated", "url")),
-        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
+        f"{r.headers.get('content-type', '')} {json.dumps(j)[:100]}"
     )
     check(
         "fetch json: timing object with total_ms + index_ms",
@@ -663,7 +663,7 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
         "fetch-bulk json: 200 + content-type json + envelope keys",
         r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
         and all(k in j for k in ("ok", "pages", "pages_fetched", "strategy", "total_chars")),
-        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
+        f"{r.headers.get('content-type', '')} {json.dumps(j)[:100]}"
     )
     check(
         "fetch-bulk json: pages list with content/chars",

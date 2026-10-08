@@ -46,7 +46,7 @@ def render_search_markdown(out: dict) -> str:
     errors = out.get("provider_errors") or []
     if errors:
         lines.append(
-            "Provider Errors: " + "; ".join(f"{e.get('provider')}: {e.get('error')}" for e in errors)
+            f"Provider Errors: {'; '.join(f"{e.get('provider')}: {e.get('error')}" for e in errors)}"
         )
     if out.get("index_error"):
         lines.append(f"Index Error: {out['index_error']}")
