@@ -285,7 +285,7 @@ class StubGateway:
         self,
         query: str,
         num: int,
-    ):
+    ) -> tuple[list[Result], str, list[dict]]:
         self.calls.append((query, num))
         return (
             [

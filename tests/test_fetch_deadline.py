@@ -15,7 +15,7 @@ import wellisearch.queue as queue_mod
 class FakeDB:
     """In-memory stand-in for the db helpers _resolve_page uses."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.enqueued = []
         self.challenge_in_flight = False
         self.paused = False
@@ -92,7 +92,7 @@ fetch_mod.crawl_url = failing_slow_crawl
 fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
-async def scenario_deadline():
+async def scenario_deadline() -> Exception | None:
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL)
@@ -132,7 +132,7 @@ fetch_mod.crawl_url = slow_crawl
 fetch_mod.get_settings = lambda: _CANCEL_S  # long deadline: cancel must win, not the clock
 
 
-async def scenario_cancel():
+async def scenario_cancel() -> str:
     fetch_task = asyncio.create_task(fetch_mod._resolve_page(URL))
     await asyncio.sleep(0.05)  # _resolve_page is inside its deadline wait now
     fetch_task.cancel()
@@ -183,7 +183,7 @@ fetch_mod.crawl_url = grace_crawl
 fetch_mod.get_settings = lambda: _GRACE_S
 
 
-async def scenario_grace(url: str):
+async def scenario_grace(url: str) -> Exception | None:
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(url)
@@ -234,7 +234,7 @@ fetch_mod.crawl_url = failing_slow_crawl  # slower than the 0.3 s deadline
 fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
-async def scenario_paused_timeout():
+async def scenario_paused_timeout() -> Exception | None:
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL_P)
@@ -275,7 +275,7 @@ fetch_mod.crawl_url = no_crawl
 fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
-async def scenario_paused_fastfail():
+async def scenario_paused_fastfail() -> Exception | None:
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL_CF)

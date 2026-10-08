@@ -651,11 +651,11 @@ async def _orphan_release() -> str:
     """Cancel the crawl_deduped owner mid-crawl (what _adopt_orphan's timer does); report what a joiner sees."""
     started = asyncio.Event()
 
-    async def owner_fn():
+    async def owner_fn() -> None:
         started.set()
         await asyncio.sleep(30.0)  # hangs until its task is cancelled
 
-    async def unused_fn():
+    async def unused_fn() -> None:
         return None  # joiners never run fn — they dedup onto the in-flight future
 
     owner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "fetch", owner_fn))
