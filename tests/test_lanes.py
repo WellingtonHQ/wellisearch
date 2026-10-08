@@ -677,8 +677,10 @@ async def _orphan_release() -> str:
 
 
 released = asyncio.run(_orphan_release())
-assert ORPHAN_URL in released and "aborted" in released, f"joiner release must name the URL + reason: {released!r}"
-assert ORPHAN_URL not in queue_mod.INFLIGHT.urls(), f"dedup entry survived owner cancellation: {queue_mod.INFLIGHT.urls()}"
+assert ORPHAN_URL in released and "aborted" in released, \
+    f"joiner release must name the URL + reason: {released!r}"
+assert ORPHAN_URL not in queue_mod.INFLIGHT.urls(), \
+    f"dedup entry survived owner cancellation: {queue_mod.INFLIGHT.urls()}"
 print("OK grace-cancel of a deduped owner releases its joiners with CrawlError")
 
 print("ALL LANE TESTS PASSED")

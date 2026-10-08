@@ -203,7 +203,8 @@ assert any(
 assert queue_mod.INFLIGHT.urls() == [], f"dedup entry survived its grace expiry: {queue_mod.INFLIGHT.urls()}"
 
 err_g2 = asyncio.run(scenario_grace(URL_G2))
-assert isinstance(err_g2, crawler.CrawlError), f"deadline must still raise for {URL_G2}: {type(err_g2)}: {err_g2}"
+assert isinstance(err_g2, crawler.CrawlError), \
+    f"deadline must still raise for {URL_G2}: {type(err_g2)}: {err_g2}"
 assert "timed out" in str(err_g2), f"timeout hint missing: {str(err_g2)!r}"
 assert hang_cancelled == [True], "grace timer cancelled a probe that finished inside its window"
 assert any(
@@ -212,7 +213,8 @@ assert any(
 assert not any(URL_G2 in r for r in _records if r.startswith("orphan grace expired")), (
     "grace expiry logged for a probe that finished inside its window"
 )
-assert db3.enqueued == [(URL_G1, "fetch", "fast"), (URL_G2, "fetch", "fast")], f"both deadlines must re-queue: {db3.enqueued}"
+assert db3.enqueued == [(URL_G1, "fetch", "fast"), (URL_G2, "fetch", "fast")], \
+    f"both deadlines must re-queue: {db3.enqueued}"
 print("OK grace window (orphan stopped + dedup freed; in-window finish untouched)")
 
 # ---------------------------------------------------------------------------
