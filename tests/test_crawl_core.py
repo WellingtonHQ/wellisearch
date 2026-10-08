@@ -424,16 +424,14 @@ with patch.object(worker_mod, "resolve_short_url", AsyncMock(return_value=None))
         assert "could not resolve" in str(e)
 assert not dedup.called
 
-# a resolvable short URL crawls + stores under the final URL and disables any stale row
+# a resolvable short URL crawls + stores under the final URL and deletes any stale row
 with patch.object(worker_mod, "resolve_short_url", AsyncMock(return_value=FINAL_URL)), \
      patch.object(worker_mod.queue, "crawl_deduped", AsyncMock(return_value={"url": FINAL_URL})) as dedup2, \
-     patch.object(worker_mod.db, "execute", AsyncMock(return_value=1)) as disable:
+     patch.object(worker_mod.db, "execute", AsyncMock(return_value=1)) as delete:
     r = asyncio.run(worker_mod.crawl_url(SHORT_URL, "manual"))
 assert r["url"] == FINAL_URL
 assert dedup2.await_args.args[0] == FINAL_URL  # dedup keys on the canonical URL
-disable.assert_awaited_once_with(
-    "UPDATE pages SET disabled = true WHERE url = %s AND disabled = false", (SHORT_URL,)
-)
+delete.assert_awaited_once_with("DELETE FROM pages WHERE url = %s", (SHORT_URL,))
 
 print("OK worker short-url guard")
 

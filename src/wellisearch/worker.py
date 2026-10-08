@@ -85,7 +85,7 @@ async def crawl_url(url: str, trigger: str) -> dict:
     resolved = normalize_url(resolved) if resolved != original else resolved
     result = await queue.crawl_deduped(resolved, trigger, lambda: _crawl_and_store(resolved, trigger))
     if resolved != original:
-        await _disable_short_url_row(original)
+        await _delete_short_url_row(original)
     return result
 
 
@@ -169,20 +169,18 @@ def main() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _disable_short_url_row(url: str) -> None:
-    """Best-effort: disable a pre-existing page row stored under a short URL form.
+async def _delete_short_url_row(url: str) -> None:
+    """Best-effort: delete a pre-existing page row stored under a short URL form.
 
-    Rows indexed before short-URL resolution existed would otherwise be served
-    stale and re-refreshed every tick (their last_crawled never updates, since
-    the crawl now stores under the final URL). The canonical row owns the content."""
+    Rows indexed before short-URL resolution existed are duplicates of the
+    canonical row, which now owns the content (short forms must never linger in
+    the index). Chunks cascade with the page row."""
     try:
-        n = await db.execute(
-            "UPDATE pages SET disabled = true WHERE url = %s AND disabled = false", (url,)
-        )
+        n = await db.execute("DELETE FROM pages WHERE url = %s", (url,))
         if n:
-            log.info("disabled stale short-url row %s (content now lives under its final URL)", url)
+            log.info("deleted stale short-url row %s (content now lives under its final URL)", url)
     except Exception as e:
-        log.warning("disabling short-url row failed for %s: %s", url, e)
+        log.warning("deleting short-url row failed for %s: %s", url, e)
 
 
 async def _crawl_and_store(url: str, trigger: str) -> dict:
