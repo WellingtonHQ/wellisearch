@@ -399,7 +399,11 @@ class Database:
         row = await self.fetch_one("SELECT value FROM app_state WHERE key = %s", (key,))
         return row["value"] if row else None
 
-    async def set_app_value(self, key: str, value: Any) -> None:
+    async def set_app_value(
+        self,
+        key: str,
+        value: Any,
+    ) -> None:
         """Upsert the runtime value stored under `key` in app_state."""
         await self.execute(
             """

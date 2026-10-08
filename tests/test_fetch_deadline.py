@@ -30,7 +30,10 @@ class FakeDB:
         return self.challenge_in_flight
 
     async def queue_enqueue(
-        self, url: str, source: str = "fetch", lane: str | None = None
+        self,
+        url: str,
+        source: str = "fetch",
+        lane: str | None = None,
     ) -> bool:
         self.enqueued.append((url, source, lane))
         return True
