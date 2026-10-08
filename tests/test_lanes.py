@@ -426,7 +426,7 @@ BACKOFF_URL = "https://example.com/backoff"
 orig_db_bk = worker_mod.db
 orig_fit_markdown = crawler_mod.fit_markdown
 
-for trigger in ("search", "manual", "fetch", "recrawl", "refresh"):
+for trigger in ("fetch", "manual", "recrawl", "refresh", "search"):
     backoff_db = BackoffDB()
     worker_mod.db = backoff_db
     crawler_mod.fit_markdown = failing_fit_markdown
