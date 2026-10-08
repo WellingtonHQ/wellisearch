@@ -101,7 +101,10 @@ def stale_row(backoff_until: dt.datetime | None) -> dict:
     }
 
 
-# --- save module globals we monkeypatch -------------------------------------
+# ---------------------------------------------------------------------------
+# Save Module Globals
+# ---------------------------------------------------------------------------
+
 _real_db = fetch_mod.db
 _real_crawl_url = fetch_mod.crawl_url
 _real_get_settings = fetch_mod.get_settings

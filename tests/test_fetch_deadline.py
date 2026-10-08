@@ -50,7 +50,10 @@ _CANCEL_S = type(_REAL_SETTINGS)(FETCH_TIMEOUT_S=5.0, FETCH_PROBE_TIMEOUT_S=0.1)
 
 URL = "https://example.com/slow"
 
-# --- save module globals we monkeypatch -------------------------------------
+# ---------------------------------------------------------------------------
+# Save Module Globals
+# ---------------------------------------------------------------------------
+
 _real_db = fetch_mod.db
 _real_crawl_url = fetch_mod.crawl_url
 _real_get_settings = fetch_mod.get_settings
@@ -266,8 +269,9 @@ assert db4.enqueued == [(URL_P, "fetch", "fast")], f"background retry was not en
 assert len(kicks) == kicks_before + 1, f"re-queue must still kick the worker: {kicks}"
 print("OK paused timeout (no seconds ETA; re-queued until resume)")
 
-# --- fast-fail on a pending CF row while paused -----------------------------
-
+# ---------------------------------------------------------------------------
+# Fast-Fail While Paused
+# ---------------------------------------------------------------------------
 
 called_crawls: list[str] = []
 
@@ -308,8 +312,9 @@ assert "try again in ~" not in msg_p2, f"seconds-based ETA quoted while indexing
 assert called_crawls == [], f"fast-fail must not start a crawl: {called_crawls}"
 print("OK paused fast-fail (pending CF row; no seconds ETA)")
 
-# --- probe hits a bot-wall while paused -------------------------------------
-
+# ---------------------------------------------------------------------------
+# Bot-Wall While Paused
+# ---------------------------------------------------------------------------
 
 async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
     """Simulate a probe that immediately hits a bot-wall."""
