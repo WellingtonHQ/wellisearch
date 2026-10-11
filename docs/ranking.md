@@ -360,8 +360,10 @@ Auto mode considers the top `SEARCH_GATE_MIN_K` rows by score **plus** the
 `SEARCH_TOP_BY_SIM` most similar (non-NULL similarity) rows not already in it;
 the index fetches `SEARCH_GATE_MIN_K + SEARCH_TOP_BY_SIM` rows in one call. A
 semantically close page whose score is buried by lexical mass (a vec-leg-only
-article behind dozens of verbatim job postings) always reaches the gate this
-way, instead of needing an ever-larger fixed window.
+article behind dozens of verbatim job postings) reaches the gate whenever it
+lands inside that fetched window, instead of needing an ever-larger fixed
+window — a page whose fused rank falls outside the window is never fetched at
+all, so the similarity pool cannot rescue it.
 
 ### Job-board de-rank (with intent bypass)
 

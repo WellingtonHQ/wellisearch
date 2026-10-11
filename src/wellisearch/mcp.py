@@ -42,8 +42,10 @@ Workflow:
 3. If the answer is thin, rephrase and search_web again (≤2 reformulations).
 
 Rules: never invent page content; if a fetch fails, say which URL failed and
-re-search. If the header carries Degraded: true, results are local-only
-(all providers failed — see the Provider Errors line).
+re-search. If the header carries Degraded: true, either all providers failed
+and local rows were served as the fallback (see the Provider Errors line), or
+auto mode's per-domain cap shrank a would-be full local set below k (no
+Provider Errors line in that case).
 """
 
 # Explicit transport security: the default auto-allowlist only covers loopback,
