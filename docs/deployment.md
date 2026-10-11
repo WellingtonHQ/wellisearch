@@ -191,6 +191,18 @@ staleness check is model-only. Run `python -m wellisearch.reindex --force` once
 after such a deploy to finish the wave immediately instead of letting it spread
 across weeks of watchlist refreshes.
 
+### One-time migration after deploying URL canonicalization
+This release stores pages under their normalized URL (`pages.url` and
+`crawl_queue`). Rows already stored under variant URLs are not removed by
+re-crawls — `store_page` upserts the canonical row, but the old variant rows
+keep their chunks and keep being served as separate results. Collapse them:
+
+```
+python -m wellisearch.merge_dupes --dry-run   # report duplicate groups only
+docker compose -f compose.yml stop wellisearch
+python -m wellisearch.merge_dupes             # merge (run against a stopped service)
+```
+
 ### Provider runtime controls
 ```
 # disable a provider at runtime (persists in provider_state)
