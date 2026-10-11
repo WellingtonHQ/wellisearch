@@ -71,11 +71,20 @@ assert normalize_url("https://ex.com/a?x=1") == "https://ex.com/a?x=1", \
     "content params kept"
 assert normalize_url(
     "https://ex.com/a?utm_source=x&utm_medium=y&refId=abc&trackingId=z&gi=h&mode=location"
-) == "https://ex.com/a?mode=location", "tracking params dropped, content kept"
+) == "https://ex.com/a?gi=h&mode=location", \
+    "universal tracking dropped; host-scoped gi kept off-Amazon"
 assert normalize_url(
     "https://www.amazon.com/dp/B0HDBD77SD?ref=x&ref_=y&social_share=z&rsd=w&edk=v&psc=1"
 ) == "https://www.amazon.com/dp/B0HDBD77SD", \
     "amazon a.co redirect tracking params dropped"
+assert normalize_url("https://www.amazon.com/dp/B0HDBD77SD?scm=a&gi=b") == \
+    "https://www.amazon.com/dp/B0HDBD77SD", "amazon-scoped scm/gi dropped"
+assert normalize_url("https://ex.com/a?ref=123") == "https://ex.com/a?ref=123", \
+    "ref kept off-Amazon (can define content)"
+assert normalize_url("https://www.taobao.com/item.htm?id=9&spm=a2e00.8165847") == \
+    "https://www.taobao.com/item.htm?id=9", "alibaba-scoped spm dropped"
+assert normalize_url("https://ex.com/a?spm=x") == "https://ex.com/a?spm=x", \
+    "spm kept off-alibaba (can define content)"
 assert normalize_url("https://ex.com/a?x=1&amp;y=2") == "https://ex.com/a?x=1&y=2", \
     "&amp; unescaped"
 assert normalize_url("https://ex.com/a#frag") == "https://ex.com/a", "fragment dropped"

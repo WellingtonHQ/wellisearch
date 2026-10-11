@@ -379,7 +379,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
              "fetch_count": 1, "index_ms": 0}
             for u, t in (
                 ("https://example.com/a?utm_source=test", "A"),
-                ("https://example.com/b?ref=1", "B"),
+                ("https://example.com/b?gclid=x", "B"),
                 ("https://example.com/b", "B"),
             )
         ]
@@ -392,7 +392,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             out = await fetch.fetch_pages(
                 [
                     "https://example.com/a?utm_source=test",
-                    "https://example.com/b?ref=1",
+                    "https://example.com/b?gclid=x",
                     "https://example.com/b",
                 ]
             )
