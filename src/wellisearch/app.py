@@ -662,10 +662,9 @@ async def _auth(request: Request, call_next: Callable[[Request], Awaitable[Respo
         elif request.headers.get("x-api-key"):
             token = request.headers["x-api-key"].strip()
         if token is None or not hmac.compare_digest(token, key):
-            return JSONResponse(
-                {"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"},
-                status_code=401,
-            )
+            return JSONResponse({
+                "error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>",
+            }, status_code=401)
     return await call_next(request)
 
 

@@ -92,9 +92,7 @@ def detect_cpu() -> str:
     """The CPU model name (macOS sysctl, /proc/cpuinfo, or platform.processor)."""
     try:
         if sys.platform == "darwin":
-            return subprocess.check_output(
-                ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
-            ).strip()
+            return subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
         name = _read_proc_cpuinfo()
         if name is not None:
             return name
