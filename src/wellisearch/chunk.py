@@ -16,6 +16,7 @@ import re
 from .config import get_settings
 
 CHARS_PER_TOKEN = 4
+_MIN_CHUNK_BUDGET = 100  # floor for max_tokens: never chunk below ~400 chars
 _MIN_CHUNK_TOKENS = 50
 STUB_MERGE_DIVISOR = 5  # trailing stub below budget//5 merges into the previous chunk
 
@@ -33,7 +34,7 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
     if not markdown or not markdown.strip():
         return []
 
-    budget = max(100, max_tokens)
+    budget = max(_MIN_CHUNK_BUDGET, max_tokens)
     lines = markdown.splitlines()
 
     chunks: list[str] = []
