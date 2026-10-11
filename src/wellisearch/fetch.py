@@ -18,10 +18,10 @@ import logging
 import time
 from urllib.parse import urlparse
 
-from . import crawler
 from .config import get_settings
 from .crawl.extractors.base import title_from_markdown
 from .crawl.results import ChallengeDetected
+from . import crawler
 from .db import db
 from .serialize import format_timing
 from .truncation import (

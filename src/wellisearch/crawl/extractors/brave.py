@@ -10,8 +10,8 @@ which keeps SPA SERPs clearable by the gate without site-specific selectors.
 from __future__ import annotations
 
 from ..results import Fitted, Rendered
-from . import register
 from .base import MIN_MD_CHARS, generic_md, trim_md
+from . import register
 
 
 class BraveExtractor:

@@ -13,11 +13,11 @@ import datetime as dt
 import logging
 import time
 
-from . import queue
 from .config import get_settings
 from .db import db
 from .embed import embed_one
 from .providers import GatewayExhausted, get_gateway
+from . import queue
 from .serialize import format_timing
 
 log = logging.getLogger("wellisearch.search_web")

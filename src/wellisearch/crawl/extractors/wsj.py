@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from ..results import Fitted, Rendered
-from . import register
 from .base import generic_md, trim_md
+from . import register
 
 PAYWALL_MARKERS = ("metered", "paywall", "sign in to continue", "subscribe to read")
 

@@ -15,11 +15,11 @@ import asyncio
 from collections.abc import Awaitable, Callable
 import logging
 
-from . import worker
 from .config import get_settings
 from .crawl.lane import CF, get_lane
 from .crawler import crawl_semaphore, cf_crawl_semaphore
 from .db import db
+from . import worker
 
 log = logging.getLogger("wellisearch.queue")
 

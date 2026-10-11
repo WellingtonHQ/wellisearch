@@ -18,8 +18,8 @@ from bs4 import BeautifulSoup
 from markdownify import markdownify as mdify
 
 from ..results import Fitted, Rendered
-from . import register
 from .base import trim_md
+from . import register
 
 # Real job descriptions clear this comfortably; bot-wall stubs and empty board
 # pages do not. Kept above the generic gate so a thin render escalates instead
