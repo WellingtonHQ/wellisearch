@@ -298,9 +298,13 @@ def _apply_job_board_penalty(
     boards: tuple[str, ...],
     penalty: float,
 ) -> list[dict]:
-    """Job-board rows get score and similarity multiplied by `penalty` (a
-    de-rank, not a filter — coverage is untouched so the gate still sees
-    them). Non-matching rows pass through unchanged."""
+    """Job-board rows get score and similarity multiplied by `penalty`. The
+    penalty runs before the local-hit gate, so it raises the effective
+    similarity threshold for board rows to LOCAL_MIN_SIMILARITY / penalty
+    (default 0.6): a board row below that no longer serves locally at all,
+    and none can serve as a lone strong hit while the penalty is active
+    (with defaults that would need pre-penalty similarity above 1).
+    Coverage is untouched. Non-matching rows pass through unchanged."""
     out = []
     for r in rows:
         if _is_job_board(r.get("url") or "", boards):

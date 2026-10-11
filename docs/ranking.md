@@ -367,8 +367,12 @@ way, instead of needing an ever-larger fixed window.
 
 Rows whose URL matches `SEARCH_JOB_BOARDS` (comma-separated host[/path]
 prefixes; hosts match by suffix so subdomains count) get score and similarity
-multiplied by `SEARCH_JOB_BOARD_PENALTY`. Coverage is untouched, so the gate
-still sees them. A query matching any `SEARCH_JOB_INTENT_TERMS` term
+multiplied by `SEARCH_JOB_BOARD_PENALTY`, before the local-hit gate runs — so
+board rows face an effective similarity threshold of
+`LOCAL_MIN_SIMILARITY / penalty` (default 0.6), below which they no longer
+serve locally at all, and none can serve as a lone strong hit while the
+penalty is active (with defaults that would need pre-penalty similarity above
+1). Coverage is untouched. A query matching any `SEARCH_JOB_INTENT_TERMS` term
 (word-boundary, case-insensitive) skips the penalty entirely — "principal
 software engineer jobs" should surface job postings.
 

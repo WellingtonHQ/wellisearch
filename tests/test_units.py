@@ -13,6 +13,7 @@ from wellisearch.search_web import (
     _candidate_rows,
     _is_job_board,
     _job_intent,
+    _passes_local_gate,
     _registrable_domain,
     render_search_markdown,
 )
@@ -429,6 +430,15 @@ pen = _apply_job_board_penalty(rows, ("linkedin.com/jobs",), 0.5)
 assert pen[0]["score"] == 0.1 and pen[0]["similarity"] == 0.4, "board row de-ranked"
 assert pen[0]["coverage"] == 0.9, "coverage must stay untouched"
 assert pen[1] is rows[1], "non-board row passes through unchanged"
+
+# The penalty runs before the gate: a board row whose pre-penalty similarity sits
+# between LOCAL_MIN_SIMILARITY and LOCAL_MIN_SIMILARITY / 0.5 no longer passes.
+_gs = get_settings()
+mid = (_gs.LOCAL_MIN_SIMILARITY + _gs.LOCAL_MIN_SIMILARITY / 0.5) / 2
+board_row = {"url": "https://www.linkedin.com/jobs/view/9", "score": 0.2, "similarity": mid, "coverage": 0.9}
+pen_board = _apply_job_board_penalty([board_row], ("linkedin.com/jobs",), 0.5)
+assert not _passes_local_gate(pen_board[0]), \
+    f"post-penalty similarity {pen_board[0]['similarity']} must fail the gate"
 
 # _cap_per_domain: first N per registrable domain kept in order
 rows = [{"url": f"https://www.linkedin.com/jobs/view/{i}"} for i in range(5)] + [

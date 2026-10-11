@@ -115,9 +115,11 @@ class Settings(BaseSettings):
     # answer set; local mode is uncapped.
     SEARCH_MAX_PER_DOMAIN: int = 2
     # Job-board de-rank for non-job-intent queries: rows whose URL matches a
-    # SEARCH_JOB_BOARDS entry get score AND similarity multiplied by this
-    # (coverage untouched, so the gate still sees them). A query matching any
-    # SEARCH_JOB_INTENT_TERMS skips the penalty entirely.
+    # SEARCH_JOB_BOARDS entry get score AND similarity multiplied by this,
+    # before the local-hit gate runs — so board rows face an effective
+    # similarity threshold of LOCAL_MIN_SIMILARITY / penalty (default 0.6) and
+    # cannot serve as a lone strong hit while the penalty is active. A query
+    # matching any SEARCH_JOB_INTENT_TERMS skips the penalty entirely.
     SEARCH_JOB_BOARD_PENALTY: float = 0.5
     SEARCH_JOB_BOARDS: str = "linkedin.com/jobs,indeed.com,glassdoor.com/Job,ziprecruiter.com/Jobs,monster.com,naukri.com,jobs.lever.co,boards.greenhouse.io"
     SEARCH_JOB_INTENT_TERMS: str = "job, jobs, hiring, open roles, careers"
