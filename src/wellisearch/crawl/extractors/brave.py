@@ -9,6 +9,8 @@ which keeps SPA SERPs clearable by the gate without site-specific selectors.
 """
 from __future__ import annotations
 
+from bs4 import BeautifulSoup, Tag
+
 from ..results import Fitted, Rendered
 from .base import MIN_MD_CHARS, generic_md, trim_md
 from . import register
@@ -58,7 +60,7 @@ def _visible_text_markdown(html: str) -> str:
         return ""
 
 
-def _visible_lines(root) -> list[str]:
+def _visible_lines(root: Tag | BeautifulSoup) -> list[str]:
     """One whitespace-collapsed line per terminal element, deduped in document order."""
     lines: list[str] = []
     seen: set[str] = set()
@@ -72,10 +74,8 @@ def _visible_lines(root) -> list[str]:
     return lines
 
 
-def _soup(html: str):
+def _soup(html: str) -> BeautifulSoup:
     """BeautifulSoup (lxml) parse; the repo's shared parser choice."""
-    from bs4 import BeautifulSoup
-
     return BeautifulSoup(html, "lxml")
 
 
