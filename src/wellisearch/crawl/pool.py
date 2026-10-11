@@ -312,8 +312,13 @@ def _reap_orphans(profile_dir: str) -> None:
     SingletonLock; the next launch then hangs on the locked profile.
     """
     if os.path.isdir("/proc"):
-        marker = f"--user-data-dir={profile_dir}"
-        for entry in os.listdir("/proc"):
-            if entry.isdigit() and _is_orphan_chromium(entry, marker):
-                _kill_pid(entry)
+        _kill_orphan_chromiums(profile_dir)
     _remove_singleton_lock(profile_dir)
+
+
+def _kill_orphan_chromiums(profile_dir: str) -> None:
+    """SIGKILL any live chromium still holding the given profile dir."""
+    marker = f"--user-data-dir={profile_dir}"
+    for entry in os.listdir("/proc"):
+        if entry.isdigit() and _is_orphan_chromium(entry, marker):
+            _kill_pid(entry)

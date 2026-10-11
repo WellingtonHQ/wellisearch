@@ -95,10 +95,7 @@ async def _run(
         total = len(urls)
         print(f"recrawl: {total} pages, concurrency={conc}", flush=True)
         if dry_run:
-            for u in urls[:PREVIEW_LIMIT]:
-                print(f"  {u}")
-            if total > PREVIEW_LIMIT:
-                print(f"  ... and {total - PREVIEW_LIMIT} more")
+            _print_preview(urls, total)
             return
 
         stats = {"ok": 0, "unchanged": 0, "failed": 0}
@@ -139,6 +136,14 @@ async def _run(
         )
     finally:
         await db.close()
+
+
+def _print_preview(urls: list[str], total: int) -> None:
+    """Dry-run report: the first PREVIEW_LIMIT URLs plus a count of the rest."""
+    for u in urls[:PREVIEW_LIMIT]:
+        print(f"  {u}")
+    if total > PREVIEW_LIMIT:
+        print(f"  ... and {total - PREVIEW_LIMIT} more")
 
 
 if __name__ == "__main__":

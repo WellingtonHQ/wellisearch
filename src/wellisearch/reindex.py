@@ -76,19 +76,24 @@ async def _run(force: bool, dry_run: bool) -> None:
         if dry_run:
             return
 
-        stats = {"failed": 0, "ok": 0, "unchanged": 0}
-        for i, p in enumerate(stale, 1):
-            outcome = await _reembed_page(p)
-            stats[outcome] += 1
-            if i % PROGRESS_INTERVAL == 0 or i == len(stale):
-                print(
-                    f"  {i}/{len(stale)} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                    f"failed={stats['failed']})"
-                )
-
+        stats = await _reembed_all(stale)
         print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
     finally:
         await db.close()
+
+
+async def _reembed_all(pages: list[dict[str, Any]]) -> dict[str, int]:
+    """Re-embed each page with progress prints; return the outcome tallies."""
+    stats = {"failed": 0, "ok": 0, "unchanged": 0}
+    for i, p in enumerate(pages, 1):
+        outcome = await _reembed_page(p)
+        stats[outcome] += 1
+        if i % PROGRESS_INTERVAL == 0 or i == len(pages):
+            print(
+                f"  {i}/{len(pages)} (ok={stats['ok']} unchanged={stats['unchanged']} "
+                f"failed={stats['failed']})"
+            )
+    return stats
 
 
 if __name__ == "__main__":

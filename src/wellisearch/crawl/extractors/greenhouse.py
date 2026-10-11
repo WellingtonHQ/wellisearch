@@ -80,9 +80,17 @@ def _job_posting(soup: BeautifulSoup) -> dict | None:
         except (TypeError, ValueError):
             continue
         items = data if isinstance(data, list) else [data]
-        for item in items:
-            if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
-                return item
+        item = _find_jobposting(items)
+        if item is not None:
+            return item
+    return None
+
+
+def _find_jobposting(items: list[object]) -> dict | None:
+    """The first JobPosting dict in a JSON-LD item list; None when absent."""
+    for item in items:
+        if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
+            return item
     return None
 
 
@@ -123,15 +131,21 @@ def _location(posting: dict) -> str | None:
         addr = (loc or {}).get("address")
         if not isinstance(addr, dict):
             continue
-        seen: list[str] = []
         primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
         candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
-        for piece in candidates:
-            if piece and piece not in seen:
-                seen.append(piece)
+        seen = _dedup_pieces(candidates)
         if seen:
             return ", ".join(seen)
     return None
+
+
+def _dedup_pieces(candidates: tuple[str | None, ...]) -> list[str]:
+    """Non-empty pieces in order, deduplicated."""
+    seen: list[str] = []
+    for piece in candidates:
+        if piece and piece not in seen:
+            seen.append(piece)
+    return seen
 
 
 def _employment_type(posting: dict) -> str | None:

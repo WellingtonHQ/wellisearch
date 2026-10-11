@@ -278,11 +278,7 @@ def score_quality(
     for i, q in enumerate(queries):
         rel = truth[q["q"]]
         idx = np.argsort(-S[i])[:topk]
-        best = 0
-        for rank, d in enumerate(idx, start=1):
-            if chunks[order[d]]["id"] in rel:
-                best = rank
-                break
+        best = _best_rank(idx, order, chunks, rel)
         for k in (1, 5, 10):
             recall[k] += 1 if (best and best <= k) else 0
         if best:
@@ -527,6 +523,13 @@ def main(argv: list[str] | None = None) -> int:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _best_rank(idx: np.ndarray, order: list[int], chunks: list[dict], rel: set[str]) -> int:
+    """1-based rank of the first relevant doc in the top-k ordering; 0 if none."""
+    for rank, d in enumerate(idx, start=1):
+        if chunks[order[d]]["id"] in rel:
+            return rank
+    return 0
 
 def _effective_max_len(tok: object, args_max: int) -> int:
     """Cap the requested max length at the model's true limit (if known)."""
