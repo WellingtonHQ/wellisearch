@@ -18,6 +18,7 @@ from mcp.server.mcpserver import MCPServer
 
 from . import queue
 from .config import get_settings
+from .crawl.shorturl import resolve_short_url
 from .db import db
 from .fetch import (
     fetch_page as _fetch_page,
@@ -334,15 +335,21 @@ def _tool_refresh_page(server: MCPServer) -> None:
         try:
             r = await crawl_url(url, trigger="manual")
         except Exception as e:
-            # crawl_url stores under the canonical URL (urlnorm).
+            # A resolved short URL records its state under the final URL; look up
+            # both keys so last_status is reported for either form.
             page = await db.page_get(normalize_url(url))
+            if page is None:
+                resolved = await resolve_short_url(normalize_url(url))
+                if resolved and normalize_url(resolved) != normalize_url(url):
+                    page = await db.page_get(normalize_url(resolved))
             return _clean({
                 "ok": False,
                 "url": url,
                 "error": str(e),
                 "last_status": (page or {}).get("last_status"),
             })
-        page = await db.page_get(normalize_url(url))
+        # The row is stored under the canonical URL the crawl resolved to.
+        page = await db.page_get(r.get("url") or normalize_url(url))
         return _clean({
             "ok": True,
             "url": url,

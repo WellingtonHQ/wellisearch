@@ -271,6 +271,7 @@ async def _check_marginal_partial_defers(stub: StubGateway) -> None:
         query: str,
         k: int,
         max_age_days: float | None,
+        widened: bool = False,
     ) -> tuple[list[dict], int, str | None]:
         """Return one candidate that passes the ordinary gate but is marginal."""
         return [{"coverage": s.LOCAL_MIN_COVERAGE, "similarity": similarity,
@@ -299,6 +300,7 @@ async def _check_multiple_partial_serves(stub: StubGateway) -> None:
         query: str,
         k: int,
         max_age_days: float | None,
+        widened: bool = False,
     ) -> tuple[list[dict], int, str | None]:
         """Return three separate pages passing the ordinary relevance gate."""
         return [
@@ -348,6 +350,7 @@ async def _check_distinctive_gate_defers(stub: StubGateway) -> None:
         query: str,
         k: int,
         max_age_days: float | None,
+        widened: bool = False,
     ) -> tuple[list[dict], int, str | None]:
         """Three pages cover the common words and are topically similar, but none
         contains the query's rare brand word (distinctive_coverage 0)."""
@@ -378,6 +381,7 @@ async def _check_distinctive_gate_serves(stub: StubGateway) -> None:
         query: str,
         k: int,
         max_age_days: float | None,
+        widened: bool = False,
     ) -> tuple[list[dict], int, str | None]:
         """One page covers the common words AND the rare brand word; a second is off-brand."""
         return [

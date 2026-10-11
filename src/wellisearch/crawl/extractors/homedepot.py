@@ -154,7 +154,9 @@ def _find_product(node: object) -> dict | None:
         return None
     if not isinstance(node, dict):
         return None
-    if node.get("@type") == "Product" and node.get("name"):
+    t = node.get("@type")
+    types = [t] if isinstance(t, str) else (list(t) if isinstance(t, list) else [])
+    if "Product" in types and node.get("name"):
         return node
     for item in node.get("@graph") or []:
         found = _find_product(item)

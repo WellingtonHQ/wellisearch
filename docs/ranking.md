@@ -210,7 +210,7 @@ Among passing rows, serving order is **similarity desc, score as tie-break** —
 not raw score. Every served row already clears the three topical conditions;
 within that set the primary topical signal (similarity) decides which answers
 lead, and rank-only score only breaks ties. This also demotes pages like the
-wasp-removal article in [problematic-searches.md](../problematic-searches.md)
+wasp-removal article in [search-optimizations.md](../search-optimizations.md)
 case 3, whose best-chunk similarity (0.417) sits below the on-topic honey
 pages (0.59–0.71).
 
@@ -236,7 +236,7 @@ under $700" to {best, costco, dishwash, 700}: it retains `700` but drops
 measured coverage 0.5 / similarity 0.78 on the literal query; it failed the
 old 0.75 bar but passes the current 0.5 floor. This does **not** prove that
 any listed dishwasher costs less than $700 — coverage does not capture the
-price relationship. See [problematic-searches.md](../problematic-searches.md).
+price relationship. See [search-optimizations.md](../search-optimizations.md).
 
 Calibrated 2026-09-20 on the ~1.3M-chunk index (best-chunk similarity per
 query):
@@ -331,7 +331,7 @@ pages at 0.46–0.55 similarity, none above the single-page floor; those pages
 can also serve locally as a partial set. An off-topic result once measured
 0.503 similarity for "bees make honey", so a marginal lone page should still
 defer. No fixed threshold guarantees relevance (see
-[problematic-searches.md](../problematic-searches.md)).
+[search-optimizations.md](../search-optimizations.md)).
 
 ### Re-measuring after a big index change
 
@@ -377,7 +377,9 @@ software engineer jobs" should surface job postings.
 The final auto-mode serving list keeps at most `SEARCH_MAX_PER_DOMAIN` results
 per registrable domain (last two host labels; three for common two-part TLDs
 like co.uk), so one site's many near-duplicate pages cannot flood the answer
-set. Rows with unparseable domains always pass.
+set. Rows with unparseable domains always pass. Because the cap applies at
+serve time, an auto-mode answer can contain fewer than k results when passing
+rows concentrate on a few domains; `count` reports what was actually served.
 
 ### Widened vector leg
 

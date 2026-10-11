@@ -8,12 +8,14 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 import datetime as dt
+import json
 import threading
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from wellisearch import crawler, fetch, merge_dupes, queue, tools, worker
+from wellisearch import app, crawler, fetch, merge_dupes, queue, search_web, tools, worker
 from wellisearch.config import Settings
+from wellisearch.crawl.extractors.homedepot import _product_node
 from wellisearch.crawl.results import ChallengeDetected
 
 CANONICAL = "https://example.com/article"
@@ -196,6 +198,120 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(RuntimeError, "FK validation failed"):
                 await merge_dupes._merge_groups(groups)
         self.assertEqual(transaction_outcomes, ["commit", "rollback"])
+
+    async def test_refresh_reads_back_the_canonical_row(self) -> None:
+        """A short-URL refresh reports last_crawled from the row stored under its final URL."""
+        short = "https://a.co/xyz3d"
+        crawled_at = dt.datetime(2026, 10, 8, tzinfo=dt.timezone.utc)
+        result = {"url": CANONICAL, "status": "ok", "ms": 5, "chunks": 2}
+        stored = dict(STORED, last_crawled=crawled_at)
+
+        server = Mock()
+        registered = []
+        server.tool.return_value = lambda fn: registered.append(fn) or fn
+        fake_db = Mock(page_get=AsyncMock(return_value=stored))
+        with (
+            patch.object(tools, "db", fake_db),
+            patch.object(tools, "crawl_url", AsyncMock(return_value=result)),
+        ):
+            tools._tool_refresh_page(server)
+            out = await registered[0](short)
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["last_crawled"], str(crawled_at))
+        fake_db.page_get.assert_awaited_once_with(CANONICAL)
+
+    async def test_api_refresh_reads_back_the_canonical_row(self) -> None:
+        """The REST refresh endpoint reports last_crawled from the final URL's row."""
+        short = "https://a.co/xyz3d"
+        crawled_at = dt.datetime(2026, 10, 8, tzinfo=dt.timezone.utc)
+        result = {"url": CANONICAL, "status": "ok", "ms": 5, "chunks": 2}
+        stored = dict(STORED, last_crawled=crawled_at)
+        fake_db = Mock(page_get=AsyncMock(return_value=stored), log_event=AsyncMock())
+        with (
+            patch.object(app, "db", fake_db),
+            patch.object(app, "crawl_url", AsyncMock(return_value=result)),
+        ):
+            out = await app.api_refresh(app.RefreshBody(url=short))
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["last_crawled"], crawled_at)
+        fake_db.page_get.assert_awaited_once_with(CANONICAL)
+
+    async def test_refresh_error_reports_canonical_status(self) -> None:
+        """A failed short-URL refresh reports last_status from the final URL's row."""
+        short = "https://a.co/xyz3d"
+        stored = {"last_status": "error"}
+        server = Mock()
+        registered = []
+        server.tool.return_value = lambda fn: registered.append(fn) or fn
+        fake_db = Mock(page_get=AsyncMock(side_effect=[None, stored]))
+        with (
+            patch.object(tools, "db", fake_db),
+            patch.object(
+                tools, "crawl_url", AsyncMock(side_effect=crawler.CrawlError(CANONICAL, "failed"))
+            ),
+            patch.object(tools, "resolve_short_url", AsyncMock(return_value=CANONICAL)),
+        ):
+            tools._tool_refresh_page(server)
+            out = await registered[0](short)
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["last_status"], "error")
+        self.assertEqual(fake_db.page_get.await_args_list[1].args, (CANONICAL,))
+
+    def test_candidate_head_covers_requested_k(self) -> None:
+        """A large k gates every fetched row; a small k keeps the union window."""
+        s = Settings(_env_file=None)
+        rows = [
+            {"url": f"https://example.com/p{i}", "score": 1.0 - i * 0.001, "similarity": 0.4}
+            for i in range(200)
+        ]
+        with patch.object(search_web, "get_settings", return_value=s):
+            big = search_web._candidate_rows(rows[: max(s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM, 200)], k=200)
+            small = search_web._candidate_rows(rows[: s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM], k=5)
+        self.assertEqual(len(big), 200)
+        self.assertEqual(len(small), s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM)
+
+    async def test_local_mode_fetches_the_raw_window(self) -> None:
+        """Local mode fetches exactly k rows at the default vector leg; auto widens both."""
+        s = Settings(_env_file=None)
+        fake_db = Mock(fetch_all=AsyncMock(return_value=[]))
+        with (
+            patch.object(search_web, "db", fake_db),
+            patch.object(search_web, "embed_one", lambda q: [0.1] * 384),
+            patch.object(search_web, "get_settings", return_value=s),
+        ):
+            await search_web._search_local_index("q", 5, None)
+            sql, params = fake_db.fetch_all.await_args.args[:2]
+            self.assertEqual(sql.count("%s"), 3)
+            self.assertEqual(params[-1], 5)
+            await search_web._search_local_index("q", 5, None, widened=True)
+            sql, params = fake_db.fetch_all.await_args.args[:2]
+            self.assertEqual(sql.count("%s"), 4)
+            self.assertEqual(params[2], max(5, s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM))
+            self.assertEqual(params[3], s.SEARCH_VECTOR_LEG_LIMIT)
+
+    def test_job_board_paths_match_case_insensitively(self) -> None:
+        """Config entries with mixed-case paths match lowercase live URLs."""
+        boards = ("glassdoor.com/Job", "ziprecruiter.com/Jobs")
+        self.assertTrue(search_web._is_job_board("https://www.glassdoor.com/job/listings", boards))
+        self.assertTrue(search_web._is_job_board("https://ziprecruiter.com/jobs/search?query=engineer", boards))
+        self.assertFalse(search_web._is_job_board("https://glassdoor.com/reviews", boards))
+
+    def test_uk_second_level_domains_are_distinct(self) -> None:
+        """*.gov.uk / *.ac.uk sites keep their own registrable domain for the cap."""
+        self.assertEqual(search_web._registrable_domain("https://example.gov.uk/page"), "example.gov.uk")
+        self.assertEqual(search_web._registrable_domain("https://ox.ac.uk/x"), "ox.ac.uk")
+        self.assertEqual(search_web._registrable_domain("https://www.gov.uk/government"), "gov.uk")
+
+    def test_homedepot_accepts_a_list_at_type(self) -> None:
+        """A Product node whose @type is a list still matches (Walmart parity)."""
+        html = (
+            '<script type="application/ld+json">'
+            + json.dumps({"@graph": [{"@type": ["Product", "WebPage"], "name": "Widget"}]})
+            + "</script>"
+        )
+        node = _product_node(html)
+        self.assertIsNotNone(node)
+        self.assertEqual(node["name"], "Widget")
 
 
 if __name__ == "__main__":

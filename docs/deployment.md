@@ -183,6 +183,14 @@ python -m wellisearch.reindex --dry-run  # report only
 Pages already on the current model with unchanged content are a no-op
 (`store_page`'s short-circuit).
 
+Deploying a release that changes how `store_page` hashes content invalidates
+stored hashes even though the embedding model is unchanged (the 2026-10 change
+hashes the title-prefixed chunk source, not just the body): each affected page's
+next crawl re-chunks + re-embeds it, and plain `reindex` cannot converge it — its
+staleness check is model-only. Run `python -m wellisearch.reindex --force` once
+after such a deploy to finish the wave immediately instead of letting it spread
+across weeks of watchlist refreshes.
+
 ### Provider runtime controls
 ```
 # disable a provider at runtime (persists in provider_state)

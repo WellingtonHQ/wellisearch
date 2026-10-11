@@ -10,6 +10,11 @@ The rename is a parent/child key change on both sides of an FK, so the run
 drops chunks_url_fkey for the duration of one transaction and re-adds it at
 the end; if any orphaned chunk remains, the whole run rolls back.
 
+Run against a stopped service: while the merge holds its transaction, every
+search/fetch chunk write blocks (ACCESS EXCLUSIVE), and a concurrent store_page
+can orphan a chunk that then fails the FK re-add validation. Stop the container
+first (`docker compose -f compose.yml stop wellisearch`).
+
 Usage:
   python -m wellisearch.merge_dupes            # merge in place
   python -m wellisearch.merge_dupes --dry-run  # report only

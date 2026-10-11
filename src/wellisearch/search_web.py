@@ -33,7 +33,10 @@ SEARCH_MODES = ("auto", "local", "provider")
 SNIPPET_MAX_LEN = 400  # max chars of a snippet in search results (local + provider)
 
 # Common two-part TLDs: the registrable domain is three labels, not two.
-_TWO_PART_TLDS = ("co.uk", "com.au", "co.in", "com.br", "org.uk", "net.au", "co.nz")
+_TWO_PART_TLDS = (
+    "ac.uk", "co.in", "co.nz", "co.uk", "com.au", "com.br",
+    "gov.uk", "ltd.uk", "me.uk", "net.au", "net.uk", "org.uk", "plc.uk", "sch.uk",
+)
 
 
 def render_search_markdown(out: dict) -> str:
@@ -97,7 +100,9 @@ async def search_web(
     index_ms = 0
     index_error: str | None = None
     if search_mode != "provider":
-        local_rows, index_ms, index_error = await _search_local_index(query, k, max_age_days)
+        local_rows, index_ms, index_error = await _search_local_index(
+            query, k, max_age_days, widened=(search_mode == "auto")
+        )
 
     # Auto mode: each row must clear all three per-row gates — coverage, similarity,
     # and distinctive-term coverage (a page missing every rare / brand query word
@@ -111,7 +116,7 @@ async def search_web(
     # Local mode serves the raw index order untouched.
     candidates = local_rows
     if search_mode == "auto":
-        candidates = _candidate_rows(local_rows)
+        candidates = _candidate_rows(local_rows, k)
         if not _job_intent(query, s.job_intent_terms):
             candidates = _apply_job_board_penalty(
                 candidates,
@@ -248,11 +253,12 @@ def _registrable_domain(url: str) -> str:
 def _is_job_board(url: str, boards: tuple[str, ...]) -> bool:
     """Whether a URL matches a job-board entry (host[/path] prefix): the host
     equals or subdomains the listed host and, when a path is given, starts
-    with it."""
+    with it. Paths compare case-insensitively so config entries match live URLs."""
     split = _split_url(url)
     if split is None:
         return False
     host, path = split
+    lp = path.lower()
     for entry in boards:
         spec_host, sep, spec_tail = entry.partition("/")
         spec_host = spec_host.lower().removeprefix("www.")
@@ -261,8 +267,8 @@ def _is_job_board(url: str, boards: tuple[str, ...]) -> bool:
         if host != spec_host and not host.endswith("." + spec_host):
             continue
         if sep:
-            spec_path = "/" + spec_tail
-            if path != spec_path and not path.startswith(spec_path + "/"):
+            spec_path = "/" + spec_tail.lower()
+            if lp != spec_path and not lp.startswith(spec_path + "/"):
                 continue
         return True
     return False
@@ -314,13 +320,13 @@ def _cap_per_domain(rows: list[dict], max_per_domain: int) -> list[dict]:
     return out
 
 
-def _candidate_rows(local_rows: list[dict]) -> list[dict]:
-    """Auto-mode candidate set: top SEARCH_GATE_MIN_K by score (input order)
-    plus the SEARCH_TOP_BY_SIM most similar rows not already included, so a
+def _candidate_rows(local_rows: list[dict], k: int) -> list[dict]:
+    """Auto-mode candidate set: top max(SEARCH_GATE_MIN_K, k) by score (input
+    order) plus the SEARCH_TOP_BY_SIM most similar rows not already included, so a
     semantically close page is considered even when lexical mass buries its
-    score (docs/ranking.md)."""
+    score and every fetched row can still be gated (docs/ranking.md)."""
     s = get_settings()
-    head = local_rows[: s.SEARCH_GATE_MIN_K]
+    head = local_rows[: max(s.SEARCH_GATE_MIN_K, k)]
     seen = {r.get("url") for r in head}
     extra = [
         r
@@ -337,6 +343,7 @@ async def _search_local_index(
     query: str,
     k: int,
     max_age_days: float | None,
+    widened: bool = False,
 ) -> tuple[list[dict], int, str | None]:
     """The local-index leg: embed the query, rank via fn_search_local, apply
     the optional freshness filter. Returns (rows, index_ms, index_error).
@@ -347,7 +354,11 @@ async def _search_local_index(
     to the provider gateway (the error is hidden there), local mode surfaces
     it in the error envelope so "the index is empty" and "the index is down"
     are distinguishable.
-    """
+
+    Auto mode widens the fetch window (gate + similarity pool) and the vector
+    leg so semantically close but lexically thin pages enter the fusion at all;
+    local mode serves raw index order untouched, so it fetches exactly k rows
+    at fn_search_local's default vector leg (docs/ranking.md)."""
     s = get_settings()
     t_index = time.monotonic()
     try:
@@ -356,20 +367,20 @@ async def _search_local_index(
         log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
         qvec = None
 
-    # Fetch a bit more than we'll return so the local-hit gate can see a
-    # passing page that ranks just outside the top-k by score, plus the
-    # similarity window for auto mode's union candidate set (docs/ranking.md).
-    # The extra rows cost little — the legs/fusion are the same; only the final
-    # LIMIT and per-row gate columns grow. The vector leg is widened to
-    # SEARCH_VECTOR_LEG_LIMIT so semantically close but lexically thin pages
-    # enter the fusion at all.
-    gate_k = max(k, s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM)
-    try:
-        rows = await db.fetch_all(
-            "SELECT * FROM fn_search_local(%s, %s::vector, %s, %s)",
-            (query, qvec if qvec is not None else None, gate_k, s.SEARCH_VECTOR_LEG_LIMIT),
-            timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
+    qvec_arg = qvec if qvec is not None else None
+    if widened:
+        sql = "SELECT * FROM fn_search_local(%s, %s::vector, %s, %s)"
+        params: tuple[object, ...] = (
+            query,
+            qvec_arg,
+            max(k, s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM),
+            s.SEARCH_VECTOR_LEG_LIMIT,
         )
+    else:
+        sql = "SELECT * FROM fn_search_local(%s, %s::vector, %s)"
+        params = (query, qvec_arg, k)
+    try:
+        rows = await db.fetch_all(sql, params, timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS)
     except Exception as e:
         log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
         return [], int((time.monotonic() - t_index) * 1000), f"{type(e).__name__}: {e}"

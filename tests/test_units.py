@@ -390,6 +390,10 @@ assert _registrable_domain("HTTPS://WWW.Example.COM/a") == "example.com", \
     "host lowercased"
 assert _registrable_domain("https://shop.example.co.uk/page") == "example.co.uk", \
     "two-part TLD -> three labels"
+assert _registrable_domain("https://example.gov.uk/page") == "example.gov.uk", \
+    "gov.uk is a two-part TLD"
+assert _registrable_domain("https://ox.ac.uk/x") == "ox.ac.uk", \
+    "ac.uk is a two-part TLD"
 assert _registrable_domain("not a url") == ""
 assert _registrable_domain("") == ""
 
@@ -404,6 +408,8 @@ assert not _is_job_board("https://www.linkedin.com/jobsearch", boards), \
     "/jobsearch is not under /jobs/"
 assert _is_job_board("https://www.indeed.com/jobs/123", boards)
 assert not _is_job_board("https://graphapp.dev/blog/post", boards)
+assert _is_job_board("https://www.glassdoor.com/job/listings", ("glassdoor.com/Job",)), \
+    "paths match case-insensitively"
 
 # _job_intent: word-boundary match on the configured terms
 terms = ("job", "jobs", "hiring", "open roles", "careers")
@@ -440,7 +446,7 @@ rows = [
     for i in range(130)
 ]
 rows[119]["similarity"] = 0.9  # score rank #120 — beyond the default gate window
-cands = _candidate_rows(rows)
+cands = _candidate_rows(rows, k=5)
 assert rows[119] in cands, "high-sim row outside the score window must be admitted"
 _s = get_settings()
 assert len(cands) <= min(len(rows), _s.SEARCH_GATE_MIN_K + _s.SEARCH_TOP_BY_SIM)

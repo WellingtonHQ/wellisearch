@@ -328,8 +328,9 @@ async def api_refresh(body: RefreshBody) -> Any:
         r = await crawl_url(body.url, trigger="manual")
     except Exception as e:
         raise HTTPException(502, str(e))
-    # crawl_url stored the row under its canonical URL (urlnorm).
-    page = await db.page_get(normalize_url(body.url))
+    # The row is stored under the canonical URL the crawl resolved to (a short
+    # URL's final destination), not necessarily normalize_url(body.url).
+    page = await db.page_get(r.get("url") or normalize_url(body.url))
     await _ev(
         f"manual refresh — {body.url}",
         {"status": r.get("status"), "chunks": r.get("chunks"), "ms": r.get("ms")},

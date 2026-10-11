@@ -12,7 +12,7 @@ trigram, and vector matches at the chunk level; it orders pages by score before
 computing their best-chunk similarity. Coverage counts distinct PostgreSQL
 English lexemes in the page's title and body. In auto mode,
 [`search_web`](src/wellisearch/search_web.py) fetches at least `SEARCH_GATE_MIN_K`
-(default fifty) ranked URLs, filters by age if requested, and serves local when
+(default one hundred) ranked URLs, filters by age if requested, and serves local when
 at least `k` rows (default five) have coverage >= 0.5, distinctive_coverage >=
 1.0 (every rare/brand query word present — a word in <1% of chunks), and
 similarity >= 0.3. Partial sets now also serve when at least three rows pass
