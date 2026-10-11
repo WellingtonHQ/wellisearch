@@ -61,6 +61,11 @@ class Settings(BaseSettings):
 
     # --- search ---
     SEARCH_K: int = 5
+    # Upper bound on num_results at pipeline entry (both surfaces): an oversized
+    # k would run fn_search_local with that LIMIT and can burn the full
+    # SEARCH_STATEMENT_TIMEOUT_MS before degrading; clamping keeps one request
+    # from stalling the index leg for its entire budget.
+    SEARCH_MAX_K: int = 200
     SEARCH_MAX_CRAWL: int = 5
     # Local-hit gate: fetch at least this many rows so the gate can see a
     # passing page that ranks well outside the top-k by score (score is

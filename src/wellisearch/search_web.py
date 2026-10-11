@@ -84,7 +84,11 @@ async def search_web(
     miss, then log the search, enqueue top results for background indexing,
     and return the envelope. `search_mode` selects the source (auto/local/provider)."""
     s = get_settings()
-    k = max(1, num_results or s.SEARCH_K)  # clamp: negative k would slice rows off the end
+    # Clamp both ends: a zero/negative num_results falls back to SEARCH_K (a
+    # negative k would slice rows off the end), and an oversized one is capped
+    # at SEARCH_MAX_K so it cannot stall fn_search_local for the full statement
+    # timeout.
+    k = min(max(1, num_results or s.SEARCH_K), s.SEARCH_MAX_K)
     crawl_n = s.SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)
     if search_mode not in SEARCH_MODES:
         raise ValueError(
@@ -148,8 +152,14 @@ async def search_web(
     elif len(passing) >= k:
         # local hit — zero provider credits (the quota-preservation layer);
         # the per-domain cap keeps one site's near-duplicates from flooding
-        # the answer set (auto mode only — local mode served above, uncapped)
-        source, results = await _serve_local(_cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN), k)
+        # the answer set (auto mode only — local mode served above, uncapped).
+        capped = _cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN)
+        source, results = await _serve_local(capped, k)
+        if len(capped) < k:
+            # The cap shrank a would-be full set below the requested count —
+            # flag it so callers can tell "the index only has N matching pages"
+            # from "the per-domain cap dropped the rest".
+            degraded = True
     elif passing and len(passing) >= s.LOCAL_PARTIAL_MIN_PASSING:
         # Several qualifying pages are evidence of a useful partial answer.
         source, results = await _serve_local(_cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN), k)

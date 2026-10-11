@@ -246,9 +246,10 @@ async def fetch_pages(
             "timing": _timing(),
         }
 
-    # bump fetch_count for every successfully fetched page
-    for p in resolved:
-        await db.bump_fetch_count(normalize_url(p["url"]))
+    # bump fetch_count for every successfully fetched page in one statement
+    # (one round-trip instead of N serial UPDATEs on the response path)
+    bumped = list(dict.fromkeys(normalize_url(p["url"]) for p in resolved))
+    await db.bump_fetch_counts(bumped)
 
     # --- allocate the budget per strategy
     pages_out, total_chars, any_truncated = _allocate_pages(resolved, strat, budget, per_page)

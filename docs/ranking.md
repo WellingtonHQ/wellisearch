@@ -379,7 +379,9 @@ per registrable domain (last two host labels; three for common two-part TLDs
 like co.uk), so one site's many near-duplicate pages cannot flood the answer
 set. Rows with unparseable domains always pass. Because the cap applies at
 serve time, an auto-mode answer can contain fewer than k results when passing
-rows concentrate on a few domains; `count` reports what was actually served.
+rows concentrate on a few domains; `count` reports what was actually served,
+and `degraded` is true when the cap shrank a would-be full set below k so
+callers can tell that from a genuinely small index.
 
 ### Widened vector leg
 

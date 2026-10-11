@@ -71,7 +71,11 @@ key is absent (the index leg never runs) and `provider_ms` is always present;
 with `search_mode=local` there is no `provider_ms`, and a failed index leg
 (only visible in this mode — auto mode falls back to the provider) adds
 `index_error` to the envelope and an `Index Error:` line to the Markdown
-header. An invalid `format` or `search_mode` is a **400**.
+header. `degraded` is true when all providers failed and local rows were
+served as the fallback (with `provider_errors`), or — in auto mode — when the
+per-domain cap shrank a would-be full local set below `k` (no
+`provider_errors` in that case). An invalid `format` or `search_mode` is a
+**400**.
 
 ### `POST /api/fetch`
 Read one URL as fit markdown (stored-first, else crawl+store).

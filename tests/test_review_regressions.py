@@ -28,16 +28,19 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
 
     async def test_fetch_counts_and_response_urls(self) -> None:
         """Single and bulk reads bump the stored key while preserving requested URLs."""
-        fake_db = Mock(page_get=AsyncMock(return_value=STORED), bump_fetch_count=AsyncMock())
+        fake_db = Mock(
+            page_get=AsyncMock(return_value=STORED),
+            bump_fetch_count=AsyncMock(),
+            bump_fetch_counts=AsyncMock(),
+        )
         with patch.object(fetch, "db", fake_db):
             single = await fetch.fetch_page(VARIANT)
             bulk = await fetch.fetch_pages([VARIANT])
         self.assertTrue(single["from_index"])
         self.assertEqual(single["url"], VARIANT)
         self.assertEqual(bulk["pages"][0]["url"], VARIANT)
-        self.assertEqual(fake_db.bump_fetch_count.await_count, 2)
-        for call in fake_db.bump_fetch_count.await_args_list:
-            self.assertEqual(call.args, (CANONICAL,))
+        fake_db.bump_fetch_count.assert_awaited_once_with(CANONICAL)
+        fake_db.bump_fetch_counts.assert_awaited_once_with([CANONICAL])
 
     async def test_variant_crawls_share_one_owner(self) -> None:
         """A worker crawl and a variant on-demand crawl share one result and slot."""
@@ -312,6 +315,91 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         node = _product_node(html)
         self.assertIsNotNone(node)
         self.assertEqual(node["name"], "Widget")
+
+    async def test_cap_shrink_flags_degraded(self) -> None:
+        """A per-domain cap that shrinks a would-be full set below k sets degraded."""
+        s = Settings(_env_file=None)
+        same_domain = [
+            {"url": f"https://shop.example.com/p{i}", "score": 1.0 - i * 0.001,
+             "similarity": 0.6, "coverage": 0.9}
+            for i in range(5)
+        ]
+        diverse = [
+            {"url": f"https://site{i}.com/p", "score": 1.0 - i * 0.001,
+             "similarity": 0.6, "coverage": 0.9}
+            for i in range(5)
+        ]
+        fake_db = Mock(log_search=AsyncMock(), mark_search_hits=AsyncMock())
+        with (
+            patch.object(search_web, "db", fake_db),
+            patch.object(
+                search_web, "_search_local_index", AsyncMock(return_value=(same_domain, 0, None))
+            ),
+            patch.object(search_web, "get_settings", return_value=s),
+        ):
+            out = await search_web.search_web("q", num_results=5)
+        self.assertEqual(out["source"], "local")
+        self.assertTrue(out["degraded"])
+        self.assertEqual(len(out["results"]), s.SEARCH_MAX_PER_DOMAIN)
+
+        with (
+            patch.object(search_web, "db", fake_db),
+            patch.object(
+                search_web, "_search_local_index", AsyncMock(return_value=(diverse, 0, None))
+            ),
+            patch.object(search_web, "get_settings", return_value=s),
+        ):
+            out = await search_web.search_web("q", num_results=5)
+        self.assertFalse(out["degraded"])
+        self.assertEqual(len(out["results"]), 5)
+
+    async def test_num_results_clamped_to_max(self) -> None:
+        """An oversized num_results is capped at SEARCH_MAX_K before the index leg."""
+        s = Settings(_env_file=None)
+        seen_k = []
+
+        async def fake_index(query, k, max_age_days, widened=False):
+            seen_k.append(k)
+            return [], 0, None
+
+        fake_db = Mock(log_search=AsyncMock())
+        with (
+            patch.object(search_web, "db", fake_db),
+            patch.object(search_web, "_search_local_index", fake_index),
+            patch.object(search_web, "get_settings", return_value=s),
+        ):
+            out = await search_web.search_web("q", num_results=10_000, search_mode="local")
+        self.assertEqual(seen_k, [s.SEARCH_MAX_K])
+        self.assertEqual(out["source"], "error")
+
+    async def test_fetch_pages_bumps_counts_in_one_statement(self) -> None:
+        """A bulk read bumps every page's fetch_count with one UPDATE, not N."""
+        pages = [
+            {"url": u, "title": t, "content": t, "from_index": True,
+             "fetch_count": 1, "index_ms": 0}
+            for u, t in (
+                ("https://example.com/a?utm_source=test", "A"),
+                ("https://example.com/b?ref=1", "B"),
+                ("https://example.com/b", "B"),
+            )
+        ]
+        fake_db = Mock(bump_fetch_counts=AsyncMock())
+        with (
+            patch.object(fetch, "db", fake_db),
+            patch.object(fetch, "_resolve_all", AsyncMock(return_value=(pages, []))),
+            patch.object(fetch, "get_settings", return_value=Settings(_env_file=None)),
+        ):
+            out = await fetch.fetch_pages(
+                [
+                    "https://example.com/a?utm_source=test",
+                    "https://example.com/b?ref=1",
+                    "https://example.com/b",
+                ]
+            )
+        self.assertTrue(out["ok"])
+        fake_db.bump_fetch_counts.assert_awaited_once_with(
+            ["https://example.com/a", "https://example.com/b"]
+        )
 
 
 if __name__ == "__main__":

@@ -220,6 +220,16 @@ class Database:
             (n, url),
         )
 
+    async def bump_fetch_counts(self, urls: list[str]) -> None:
+        """Increment fetch_count by 1 for every listed page in one statement
+        (one round-trip instead of one per row — N serial UPDATEs on the hot path)."""
+        if not urls:
+            return
+        await self.execute(
+            "UPDATE pages SET fetch_count = fetch_count + 1 WHERE url = ANY(%s)",
+            (urls,),
+        )
+
     async def mark_search_hits(self, urls: list[str]) -> None:
         """Bump search_hit_count for every served result in one statement
         (one round-trip instead of one per row — k sequential UPDATEs on the
