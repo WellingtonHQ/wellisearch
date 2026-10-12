@@ -373,7 +373,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["source"], "error")
 
     async def test_fetch_pages_bumps_counts_in_one_statement(self) -> None:
-        """A bulk read bumps every page's fetch_count with one UPDATE, not N."""
+        """A bulk read serves each distinct page once and bumps fetch_count in one UPDATE."""
         pages = [
             {"url": u, "title": t, "content": t, "from_index": True,
              "fetch_count": 1, "index_ms": 0}
@@ -397,9 +397,29 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
                 ]
             )
         self.assertTrue(out["ok"])
+        # The two b-variants collapse into one served page (first-seen order).
+        self.assertEqual(out["pages_fetched"], 2)
+        self.assertEqual(
+            [p["url"] for p in out["pages"]],
+            ["https://example.com/a?utm_source=test", "https://example.com/b?gclid=x"],
+        )
         fake_db.bump_fetch_counts.assert_awaited_once_with(
             ["https://example.com/a", "https://example.com/b"]
         )
+
+    async def test_bulk_read_serves_variant_pages_once(self) -> None:
+        """Variant URLs of one stored page serve a single section, not one per variant."""
+        fake_db = Mock(
+            page_get=AsyncMock(return_value=STORED),
+            bump_fetch_counts=AsyncMock(),
+        )
+        with patch.object(fetch, "db", fake_db):
+            out = await fetch.fetch_pages([VARIANT, CANONICAL])
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["pages_fetched"], 1)
+        self.assertEqual(len(out["pages"]), 1)
+        self.assertEqual(out["total_chars"], len(STORED["fit_markdown"]))
+        fake_db.bump_fetch_counts.assert_awaited_once_with([CANONICAL])
 
 
 if __name__ == "__main__":

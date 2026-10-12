@@ -246,10 +246,22 @@ async def fetch_pages(
             "timing": _timing(),
         }
 
+    # Collapse variants of the same page into one entry (first-seen order):
+    # callers may pass several URLs that normalize to one canonical row —
+    # serving each distinct page once keeps the shared budget from burning on
+    # repeated text and keeps pages_fetched counting distinct pages.
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for p in resolved:
+        key = normalize_url(p["url"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(p)
+    resolved = deduped
+
     # bump fetch_count for every successfully fetched page in one statement
     # (one round-trip instead of N serial UPDATEs on the response path)
-    bumped = list(dict.fromkeys(normalize_url(p["url"]) for p in resolved))
-    await db.bump_fetch_counts(bumped)
+    await db.bump_fetch_counts([normalize_url(p["url"]) for p in resolved])
 
     # --- allocate the budget per strategy
     pages_out, total_chars, any_truncated = _allocate_pages(resolved, strat, budget, per_page)
