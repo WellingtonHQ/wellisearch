@@ -85,7 +85,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         attempt.assert_awaited_once_with(CANONICAL, "search")
 
     async def test_crawl_updates_canonical_state(self) -> None:
-        """Success resets backoff; refresh failure records status and bumps the same row."""
+        """Success resets backoff; the watchlist caller owns failure backoff."""
         fake_db = Mock(
             page_get=AsyncMock(return_value={"title": "Old title"}),
             execute=AsyncMock(),
@@ -106,7 +106,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(crawler.CrawlError):
                     await worker._crawl_and_store(VARIANT, "refresh")
         self.assertEqual(fake_db.execute.await_args.args[1], (error.status_label(), CANONICAL))
-        fake_db.refresh_fail_bump.assert_awaited_once_with(CANONICAL)
+        fake_db.refresh_fail_bump.assert_not_awaited()
 
     async def test_challenge_lookup_and_existing_row_routing(self) -> None:
         """Variants see pending challenges and route existing rows by the canonical key."""

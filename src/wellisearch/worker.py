@@ -203,11 +203,6 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
             "UPDATE pages SET last_status = %s WHERE url = %s",
             (label, url),
         )
-        # Back the watchlist refresh off for this page (a dead URL would otherwise be
-        # re-picked every tick) — but only on the refresh path itself; a search/manual/
-        # fetch/recrawl failure must not push out its refresh slot.
-        if trigger == "refresh":
-            await db.refresh_fail_bump(url)
         raise
     except Exception as e:
         ms = int((time.monotonic() - t0) * 1000)
@@ -395,10 +390,14 @@ async def _refresh_watchlist(deadline: float) -> dict:
             # a solved challenge resets it via refresh_success_reset.
             if not await db.queue_enqueue(url, "refresh", lane=CF):
                 await db.queue_route_to_cf(url)
-            await db.refresh_fail_bump(url)
+            await _refresh_fail_backoff(url)
             log.info("refresh: %s hit a bot-wall; routed to the CF challenge lane", url)
             results.append({"url": url, "status": "challenge"})
         except Exception as e:
+            # Back off the selected row, not only its normalized crawl URL.
+            # Legacy aliases may normalize to a different pages.url; bumping
+            # only that canonical URL leaves the alias eligible every tick.
+            await _refresh_fail_backoff(url)
             log.warning("refresh failed for %s: %s", url, e)
             results.append(
                 {"url": url, "status": "error", "error": str(e)[:REFRESH_ERROR_MAX_LEN]}
@@ -416,6 +415,14 @@ async def _log_event(message: str, info: dict | None = None) -> None:
         await db.log_event(message, info)
     except Exception as e:
         log.warning("event logging failed: %s", e)
+
+
+async def _refresh_fail_backoff(url: str) -> None:
+    """Back off the selected watchlist row without letting DB logging stop the tick."""
+    try:
+        await db.refresh_fail_bump(url)
+    except Exception as e:
+        log.warning("refresh backoff update failed for %s: %s", url, e)
 
 
 async def _retention_sweep() -> None:

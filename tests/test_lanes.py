@@ -130,16 +130,29 @@ class FakePool:
     def __init__(self, page: FakePage) -> None:
         """Initialize a fake pool wrapping a fake context."""
         self._ctx = FakeContext(page)
+        self.contexts = [self._ctx]
         self.acquired = 0
+        self.invalidated = []
+        self.released = []
 
     async def acquire(self, key: str) -> FakeContext:
         """Count the acquire and return the fake context."""
+        ctx = self.contexts[min(self.acquired, len(self.contexts) - 1)]
         self.acquired += 1
-        return self._ctx
+        return ctx
 
-    async def release(self, ctx: FakeContext) -> None:
-        """No-op release."""
-        pass
+    async def invalidate(
+        self,
+        key: str,
+        ctx: FakeContext,
+        error: Exception,
+    ) -> None:
+        """Record invalidated contexts."""
+        self.invalidated.append((key, ctx, error))
+
+    async def release(self, ctx: FakeContext, key: str | None = None) -> None:
+        """Record released contexts."""
+        self.released.append((ctx, key))
 
 
 def _install_fake_pool(page: FakePage) -> FakePool:
@@ -214,6 +227,61 @@ try:
 finally:
     reset_lane(tok)
 print("OK fast-lane clean page succeeds")
+
+# ---------------------------------------------------------------------------
+# 4a. closed browser transport is invalidated and retried once
+# ---------------------------------------------------------------------------
+
+
+class ClosedContext(FakeContext):
+    async def new_page(self) -> FakePage:
+        """Simulate the closed Playwright transport seen in production."""
+        raise RuntimeError(
+            "BrowserContext.new_page: WriteUnixTransport closed=True; the handler is closed"
+        )
+
+
+page = FakePage([CLEAN_HTML])
+fake_pool = _install_fake_pool(page)
+fake_pool.contexts = [ClosedContext(page), FakeContext(page)]
+tok = set_lane(FAST)
+try:
+    res = asyncio.run(tier.fetch("https://example.com/x", p))
+finally:
+    reset_lane(tok)
+assert res.status == 200
+assert fake_pool.acquired == 2, fake_pool.acquired
+assert len(fake_pool.invalidated) == 1, fake_pool.invalidated
+assert len(fake_pool.released) == 2, fake_pool.released
+print("OK browser tier replaces a closed context and retries once")
+
+# ---------------------------------------------------------------------------
+# 4b. ordinary crawl timeouts are not retried as a closed browser
+# ---------------------------------------------------------------------------
+
+
+class TimeoutContext(FakeContext):
+    async def new_page(self) -> FakePage:
+        """Simulate a page timeout unrelated to a closed browser context."""
+        raise TimeoutError("navigation timed out")
+
+
+page = FakePage([CLEAN_HTML])
+fake_pool = _install_fake_pool(page)
+fake_pool.contexts = [TimeoutContext(page)]
+tok = set_lane(FAST)
+try:
+    try:
+        asyncio.run(tier.fetch("https://example.com/x", p))
+        raise AssertionError("expected TimeoutError to propagate")
+    except TimeoutError:
+        pass
+finally:
+    reset_lane(tok)
+assert fake_pool.acquired == 1, fake_pool.acquired
+assert fake_pool.invalidated == [], fake_pool.invalidated
+assert len(fake_pool.released) == 1, fake_pool.released
+print("OK browser tier does not retry ordinary timeouts")
 
 # ---------------------------------------------------------------------------
 # 5. CF pool is separate from the fast pool (and each is a singleton)
@@ -388,7 +456,7 @@ finally:
 print("OK worker routes ChallengeDetected to CF lane")
 
 # ---------------------------------------------------------------------------
-# 10. only the refresh trigger extends the watchlist-refresh backoff (fake db)
+# 10. watchlist caller owns refresh backoff so it can target the selected row
 # ---------------------------------------------------------------------------
 
 
@@ -440,16 +508,11 @@ for trigger in ("search", "manual", "fetch", "recrawl", "refresh"):
     finally:
         worker_mod.db = orig_db_bk
         crawler_mod.fit_markdown = orig_fit_markdown
-    if trigger == "refresh":
-        assert backoff_db.bumped == [BACKOFF_URL], (
-            f"trigger={trigger} must extend the refresh streak"
-        )
-    else:
-        assert backoff_db.bumped == [], (
-            f"trigger={trigger} must not bump the watchlist-refresh streak"
-        )
+    assert backoff_db.bumped == [], (
+        f"trigger={trigger} must leave watchlist backoff to the selecting refresh pass"
+    )
 
-print("OK only refresh-trigger failures extend the watchlist backoff")
+print("OK crawl attempt leaves watchlist backoff to its caller")
 
 # ---------------------------------------------------------------------------
 # 11. worker refresh: bot-walled probe → CF lane + queued pages skipped (fake db)
@@ -459,9 +522,14 @@ WALLED = "https://example.com/walled"
 
 
 class FakeRefreshDB:
-    def __init__(self, enqueue_ok: bool = True) -> None:
+    def __init__(
+        self,
+        enqueue_ok: bool = True,
+        url: str = WALLED,
+    ) -> None:
         """Initialize a fake db for the watchlist refresh path."""
         self.enqueue_ok = enqueue_ok
+        self.url = url
         self.enqueued = []
         self.routed = []
         self.bumped = []
@@ -475,7 +543,7 @@ class FakeRefreshDB:
     ) -> list[dict]:
         """Return one stale watchlist page; record the SQL for assertions."""
         self.sqls.append(sql)
-        return [{"url": WALLED, "fetch_count": 5}]
+        return [{"url": self.url, "fetch_count": 5}]
 
     async def queue_enqueue(
         self,
@@ -537,6 +605,33 @@ assert fake_db.enqueued == [(WALLED, "refresh", CF)], fake_db.enqueued
 assert fake_db.routed == [WALLED], fake_db.routed
 assert stats["challenged"] == 1 and stats["unchanged"] == 0, stats
 print("OK refresh routes the existing queue row to CF lane")
+
+# 11c. a crawl failure backs off the original selected alias, not its normalized URL
+
+LEGACY_ALIAS = "https://sharebang.com/ser.php?t=AADIV53&f=53&psc="
+
+
+async def failing_refresh_crawl_url(url: str, trigger: str) -> dict:
+    """Fail the selected alias as the crawler would after canonicalization."""
+    raise crawler_mod.CrawlError(
+        "https://sharebang.com/ser.php?t=AADIV53&f=53",
+        "closed browser transport",
+    )
+
+
+fake_db = FakeRefreshDB(url=LEGACY_ALIAS)
+orig_db = worker_mod.db
+orig_crawl_url = worker_mod.crawl_url
+worker_mod.db = fake_db
+worker_mod.crawl_url = failing_refresh_crawl_url
+try:
+    stats = asyncio.run(worker_mod._refresh_watchlist(deadline=time.monotonic() + 60))
+finally:
+    worker_mod.db = orig_db
+    worker_mod.crawl_url = orig_crawl_url
+assert fake_db.bumped == [LEGACY_ALIAS], fake_db.bumped
+assert stats["refreshed"] == 1 and stats["unchanged"] == 0, stats
+print("OK failed refresh backs off the selected legacy URL alias")
 
 # ---------------------------------------------------------------------------
 # 12. read-path enqueues kick via queue.enqueue — and only on fresh inserts

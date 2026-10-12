@@ -95,30 +95,64 @@ class BrowserPool:
             self._sem.release()
             raise
 
-    async def release(self, ctx: BrowserContext) -> None:
-        """Release the semaphore slot; the context stays cached for reuse."""
-        key = self._key_of(ctx)
+    async def release(
+        self,
+        ctx: BrowserContext,
+        key: str | None = None,
+    ) -> None:
+        """Release the semaphore slot; the context may stay cached for reuse."""
+        key = key or self._key_of(ctx)
         if key is not None:
             self._in_use[key] = max(0, self._in_use.get(key, 0) - 1)
         self._sem.release()
 
+    async def invalidate(
+        self,
+        key: str,
+        ctx: BrowserContext,
+        error: Exception,
+    ) -> None:
+        """Discard a closed context, resetting the pool if its transport died.
+
+        Identity-checking prevents a delayed failure from an old lease from
+        evicting a replacement context that another crawl has already launched.
+        """
+        async with self._lock:
+            if self._contexts.get(key) is not ctx:
+                return
+
+            if is_transport_closed_error(error):
+                contexts = list(self._contexts.items())
+                self._contexts.clear()
+                self._last_used.clear()
+                self._launch_failed_at.clear()
+                self._reaped.clear()
+                playwright, self._pw = self._pw, None
+                for stale_key, stale_ctx in contexts:
+                    await self._close_context(stale_key, stale_ctx)
+                if playwright is not None:
+                    await self._stop_playwright(playwright)
+                log.warning("browser transport closed; reset %d cached contexts", len(contexts))
+                return
+
+            self._contexts.pop(key, None)
+            self._last_used.pop(key, None)
+            self._reaped.discard(key)
+            await self._close_context(key, ctx)
+
     async def close_all(self) -> None:
         """Close every cached context and stop playwright."""
-        for key, ctx in list(self._contexts.items()):
-            try:
-                await ctx.close()
-            except Exception as e:
-                log.warning("close context %s failed: %s", key, e)
-        self._contexts.clear()
-        self._last_used.clear()
-        self._in_use.clear()
-        self._launch_failed_at.clear()
-        if self._pw is not None:
-            try:
-                await self._pw.stop()
-            except Exception as e:
-                log.warning("playwright stop failed: %s", e)
-            self._pw = None
+        async with self._lock:
+            contexts = list(self._contexts.items())
+            self._contexts.clear()
+            self._last_used.clear()
+            self._launch_failed_at.clear()
+            self._reaped.clear()
+            playwright, self._pw = self._pw, None
+            for key, ctx in contexts:
+                await self._close_context(key, ctx)
+            if playwright is not None:
+                await self._stop_playwright(playwright)
 
     # ---------------------------------------------------------------------------
     # Internals
@@ -149,11 +183,6 @@ class BrowserPool:
 
     async def _get_or_launch(self, key: str) -> BrowserContext:
         """Return the cached context for key or launch a new one."""
-        async with self._lock:
-            if key in self._contexts:
-                self._last_used[key] = time.monotonic()
-                return self._contexts[key]
-            pw = await self._ensure_playwright()
         async with self._launch_lock(key):
             async with self._lock:
                 if key in self._contexts:
@@ -170,6 +199,9 @@ class BrowserPool:
                         f"backing off {retry_after_s:.0f}s to avoid a relaunch storm"
                     )
                 await self._evict_lru_if_needed()
+                # Resolve Playwright only after acquiring both locks. A
+                # transport reset may have replaced it while this key waited.
+                pw = await self._ensure_playwright()
                 try:
                     ctx = await self._launch(key, pw)
                 except BaseException:
@@ -181,6 +213,34 @@ class BrowserPool:
                 self._contexts[key] = ctx
                 self._last_used[key] = time.monotonic()
                 return ctx
+
+    async def _close_context(
+        self,
+        key: str,
+        ctx: BrowserContext,
+    ) -> None:
+        """Best-effort close for a context being retired."""
+        try:
+            await asyncio.wait_for(
+                ctx.close(),
+                timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S,
+            )
+        except TimeoutError:
+            log.warning("close retired context %s timed out", key)
+        except Exception as e:
+            log.debug("close retired context %s failed: %s", key, e)
+
+    async def _stop_playwright(self, playwright: Playwright) -> None:
+        """Best-effort stop for a Playwright driver being retired."""
+        try:
+            await asyncio.wait_for(
+                playwright.stop(),
+                timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S,
+            )
+        except TimeoutError:
+            log.warning("stop retired playwright driver timed out")
+        except Exception as e:
+            log.warning("stop retired playwright driver failed: %s", e)
 
     async def _evict_lru_if_needed(self) -> None:
         """Evict the least recently used idle context when at capacity."""
@@ -259,6 +319,29 @@ def get_cf_pool() -> BrowserPool:
 def _sanitize_key(key: str) -> str:
     """Filesystem-safe profile dir name from a profile key."""
     return re.sub(r"[^A-Za-z0-9._-]", "_", key)
+
+
+def is_closed_context_error(error: Exception) -> bool:
+    """True when Playwright reports that a page, context, browser, or transport closed."""
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "transport closed",
+            "handler is closed",
+            "target page, context or browser has been closed",
+            "browser has been closed",
+            "browsercontext has been closed",
+            "context has been closed",
+            "target closed",
+        )
+    )
+
+
+def is_transport_closed_error(error: Exception) -> bool:
+    """True for errors showing that the shared Playwright command transport died."""
+    message = str(error).lower()
+    return "transport closed" in message or "handler is closed" in message
 
 
 def _profile_dir(key: str, prefix: str = "") -> str:

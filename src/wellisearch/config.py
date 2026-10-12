@@ -195,6 +195,7 @@ class Settings(BaseSettings):
     CRAWL_STEALTH_TIMEOUT_S: int = 120
     # Crawl tiers only fetch read-only pages, so untrusted TLS certs are accepted by default.
     CRAWL_IGNORE_SSL_ERRORS: bool = True
+    CRAWL_BROWSER_CLEANUP_TIMEOUT_S: float = 5.0
 
     # --- server ---
     BIND_PORT: int = 8780
