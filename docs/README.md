@@ -26,6 +26,7 @@ Design goals (see `BLUEPRINT.md` for the full plan):
 | [ranking.md](ranking.md) | `fn_search_local` internals: the three legs, RRF fusion, top-3 cap, prominence and freshness, worked score examples, and the `coverage` local-vs-gateway gate. |
 | [data-model.md](data-model.md) | Every table, column, index and stored function in `schema.sql`, with an ER diagram. |
 | [indexing.md](indexing.md) | Triggers → `crawl_queue` → worker tick → native crawler → `store_page` (chunk/embed/upsert), in-flight dedupe, the `unchanged` short-circuit. |
+| [adaptive-refresh.md](adaptive-refresh.md) | Proposed per-URL recrawl scheduling and ranking grace for recently verified pages. |
 | [api.md](api.md) | REST endpoint reference and the six MCP tools, with request/response shapes. |
 | [deployment.md](deployment.md) | Docker/compose, shared Postgres and network, full configuration reference, operations (health, reindex, manual worker run). |
 | [trigram-rewrite.md](trigram-rewrite.md) | 2026-08 post-mortem: why the trigram leg of `fn_search_local` was rewritten (full-corpus scans → index-bounded), plus the pool/CPU hygiene fixes. |

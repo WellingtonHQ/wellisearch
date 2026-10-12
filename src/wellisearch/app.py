@@ -38,6 +38,7 @@ from .providers import get_gateway
 from .search_web import render_search_markdown, search_web as search_web_pipeline
 from .serialize import resolve_format, to_json
 from .tools import _index_stats_data
+from .urlnorm import normalize_url
 from .worker import STATE as WORKER_STATE, crawl_url, run_forever
 
 log = logging.getLogger("wellisearch.app")
@@ -327,7 +328,9 @@ async def api_refresh(body: RefreshBody) -> Any:
         r = await crawl_url(body.url, trigger="manual")
     except Exception as e:
         raise HTTPException(502, str(e))
-    page = await db.page_get(body.url)
+    # The row is stored under the canonical URL the crawl resolved to (a short
+    # URL's final destination), not necessarily normalize_url(body.url).
+    page = await db.page_get(r.get("url") or normalize_url(body.url))
     await _ev(
         f"manual refresh — {body.url}",
         {"status": r.get("status"), "chunks": r.get("chunks"), "ms": r.get("ms")},

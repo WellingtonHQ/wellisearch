@@ -55,10 +55,13 @@ class HttpTier:
 
 
 def _extract_title(html: str) -> str | None:
-    """Best-effort <title> via a regex; None when absent."""
-    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-    if m:
-        t = m.group(1).strip()
+    """Best-effort <title> via a regex; None when absent.
+
+    When the page carries multiple <title> tags, the last non-empty one wins —
+    matching how browsers resolve document.title.
+    """
+    for t in reversed(re.findall(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)):
+        t = t.strip()
         if t:
             return t
     return None

@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import re
 import time
+import urllib.parse
 
 from . import queue
 from .config import get_settings
@@ -29,6 +31,12 @@ log = logging.getLogger("wellisearch.search_web")
 SEARCH_MODES = ("auto", "local", "provider")
 
 SNIPPET_MAX_LEN = 400  # max chars of a snippet in search results (local + provider)
+
+# Common two-part TLDs: the registrable domain is three labels, not two.
+_TWO_PART_TLDS = (
+    "ac.uk", "co.in", "co.nz", "co.uk", "com.au", "com.br",
+    "gov.uk", "ltd.uk", "me.uk", "net.au", "net.uk", "org.uk", "plc.uk", "sch.uk",
+)
 
 
 def render_search_markdown(out: dict) -> str:
@@ -76,7 +84,11 @@ async def search_web(
     miss, then log the search, enqueue top results for background indexing,
     and return the envelope. `search_mode` selects the source (auto/local/provider)."""
     s = get_settings()
-    k = max(1, num_results or s.SEARCH_K)  # clamp: negative k would slice rows off the end
+    # Clamp both ends: a zero/negative num_results falls back to SEARCH_K (a
+    # negative k would slice rows off the end), and an oversized one is capped
+    # at SEARCH_MAX_K so it cannot stall fn_search_local for the full statement
+    # timeout.
+    k = min(max(1, num_results or s.SEARCH_K), s.SEARCH_MAX_K)
     crawl_n = s.SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)
     if search_mode not in SEARCH_MODES:
         raise ValueError(
@@ -92,7 +104,9 @@ async def search_web(
     index_ms = 0
     index_error: str | None = None
     if search_mode != "provider":
-        local_rows, index_ms, index_error = await _search_local_index(query, k, max_age_days)
+        local_rows, index_ms, index_error = await _search_local_index(
+            query, k, max_age_days, widened=(search_mode == "auto")
+        )
 
     # Auto mode: each row must clear all three per-row gates — coverage, similarity,
     # and distinctive-term coverage (a page missing every rare / brand query word
@@ -100,7 +114,25 @@ async def search_web(
     # serve if several pass or one is strongly similar. This lets indexed provider
     # hits satisfy repeat queries without trusting a marginal lone match or off-brand
     # junk. Local mode bypasses the gate; provider mode has no local rows.
-    passing = [r for r in local_rows if _passes_local_gate(r)]
+    # Auto-mode serving policies (docs/ranking.md): a union candidate window
+    # (top-N by score ∪ top-M by similarity) so semantically close pages are
+    # always considered, and a job-board de-rank for non-job-intent queries.
+    # Local mode serves the raw index order untouched.
+    candidates = local_rows
+    if search_mode == "auto":
+        candidates = _candidate_rows(local_rows, k)
+        if not _job_intent(query, s.job_intent_terms):
+            candidates = _apply_job_board_penalty(
+                candidates,
+                s.job_boards,
+                s.SEARCH_JOB_BOARD_PENALTY,
+            )
+    passing = [r for r in candidates if _passes_local_gate(r)]
+    # Among gate-passing rows, similarity is the primary topical signal and score
+    # is rank-only (docs/ranking.md) — serve the most topically similar first, with
+    # score as the tie-break. This keeps a semantically strong page ahead of pages
+    # that only accumulate RRF mass from many lexically matching chunks.
+    passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
     strong = [r for r in passing if _passes_partial_local_gate(r)]
 
     source: str
@@ -118,14 +150,22 @@ async def search_web(
             source = "error"
             results = []
     elif len(passing) >= k:
-        # local hit — zero provider credits (the quota-preservation layer)
-        source, results = await _serve_local(passing, k)
+        # local hit — zero provider credits (the quota-preservation layer);
+        # the per-domain cap keeps one site's near-duplicates from flooding
+        # the answer set (auto mode only — local mode served above, uncapped).
+        capped = _cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN)
+        source, results = await _serve_local(capped, k)
+        if len(capped) < k:
+            # The cap shrank a would-be full set below the requested count —
+            # flag it so callers can tell "the index only has N matching pages"
+            # from "the per-domain cap dropped the rest".
+            degraded = True
     elif passing and len(passing) >= s.LOCAL_PARTIAL_MIN_PASSING:
         # Several qualifying pages are evidence of a useful partial answer.
-        source, results = await _serve_local(passing, k)
+        source, results = await _serve_local(_cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN), k)
     elif strong:
         # One unusually strong page is enough; omit marginal companions.
-        source, results = await _serve_local(strong, k)
+        source, results = await _serve_local(_cap_per_domain(strong, s.SEARCH_MAX_PER_DOMAIN), k)
     else:
         # ---- provider gateway (auto: no qualifying local set; provider: always)
         source, results, degraded, errors, provider_ms = await _provider_search(
@@ -189,10 +229,135 @@ def _passes_partial_local_gate(r: dict) -> bool:
     return sim is not None and sim >= get_settings().LOCAL_PARTIAL_MIN_SIMILARITY
 
 
+# ---------------------------------------------------------------------------
+# Serving policies (auto mode only; docs/ranking.md)
+# ---------------------------------------------------------------------------
+
+def _split_url(url: str) -> tuple[str, str] | None:
+    """(lowercased host without www, path) of a URL — scheme optional.
+    None on parse failure."""
+    try:
+        parts = urllib.parse.urlsplit(url if "://" in url else "//" + url)
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower().removeprefix("www.")
+    if not host:
+        return None
+    return host, parts.path or ""
+
+
+def _registrable_domain(url: str) -> str:
+    """The registrable domain of a URL (host without scheme/www, last two
+    labels — three for common two-part TLDs like co.uk). "" on failure."""
+    split = _split_url(url)
+    if split is None:
+        return ""
+    parts = [p for p in split[0].split(".") if p]
+    if len(parts) < 2:
+        return ""
+    if len(parts) >= 3 and ".".join(parts[-2:]) in _TWO_PART_TLDS:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+def _is_job_board(url: str, boards: tuple[str, ...]) -> bool:
+    """Whether a URL matches a job-board entry (host[/path] prefix): the host
+    equals or subdomains the listed host and, when a path is given, starts
+    with it. Paths compare case-insensitively so config entries match live URLs."""
+    split = _split_url(url)
+    if split is None:
+        return False
+    host, path = split
+    lp = path.lower()
+    for entry in boards:
+        spec_host, sep, spec_tail = entry.partition("/")
+        spec_host = spec_host.lower().removeprefix("www.")
+        if not spec_host:
+            continue
+        if host != spec_host and not host.endswith("." + spec_host):
+            continue
+        if sep:
+            spec_path = "/" + spec_tail.lower()
+            if lp != spec_path and not lp.startswith(spec_path + "/"):
+                continue
+        return True
+    return False
+
+
+def _job_intent(query: str, terms: tuple[str, ...]) -> bool:
+    """Whether a query asks for jobs (word-boundary match on any term) — such
+    queries skip the job-board de-rank."""
+    pattern = "|".join(re.escape(t) for t in terms if t)
+    if not pattern:
+        return False
+    return re.search(rf"\b({pattern})\b", query, re.IGNORECASE) is not None
+
+
+def _apply_job_board_penalty(
+    rows: list[dict],
+    boards: tuple[str, ...],
+    penalty: float,
+) -> list[dict]:
+    """Job-board rows get score and similarity multiplied by `penalty`. The
+    penalty runs before the local-hit gate, so it raises the effective
+    similarity threshold for board rows to LOCAL_MIN_SIMILARITY / penalty
+    (default 0.6): a board row below that no longer serves locally at all,
+    and none can serve as a lone strong hit while the penalty is active
+    (with defaults that would need pre-penalty similarity above 1).
+    Coverage is untouched. Non-matching rows pass through unchanged."""
+    out = []
+    for r in rows:
+        if _is_job_board(r.get("url") or "", boards):
+            r = dict(r)
+            score = r.get("score")
+            sim = r.get("similarity")
+            r["score"] = None if score is None else score * penalty
+            r["similarity"] = None if sim is None else sim * penalty
+        out.append(r)
+    return out
+
+
+def _cap_per_domain(rows: list[dict], max_per_domain: int) -> list[dict]:
+    """Keep at most `max_per_domain` rows per registrable domain (in order);
+    rows without a parseable domain always pass."""
+    seen: dict[str, int] = {}
+    out = []
+    for r in rows:
+        dom = _registrable_domain(r.get("url") or "")
+        if not dom:
+            out.append(r)
+            continue
+        n = seen.get(dom, 0)
+        if n < max_per_domain:
+            seen[dom] = n + 1
+            out.append(r)
+    return out
+
+
+def _candidate_rows(local_rows: list[dict], k: int) -> list[dict]:
+    """Auto-mode candidate set: top max(SEARCH_GATE_MIN_K, k) by score (input
+    order) plus the SEARCH_TOP_BY_SIM most similar rows not already included, so a
+    semantically close page is considered even when lexical mass buries its
+    score and every fetched row can still be gated (docs/ranking.md)."""
+    s = get_settings()
+    head = local_rows[: max(s.SEARCH_GATE_MIN_K, k)]
+    seen = {r.get("url") for r in head}
+    extra = [
+        r
+        for r in sorted(
+            (r for r in local_rows if r.get("similarity") is not None),
+            key=lambda r: -(r["similarity"]),
+        )
+        if r.get("url") not in seen
+    ][: s.SEARCH_TOP_BY_SIM]
+    return head + extra
+
+
 async def _search_local_index(
     query: str,
     k: int,
     max_age_days: float | None,
+    widened: bool = False,
 ) -> tuple[list[dict], int, str | None]:
     """The local-index leg: embed the query, rank via fn_search_local, apply
     the optional freshness filter. Returns (rows, index_ms, index_error).
@@ -203,7 +368,11 @@ async def _search_local_index(
     to the provider gateway (the error is hidden there), local mode surfaces
     it in the error envelope so "the index is empty" and "the index is down"
     are distinguishable.
-    """
+
+    Auto mode widens the fetch window (gate + similarity pool) and the vector
+    leg so semantically close but lexically thin pages enter the fusion at all;
+    local mode serves raw index order untouched, so it fetches exactly k rows
+    at fn_search_local's default vector leg (docs/ranking.md)."""
     s = get_settings()
     t_index = time.monotonic()
     try:
@@ -212,16 +381,20 @@ async def _search_local_index(
         log.warning("query embedding failed (%s) — searching with FTS+trigram only", e)
         qvec = None
 
-    # Fetch a bit more than we'll return so the local-hit gate can see a
-    # passing page that ranks just outside the top-k by score. The extra rows
-    # cost nothing — the legs/fusion are the same; only the final LIMIT differs.
-    gate_k = max(k, s.SEARCH_GATE_MIN_K)
-    try:
-        rows = await db.fetch_all(
-            "SELECT * FROM fn_search_local(%s, %s::vector, %s)",
-            (query, qvec if qvec is not None else None, gate_k),
-            timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS,
+    qvec_arg = qvec if qvec is not None else None
+    if widened:
+        sql = "SELECT * FROM fn_search_local(%s, %s::vector, %s, %s)"
+        params: tuple[object, ...] = (
+            query,
+            qvec_arg,
+            max(k, s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM),
+            s.SEARCH_VECTOR_LEG_LIMIT,
         )
+    else:
+        sql = "SELECT * FROM fn_search_local(%s, %s::vector, %s)"
+        params = (query, qvec_arg, k)
+    try:
+        rows = await db.fetch_all(sql, params, timeout_ms=s.SEARCH_STATEMENT_TIMEOUT_MS)
     except Exception as e:
         log.exception("fn_search_local failed (timeout_ms=%s)", s.SEARCH_STATEMENT_TIMEOUT_MS)
         return [], int((time.monotonic() - t_index) * 1000), f"{type(e).__name__}: {e}"

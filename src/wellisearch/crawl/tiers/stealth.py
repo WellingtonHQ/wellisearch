@@ -74,11 +74,14 @@ def _response_content_type(page: object) -> str | None:
 
 
 def _extract_title(page: object) -> str | None:
-    """Best-effort <title> from the Scrapling Response; None on any failure."""
+    """Best-effort <title> from the Scrapling Response; None on any failure.
+
+    When the page carries multiple <title> tags, the last non-empty one wins —
+    matching how browsers resolve document.title.
+    """
     try:
-        el = page.css("title")
-        if el:
-            t = el[0].get_all_text()
+        for el in reversed(page.css("title")):
+            t = el.get_all_text()
             if t and t.strip():
                 return t.strip()
     except Exception:

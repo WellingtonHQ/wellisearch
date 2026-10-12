@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, Mock, patch
 
 from wellisearch.config import get_settings
 from wellisearch.crawl import engine, probe, tiers
@@ -9,9 +10,12 @@ from wellisearch.crawl.botwall import is_botwall
 from wellisearch.crawl.extractors.base import GenericExtractor
 from wellisearch.crawl.policy import Policy, match
 from wellisearch.crawl.results import Rendered
+from wellisearch.crawl.shorturl import is_short_url, resolve_short_url
 from wellisearch.crawl.signals import find_price, find_stock
+from wellisearch.crawler import CrawlError
 import wellisearch.crawl.tiers.http as http_tier
 import wellisearch.crawl.tiers.stealth as stealth_tier
+import wellisearch.worker as worker_mod
 
 # ---------------------------------------------------------------------------
 # Policy
@@ -26,6 +30,9 @@ assert match("https://www.nytimes.com/2026/01/01/tech/x.html").name == "nytimes"
 reddit_policy = match("https://www.reddit.com/r/Appliances/comments/1s8pw99/dishwashers_at_costco/")
 assert reddit_policy.tiers[0] == "browser"
 assert "network_idle" in reddit_policy.waits
+hd_policy = match("https://www.homedepot.com/p/AQUA-TRU-Carafe/325993266")
+assert hd_policy.name == "homedepot"
+assert hd_policy.tiers[0] == "http"  # JSON-LD is server-rendered; http tier first
 assert match("https://example.com/x").name == "default"
 assert match("https://notamazon.com/x").name == "default"  # suffix match must not false-positive
 print("OK policy")
@@ -248,6 +255,34 @@ assert listing_result.ok
 assert listing_result.flags.get("extractor") == "generic"
 
 
+class HdCategoryHttpTier:
+    """Fake http tier returning a Home Depot category page (no Product JSON-LD)."""
+
+    name = "http"
+
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Return a category listing with enough text to clear the generic gate."""
+        html = (
+            "<html><head><title>GE - Dishwashers</title></head><body>"
+            "<p>" + "GE dishwashers in stainless steel and black finishes, with QuadWash "
+            "action and TrueSteam sanitation for a spotless interior every cycle. " * 3 + "</p>"
+            "</body></html>"
+        )
+        return Rendered(html=html, title="GE - Dishwashers", status=200, ms=1, engine="fake")
+
+
+hd_cat_tier = HdCategoryHttpTier()
+tiers._REGISTRY.clear()
+tiers.register(hd_cat_tier)
+hd_cat_result = asyncio.run(engine.crawl("https://www.homedepot.com/b/Appliances-Dishwashers/GE/N-5yc1vZ"))
+assert hd_cat_result.ok
+assert hd_cat_result.flags.get("extractor") == "generic"  # non-product page -> generic path
+
+
 class BotwallHttpTier:
     name = "http"
 
@@ -279,6 +314,126 @@ res = asyncio.run(engine.crawl("https://example.com/x"))
 assert res.ok is False
 assert any("botwall" in a.get("error", "") for a in res.attempts), res.attempts
 print("OK engine loop")
+
+# ---------------------------------------------------------------------------
+# Short URL Resolution (a.co → final URL)
+# ---------------------------------------------------------------------------
+
+SHORT_URL = "https://a.co/d/0aNZTVwt"
+FINAL_URL = "https://www.amazon.com/dp/B08WM3LJQB?tag=x-20"
+
+
+class FakeShortResponse:
+    """Fake curl_cffi response carrying the final (post-redirect) URL."""
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+
+
+class FakeShortSession:
+    """Fake curl_cffi AsyncSession whose GET lands on a canned final URL."""
+
+    def __init__(self, final_url: str) -> None:
+        self.final_url = final_url
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def get(self, url: str, **kwargs):
+        return FakeShortResponse(self.final_url)
+
+
+assert is_short_url(SHORT_URL)
+assert not is_short_url("https://www.amazon.com/dp/B08WM3LJQB")
+assert not is_short_url("https://notaco.com/x")  # suffix match must not false-positive
+
+# non-short URLs pass through without a network request
+with patch("curl_cffi.requests.AsyncSession", Mock()) as sess:
+    assert asyncio.run(resolve_short_url("https://example.com/x")) == "https://example.com/x"
+assert not sess.called
+
+# success: the redirect chain's final URL is returned
+with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(FINAL_URL)):
+    assert asyncio.run(resolve_short_url(SHORT_URL)) == FINAL_URL
+
+
+def _shorturl_boom(**kwargs):
+    raise RuntimeError("network down")
+
+
+# failure: a network error yields None (callers must fail, not index the short form)
+with patch("curl_cffi.requests.AsyncSession", side_effect=_shorturl_boom):
+    assert asyncio.run(resolve_short_url(SHORT_URL)) is None
+
+# a chain that never leaves the shortener host (JS/meta redirect) also yields None
+with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(SHORT_URL)):
+    assert asyncio.run(resolve_short_url(SHORT_URL)) is None
+
+
+class ShortUrlRecordingTier:
+    """Fake http tier recording the URL + policy it was asked to fetch."""
+
+    name = "http"
+    requested_url: str | None = None
+    requested_policy: Policy | None = None
+
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Record the request and return generic-gate-clearing content."""
+        self.requested_url = url
+        self.requested_policy = p
+        return Rendered(html=GOOD_HTML, title="Test Article", status=200, ms=1, engine="fake")
+
+
+short_tier = ShortUrlRecordingTier()
+tiers._REGISTRY.clear()
+tiers.register(short_tier)
+with patch.object(engine, "resolve_short_url", AsyncMock(return_value=FINAL_URL)):
+    short_result = asyncio.run(engine.crawl(SHORT_URL))
+assert short_tier.requested_url == FINAL_URL  # the tier fetches the final URL
+assert short_tier.requested_policy is not None and short_tier.requested_policy.name == "amazon"
+assert short_result.flags.get("extractor") == "amazon"  # amazon extractor, not generic
+
+# an unresolvable short URL fails the crawl instead of falling back to the short form
+with patch.object(engine, "resolve_short_url", AsyncMock(return_value=None)):
+    try:
+        asyncio.run(engine.crawl(SHORT_URL))
+        raise AssertionError("expected RuntimeError for an unresolvable short url")
+    except RuntimeError as e:
+        assert "could not resolve" in str(e)
+
+print("OK short url resolution")
+
+# ---------------------------------------------------------------------------
+# Worker Short-URL Guard (crawl_url entry)
+# ---------------------------------------------------------------------------
+
+# unresolvable short URL fails before any crawl (no dedup, no store)
+with patch.object(worker_mod, "resolve_short_url", AsyncMock(return_value=None)), \
+     patch.object(worker_mod.queue, "crawl_deduped", AsyncMock()) as dedup:
+    try:
+        asyncio.run(worker_mod.crawl_url(SHORT_URL, "manual"))
+        raise AssertionError("expected CrawlError for an unresolvable short url")
+    except CrawlError as e:
+        assert "could not resolve" in str(e)
+assert not dedup.called
+
+# a resolvable short URL crawls + stores under the final URL and deletes any stale row
+with patch.object(worker_mod, "resolve_short_url", AsyncMock(return_value=FINAL_URL)), \
+     patch.object(worker_mod.queue, "crawl_deduped", AsyncMock(return_value={"url": FINAL_URL})) as dedup2, \
+     patch.object(worker_mod.db, "execute", AsyncMock(return_value=1)) as delete:
+    r = asyncio.run(worker_mod.crawl_url(SHORT_URL, "manual"))
+assert r["url"] == FINAL_URL
+assert dedup2.await_args.args[0] == FINAL_URL  # dedup keys on the canonical URL
+delete.assert_awaited_once_with("DELETE FROM pages WHERE url = %s", (SHORT_URL,))
+
+print("OK worker short-url guard")
 
 # ---------------------------------------------------------------------------
 # Probe Budget (read-path fast detection)

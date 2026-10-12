@@ -1,12 +1,17 @@
 """Unit tests: per-site extractors (fixture HTML, no network)."""
 from __future__ import annotations
 
+import json
 import re
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from wellisearch.crawl.extractors import for_url
-from wellisearch.crawl.extractors.amazon import AmazonExtractor
+from wellisearch.crawl.extractors.amazon import (
+    AmazonExtractor,
+    is_product_url,
+    needs_refresh as amazon_needs_refresh,
+)
 from wellisearch.crawl.extractors.ap import APExtractor
 from wellisearch.crawl.extractors.base import (
     MIN_MD_CHARS,
@@ -21,11 +26,20 @@ from wellisearch.crawl.extractors.brave import (
 )
 from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
+from wellisearch.crawl.extractors.homedepot import (
+    HomeDepotExtractor,
+    is_product_url as hd_is_product_url,
+    needs_refresh as hd_needs_refresh,
+)
 from wellisearch.crawl.extractors.nytimes import NYTimesExtractor
 from wellisearch.crawl.extractors.reddit import RedditExtractor, comment_request_url, needs_refresh
 from wellisearch.crawl.extractors.reuters import ReutersExtractor
 from wellisearch.crawl.extractors.target import TargetExtractor
-from wellisearch.crawl.extractors.walmart import WalmartExtractor
+from wellisearch.crawl.extractors.walmart import (
+    WalmartExtractor,
+    is_product_url as wm_is_product_url,
+    needs_refresh as wm_needs_refresh,
+)
 from wellisearch.crawl.extractors.wsj import WSJExtractor
 from wellisearch.crawl.policy import match
 from wellisearch.crawl.results import Escalate, Rendered
@@ -40,6 +54,41 @@ def rendered(html: str, title: str | None = None) -> Rendered:
 # Amazon
 # ---------------------------------------------------------------------------
 
+AMAZON_DESC = (
+    "<div id=\"productDescription\">"
+    "<p>Kindle (10th generation) pairs a crisp 300 ppi display with weeks of battery "
+    "life, so you can read anywhere without hunting for an outlet.</p>"
+    "<p>The lightweight, pocketable design makes it easy to take anywhere, and the "
+    "adjustable warm light lets you read comfortably day or night.</p>"
+    "</div>"
+)
+AMAZON_DETAILS = (
+    "<div id=\"detailBullets_feature_div\">"
+    "<table><tr><th>Item model number</th><td>B08WM3LJQB</td></tr></table>"
+    "</div>"
+)
+AMAZON_REVIEWS = (
+    "<div id=\"customerReviews\"><ul id=\"localTopReviewsList\">"
+    '<li><div data-hook="review" id="R1">'
+    "<span class=\"a-profile-name\">Angela B</span>"
+    "<i class=\"a-icon a-icon-star a-star-5\" data-hook=\"review-star-rating\">"
+    "<span class=\"a-icon-alt\">5 out of 5 stars</span></i>"
+    "<h5 data-hook=\"reviewTitle\">Perfect starter kit</h5>"
+    "<span data-hook=\"review-date\">Reviewed in the United States on September 22, 2026</span>"
+    "<span data-hook=\"avp-badge\">Verified Purchase</span>"
+    "<div data-hook=\"reviewRichContentContainer\"><p>Love this set.</p>"
+    "<p>The bottles reduced colic from the first week.</p></div>"
+    "</div></li>"
+    '<li><div data-hook="review" id="R2">'
+    "<span class=\"a-profile-name\">Marcus T</span>"
+    "<i class=\"a-icon a-icon-star a-star-4\" data-hook=\"review-star-rating\">"
+    "<span class=\"a-icon-alt\">4 out of 5 stars</span></i>"
+    "<h5 data-hook=\"reviewTitle\">Good value</h5>"
+    "<span data-hook=\"review-date\">Reviewed in the United States on June 14, 2026</span>"
+    "<div data-hook=\"reviewRichContentContainer\"><p>Good value for the price.</p></div>"
+    "</div></li>"
+    "</ul></div>"
+)
 AMAZON_HTML = (
     "<html><head><title>Kindle (10th generation) : Amazon.com</title></head><body>"
     "<span id=\"productTitle\">Kindle (10th generation)</span>"
@@ -65,7 +114,10 @@ AMAZON_HTML = (
     "<li>Water resistance means it can handle a splash in the rain or a dip in the pool, so "
     "your reading never has to stop.</li>"
     "</ul>"
-    "<div id=\"hub\">Frequently bought together: add a case, a screen protector, and a "
+    + AMAZON_DESC
+    + AMAZON_DETAILS
+    + AMAZON_REVIEWS
+    + "<div id=\"hub\">Frequently bought together: add a case, a screen protector, and a "
     "reading light to complete the bundle and save on shipping at checkout.</div>"
     "</body></html>"
 )
@@ -83,6 +135,74 @@ assert fitted.signals["rating"] == "4.6 out of 5 stars", fitted.signals
 assert fitted.signals["seller"] == "Amazon.com", fitted.signals
 assert fitted.title == "Kindle (10th generation)", fitted.title
 assert ex.accept(fitted)
+# product description: both paragraphs, ordered between bullets and details
+assert "## Product description" in fitted.md, fitted.md[:400]
+assert "pairs a crisp 300 ppi display" in fitted.md, fitted.md[:400]
+assert "pocketable design makes it easy to take anywhere" in fitted.md, fitted.md[:400]
+assert fitted.signals["description"] > 0, fitted.signals
+# product details table renders after the description
+assert "## Product details" in fitted.md, fitted.md[:400]
+assert "Item model number B08WM3LJQB" in fitted.md, fitted.md[:400]
+order = [fitted.md.index(h) for h in ("About this item", "Product description", "Product details")]
+assert order == sorted(order), fitted.md
+# top reviews: heading, per-review fields, displayed order, after details
+assert "## Amazon reviews (up to 5)" in fitted.md, fitted.md[:600]
+assert "### 1. Angela B (5 out of 5 stars, verified purchase)" in fitted.md, fitted.md[:800]
+assert "### 2. Marcus T (4 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "**Perfect starter kit** — Reviewed in the United States on September 22, 2026" in fitted.md
+assert "reduced colic from the first week" in fitted.md  # second paragraph kept
+assert fitted.md.index("### 1. Angela B") < fitted.md.index("### 2. Marcus T")
+assert fitted.signals["reviews"] == 2, fitted.signals
+assert fitted.signals["reviews_reported"] == 12345, fitted.signals
+rev_order = [fitted.md.index(h) for h in ("Product details", "Amazon reviews")]
+assert rev_order == sorted(rev_order), fitted.md
+# limit: only the first review is kept
+with patch(
+    "wellisearch.crawl.extractors.amazon.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=1),
+):
+    limited_fit = ex.fit(rendered(AMAZON_HTML))
+assert limited_fit.signals["reviews"] == 1, limited_fit.signals
+assert "### 1. Angela B" in limited_fit.md
+assert "Marcus T" not in limited_fit.md
+# product page with no rendered cards -> heading + placeholder (no empty gap, no loop)
+no_reviews = ex.fit(rendered(AMAZON_HTML.replace(AMAZON_REVIEWS, "")))
+assert "## Amazon reviews (up to 5)" in no_reviews.md, no_reviews.md[:600]
+assert "No reviews available." in no_reviews.md, no_reviews.md[:600]
+assert no_reviews.signals["reviews"] == 0, no_reviews.signals
+# needs_refresh: stale (pre-feature) markdown re-crawls, current markdown doesn't
+amazon_url = "https://www.amazon.com/Kindle-10th-generation/dp/B08WM3LJQB"
+assert is_product_url(amazon_url)
+assert is_product_url("https://us.amazon.com/Kindle-10th-generation/dp/B08WM3LJQB?th=1")
+assert not is_product_url("https://www.amazon.com/gp/bestsellers/electronics/")
+assert not is_product_url("https://notamazon.com/dp/B08WM3LJQB")
+stale_md = "# Kindle (10th generation)\n\n**Price:** $129.99"
+assert amazon_needs_refresh(amazon_url, stale_md)
+assert not amazon_needs_refresh(amazon_url, fitted.md)
+assert not amazon_needs_refresh(amazon_url, no_reviews.md)  # placeholder heading counts
+with patch(
+    "wellisearch.crawl.extractors.amazon.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=8),
+):
+    assert amazon_needs_refresh(amazon_url, fitted.md)  # limit changed -> stale
+assert not amazon_needs_refresh("https://www.amazon.com/gp/bestsellers/electronics/", stale_md)
+# no #productDescription -> no empty Product description section
+no_desc = ex.fit(rendered(AMAZON_HTML.replace(AMAZON_DESC, "")))
+assert "Product description" not in no_desc.md, no_desc.md[:400]
+assert no_desc.signals["description"] == 0, no_desc.signals
+# #product-description wrapper (no inner id) still extracts the text
+fallback = ex.fit(
+    rendered(
+        "<html><body>"
+        "<span id=\"productTitle\">Kindle</span>"
+        "<div data-asin=\"x\"><span class=\"a-price\">"
+        "<span class=\"a-offscreen\">$129.99</span></span></div>"
+        "<ul id=\"feature-bullets\"><li>One bullet.</li></ul>"
+        "<div id=\"product-description\"><p>Fallback wrapper description text.</p></div>"
+        "</body></html>"
+    )
+)
+assert "Fallback wrapper description text" in fallback.md, fallback.md[:400]
 # no price element -> gate fails
 no_price = ex.fit(
     rendered(
@@ -107,9 +227,269 @@ assert not ex.accept(no_bullets)
 print("OK amazon")
 
 # ---------------------------------------------------------------------------
+# Home Depot
+# ---------------------------------------------------------------------------
+
+HD_PRODUCT = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": "AquaTru Carafe AT100 Countertop Water Purifier",
+    "brand": {"@type": "Brand", "name": "AQUA TRU"},
+    "model": "90AT100AT01",
+    "sku": "1009919869",
+    "productID": "325993266",
+    "gtin13": "0874617003712",
+    "color": "White",
+    "width": "7.5 in",
+    "depth": "14 in",
+    "height": "13 in",
+    "weight": "9 lb",
+    "description": "AquaTru AT100 Carafe Water Purifier is tested and certified by IAPMO "
+    "according to NSF/ANSI standards to remove 83 contaminants, including lead, "
+    "chromium, copper, and chlorine.",
+    "aggregateRating": {"@type": "AggregateRating", "ratingValue": "4.6", "reviewCount": 2645},
+    "offers": {"@type": "Offer", "price": 375, "priceCurrency": "USD"},
+    "review": [
+        {
+            "@type": "Review",
+            "author": {"@type": "Person", "name": "IleanaR"},
+            "headline": "Better water, better sips",
+            "reviewBody": "I'm really happy with this reverse osmosis water filter!",
+            "reviewRating": {"@type": "Rating", "ratingValue": 5},
+        },
+        {
+            "@type": "Review",
+            "author": {"@type": "Person", "name": "EkaterinaD"},
+            "headline": "Excellent water purifier!",
+            "reviewBody": "Setting it up was quick and effortless right out of the box.",
+            "reviewRating": {"@type": "Rating", "ratingValue": 4},
+        },
+        {
+            "@type": "Review",
+            "author": "MillerM",
+            "headline": "AquaTru real review",
+            "reviewBody": "This is the best upgrade for my kitchen.",
+            "reviewRating": {"@type": "Rating", "ratingValue": 5},
+        },
+    ],
+}
+HD_HTML = (
+    "<html><head><title>AquaTru Carafe AT100 - The Home Depot</title></head><body>"
+    '<script type="application/ld+json">'
+    + json.dumps({"@context": "https://schema.org", "@type": "WebPage", "name": "AquaTru Carafe"})
+    + "</script>"
+    '<script type="application/ld+json">' + json.dumps(HD_PRODUCT) + "</script>"
+    "<h1>AquaTru Carafe AT100 Countertop Water Purifier</h1>"
+    "<div class=\"hub-price\">$ 375 . 00</div>"
+    "</body></html>"
+)
+ex = HomeDepotExtractor()
+fitted = ex.fit(rendered(HD_HTML))
+assert fitted.title == "AquaTru Carafe AT100 Countertop Water Purifier", fitted.title
+assert fitted.signals["price"] == "$375.00", fitted.signals
+assert "**Price:** $375.00" in fitted.md, fitted.md[:200]
+assert "**Rating:** 4.6 out of 5 stars 2,645 ratings" in fitted.md, fitted.md[:300]
+assert "**Brand:** AQUA TRU" in fitted.md, fitted.md[:300]
+assert fitted.signals["rating"] == "4.6 out of 5 stars", fitted.signals
+assert fitted.signals["reviews_reported"] == 2645, fitted.signals
+assert ex.accept(fitted)
+# description + spec fields from the JSON-LD node, in order before reviews
+assert "## Product description" in fitted.md, fitted.md[:400]
+assert "tested and certified by IAPMO" in fitted.md, fitted.md[:400]
+assert "## Product details" in fitted.md, fitted.md[:400]
+assert "Model: 90AT100AT01" in fitted.md, fitted.md[:400]
+assert "SKU: 1009919869" in fitted.md, fitted.md[:400]
+assert "Internet #: 325993266" in fitted.md, fitted.md[:400]
+assert "Weight: 9 lb" in fitted.md, fitted.md[:400]
+order = [fitted.md.index(h) for h in ("Product description", "Product details", "Home Depot reviews")]
+assert order == sorted(order), fitted.md
+# top reviews: heading, per-review fields, displayed order, after details
+assert "## Home Depot reviews (up to 5)" in fitted.md, fitted.md[:600]
+assert "### 1. IleanaR (5 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "**Better water, better sips**" in fitted.md, fitted.md[:800]
+assert "reverse osmosis water filter" in fitted.md
+assert "### 2. EkaterinaD (4 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "### 3. MillerM (5 out of 5 stars)" in fitted.md, fitted.md[:800]  # string author
+assert fitted.signals["reviews"] == 3, fitted.signals
+# limit: only the first review is kept
+with patch(
+    "wellisearch.crawl.extractors.homedepot.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=1),
+):
+    limited_fit = ex.fit(rendered(HD_HTML))
+assert limited_fit.signals["reviews"] == 1, limited_fit.signals
+assert "### 1. IleanaR" in limited_fit.md
+assert "EkaterinaD" not in limited_fit.md
+# no review array -> heading + placeholder (no empty gap, no loop)
+HD_NO_REVIEWS = {k: v for k, v in HD_PRODUCT.items() if k != "review"}
+no_reviews_fit = ex.fit(
+    rendered(HD_HTML.replace(json.dumps(HD_PRODUCT), json.dumps(HD_NO_REVIEWS)))
+)
+assert "## Home Depot reviews (up to 5)" in no_reviews_fit.md, no_reviews_fit.md[:600]
+assert "No reviews available." in no_reviews_fit.md, no_reviews_fit.md[:600]
+assert no_reviews_fit.signals["reviews"] == 0, no_reviews_fit.signals
+assert ex.accept(no_reviews_fit)
+# @graph wrapper: the Product node is still found
+graph_html = HD_HTML.replace(
+    json.dumps(HD_PRODUCT),
+    json.dumps({"@context": "https://schema.org", "@graph": [HD_PRODUCT]}),
+)
+graph_fit = ex.fit(rendered(graph_html))
+assert graph_fit.signals["price"] == "$375.00", graph_fit.signals
+assert ex.accept(graph_fit)
+# no offers (call-for-pricing render) -> gate fails
+no_offers = {k: v for k, v in HD_PRODUCT.items() if k != "offers"}
+no_offers_fit = ex.fit(
+    rendered(HD_HTML.replace(json.dumps(HD_PRODUCT), json.dumps(no_offers)))
+)
+assert not ex.accept(no_offers_fit)
+# no Product node (Akamai challenge page / degraded render) -> gate fails
+wall = ex.fit(rendered("<html><body><div>Powered and protected by</div></body></html>"))
+assert not ex.accept(wall)
+# needs_refresh: stale (pre-feature) markdown re-crawls, current markdown doesn't
+hd_url = "https://www.homedepot.com/p/AQUA-TRU-Carafe/325993266"
+assert hd_is_product_url(hd_url)
+assert hd_is_product_url(hd_url + "?MERCH=REC-_-reorder")
+assert not hd_is_product_url("https://www.homedepot.com/p/reviews/AQUA-TRU-Carafe/325993266/1")
+assert not hd_is_product_url("https://www.homedepot.com/b/Appliances-Dishwashers/GE/N-5yc1vZ")
+assert not hd_is_product_url("https://notdepot.com/p/AQUA-TRU-Carafe/325993266")
+stale_md = "# AquaTru Carafe AT100\n\n**Price:** $375.00"
+assert hd_needs_refresh(hd_url, stale_md)
+assert not hd_needs_refresh(hd_url, fitted.md)
+assert not hd_needs_refresh(hd_url, no_reviews_fit.md)  # placeholder heading counts
+with patch(
+    "wellisearch.crawl.extractors.homedepot.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=8),
+):
+    assert hd_needs_refresh(hd_url, fitted.md)  # limit changed -> stale
+assert not hd_needs_refresh("https://www.homedepot.com/p/reviews/AQUA-TRU-Carafe/325993266/1", stale_md)
+print("OK homedepot")
+
+# ---------------------------------------------------------------------------
 # Walmart
 # ---------------------------------------------------------------------------
 
+WALMART_PRODUCT = {
+    "@context": "https://schema.org",
+    "@type": "ProductGroup",
+    "name": "Mainstays Bonded Leather Mid-Back Manager's Office Chair, for Adults, Black",
+    "description": (
+        "The Mainstays Mid Back Office Chair is the ideal desk chair for comfort and style. "
+        "The sleek black bonded leather upholstery and sturdy frame make it a great fit for "
+        "any home office."
+    ),
+    "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": 4.1,
+        "bestRating": 5,
+        "reviewCount": 2704,
+    },
+    "review": [
+        {
+            "@type": "Review",
+            "datePublished": "9/25/2024",
+            "reviewBody": (
+                "I was somewhat hesitant in purchasing the chair. I had never seen one of these "
+                "assembled in a Walmart before but for $75 it is a solid desk chair."
+            ),
+            "reviewRating": {"@type": "Rating", "worstRating": 1, "ratingValue": 5, "bestRating": 5},
+            "author": {"@type": "Person", "name": "Michael"},
+        },
+        {
+            "@type": "Review",
+            "name": "So happy with the purchase!",
+            "datePublished": "3/8/2023",
+            "reviewBody": (
+                "Got a $20.00 discount while buying, extremely happy with the quality of the chair."
+            ),
+            "reviewRating": {"@type": "Rating", "worstRating": 1, "ratingValue": 4, "bestRating": 5},
+            "author": {"@type": "Person", "name": "Mahmud"},
+        },
+    ],
+    "hasVariant": [
+        {
+            "@type": "Product",
+            "name": "Mainstays Bonded Leather Mid-Back Manager's Office Chair, for Adults, Black",
+            "sku": "6000199102326",
+            "gtin13": "656292496535",
+            "model": "MS98-060-099-01",
+            "color": "Black",
+            "brand": {"@type": "Brand", "name": "Mainstays"},
+            "offers": [
+                {
+                    "@type": "Offer",
+                    "priceCurrency": "CAD",
+                    "price": 88,
+                    "availability": "https://schema.org/InStock",
+                }
+            ],
+        },
+    ],
+}
+WALMART_CA_HTML = (
+    "<html><head>"
+    "<title>Mainstays Bonded Leather Mid-Back Manager's Office Chair - Walmart.ca</title></head>"
+    "<body>"
+    '<script type="application/ld+json">' + json.dumps(WALMART_PRODUCT) + "</script>"
+    "<h1>Mainstays Bonded Leather Mid-Back Manager's Office Chair, for Adults, Black</h1>"
+    "</body></html>"
+)
+ex = WalmartExtractor()
+fitted = ex.fit(rendered(WALMART_CA_HTML))
+assert (
+    fitted.title == "Mainstays Bonded Leather Mid-Back Manager's Office Chair, for Adults, Black"
+), fitted.title
+assert fitted.signals["price"] == "$88.00", fitted.signals
+assert "**Price:** $88.00" in fitted.md, fitted.md[:200]
+assert "**Rating:** 4.1 out of 5 stars 2,704 ratings" in fitted.md, fitted.md[:300]
+assert "**Brand:** Mainstays" in fitted.md, fitted.md[:300]
+assert fitted.signals["rating"] == "4.1 out of 5 stars", fitted.signals
+assert fitted.signals["reviews_reported"] == 2704, fitted.signals
+assert ex.accept(fitted)
+# description + spec fields from the JSON-LD node, in order before reviews
+assert "## Product description" in fitted.md, fitted.md[:400]
+assert "ideal desk chair for comfort and style" in fitted.md, fitted.md[:400]
+assert "## Product details" in fitted.md, fitted.md[:400]
+assert "Model: MS98-060-099-01" in fitted.md, fitted.md[:400]
+assert "SKU: 6000199102326" in fitted.md, fitted.md[:400]
+assert "GTIN: 656292496535" in fitted.md, fitted.md[:400]
+order = [fitted.md.index(h) for h in ("Product description", "Product details", "Walmart reviews")]
+assert order == sorted(order), fitted.md
+# top reviews: heading, per-review fields, displayed order, after details
+assert "## Walmart reviews (up to 5)" in fitted.md, fitted.md[:600]
+assert "### 1. Michael (5 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "solid desk chair" in fitted.md
+assert "### 2. Mahmud (4 out of 5 stars)" in fitted.md, fitted.md[:800]
+assert "**So happy with the purchase!** — 3/8/2023" in fitted.md, fitted.md[:900]
+assert fitted.signals["reviews"] == 2, fitted.signals
+# limit: only the first review is kept
+with patch(
+    "wellisearch.crawl.extractors.walmart.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=1),
+):
+    limited_fit = ex.fit(rendered(WALMART_CA_HTML))
+assert limited_fit.signals["reviews"] == 1, limited_fit.signals
+assert "### 1. Michael" in limited_fit.md
+assert "Mahmud" not in limited_fit.md
+# no review array -> heading + placeholder (no empty gap, no loop)
+WALMART_NO_REVIEWS = {k: v for k, v in WALMART_PRODUCT.items() if k != "review"}
+no_reviews_fit = ex.fit(
+    rendered(WALMART_CA_HTML.replace(json.dumps(WALMART_PRODUCT), json.dumps(WALMART_NO_REVIEWS)))
+)
+assert "## Walmart reviews (up to 5)" in no_reviews_fit.md, no_reviews_fit.md[:600]
+assert "No reviews available." in no_reviews_fit.md, no_reviews_fit.md[:600]
+assert no_reviews_fit.signals["reviews"] == 0, no_reviews_fit.signals
+assert ex.accept(no_reviews_fit)
+# no offers (call-for-pricing render) -> gate fails
+no_offers = {k: v for k, v in WALMART_PRODUCT.items() if k != "hasVariant"}
+no_offers_fit = ex.fit(
+    rendered(WALMART_CA_HTML.replace(json.dumps(WALMART_PRODUCT), json.dumps(no_offers)))
+)
+assert not ex.accept(no_offers_fit)
+# no product node (challenge page / degraded render, no price in the html) -> gate fails
+wall = ex.fit(rendered("<html><body><div>Just a moment...</div></body></html>"))
+assert not ex.accept(wall)
+# walmart.com pages carry no Product JSON-LD: legacy generic fit + hero-price gate
 _WALM = (
     "Key item features: a 27-inch full HD IPS display with a 100Hz refresh rate, AMD "
     "FreeSync, and three-sided slim bezels for a clean desk setup. The 100Hz refresh rate "
@@ -120,18 +500,36 @@ _WALM = (
     "multiple displays for a seamless workspace, and the adjustable stand lets you tilt, "
     "swivel, and height-adjust the screen to your perfect viewing position. "
 ) * 8
-WALMART_HTML = (
+WALMART_COM_HTML = (
     "<html><head><title>Acer ED270RS3 27-inch Full HD Monitor - Walmart.com</title></head><body>"
     "<h1>Acer ED270RS3 27-inch Full HD Monitor</h1>"
     "<p>$199.00</p>"
     f"<p>{_WALM}</p>"
     "</body></html>"
 )
-ex = WalmartExtractor()
-fitted = ex.fit(rendered(WALMART_HTML))
-assert fitted.signals["price"] == "$199.00", fitted.signals
-assert ex.accept(fitted)
-assert not ex.accept(ex.fit(rendered(WALMART_HTML.replace("$199.00", ""))))
+com_fit = ex.fit(rendered(WALMART_COM_HTML))
+assert com_fit.signals["price"] == "$199.00", com_fit.signals
+assert not com_fit.flags.get("structured")
+assert ex.accept(com_fit)
+assert not ex.accept(ex.fit(rendered(WALMART_COM_HTML.replace("$199.00", ""))))
+# needs_refresh: stale (pre-feature) markdown re-crawls, current markdown doesn't
+ca_url = "https://www.walmart.ca/en/ip/mainstays-bonded-leather-mid-back-managers-office-chair-black/6000199102326"
+assert wm_is_product_url(ca_url)
+assert wm_is_product_url("https://www.walmart.com/ip/Acer-ED270RS3/123456")
+assert not wm_is_product_url("https://www.walmart.ca/search?q=office+chair")
+assert not wm_is_product_url("https://www.walmart.ca/en/categories/furniture-desks-tables")
+assert not wm_is_product_url("https://notwalmart.com/en/ip/mainstays-chair/6000199102326")
+stale_md = "# Mainstays Office Chair\n\n**Price:** $88.00"
+assert wm_needs_refresh(ca_url, stale_md)
+assert not wm_needs_refresh(ca_url, fitted.md)
+assert not wm_needs_refresh(ca_url, no_reviews_fit.md)  # placeholder heading counts
+with patch(
+    "wellisearch.crawl.extractors.walmart.get_settings",
+    return_value=SimpleNamespace(CRAWL_MAX_REVIEWS=8),
+):
+    assert wm_needs_refresh(ca_url, fitted.md)  # limit changed -> stale
+# walmart.com product URLs never loop (they keep the legacy generic fit)
+assert not wm_needs_refresh("https://www.walmart.com/ip/Acer-ED270RS3/123456", stale_md)
 print("OK walmart")
 
 # ---------------------------------------------------------------------------
@@ -570,6 +968,8 @@ print("OK generic loading stub")
 # ---------------------------------------------------------------------------
 
 assert for_url("https://www.amazon.com/dp/B08WM3LJQB").name == "amazon"
+assert for_url("https://www.homedepot.com/p/AQUA-TRU-Carafe/325993266").name == "homedepot"
+assert for_url("https://www.walmart.ca/en/ip/mainstays-chair/6000199102326").name == "walmart"
 assert for_url("https://boards.greenhouse.io/acme/1234567").name == "greenhouse"
 assert for_url(
     "https://careers.ascensus.com/jobs/principal-software-engineer?source=linkedin_posting"

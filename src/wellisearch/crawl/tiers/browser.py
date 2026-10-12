@@ -17,7 +17,7 @@ from ...config import get_settings
 from ..botwall import is_botwall
 from ..lane import CF, get_lane
 from ..policy import Policy
-from ..pool import get_cf_pool, get_pool
+from ..pool import get_cf_pool, get_pool, is_closed_context_error
 from ..probe import clamp
 from ..results import ChallengeDetected, Rendered
 from ..wait import NETWORK_IDLE_TIMEOUT_S, network_idle, settle
@@ -42,6 +42,8 @@ MOUSE_MOVE_PAUSE_MS = 400
 TURNSTILE_OFFSET_X = 24
 # Let the walmart search results render before scraping the item links.
 WALMART_SEARCH_SETTLE_MS = 4000
+# Retry once after replacing a context/transport that has closed unexpectedly.
+BROWSER_CLOSED_RETRIES = 1
 
 # Walmart serves missing items as a 200 soft-404 shell. Anchor to the visible
 # <h1>: the strings also appear in walmart's site-wide JS bundle on good pages.
@@ -65,15 +67,24 @@ class BrowserTier:
         """
         key = _profile_key(url, p)
         pool = get_cf_pool() if get_lane() == CF else get_pool()
-        ctx = await pool.acquire(key)
-        try:
-            page = await ctx.new_page()
+        for attempt in range(BROWSER_CLOSED_RETRIES + 1):
+            ctx = await pool.acquire(key)
+            page = None
             try:
+                page = await ctx.new_page()
                 return await self._crawl(page, url, p)
+            except Exception as e:
+                if not is_closed_context_error(e):
+                    raise
+                await pool.invalidate(key, ctx, e)
+                if attempt >= BROWSER_CLOSED_RETRIES:
+                    raise
+                log.warning("browser context %s closed; retrying once with a fresh context", key)
             finally:
-                await _safe_close(page)
-        finally:
-            await pool.release(ctx)
+                if page is not None:
+                    await _safe_close(page)
+                await pool.release(ctx, key)
+        raise RuntimeError("browser recovery loop ended without a result")
 
     async def _crawl(
         self,
@@ -178,7 +189,7 @@ class BrowserTier:
         # Walmart soft-404 search recovery (worst case): search goto + settle +
         # item goto + settle.
         budget += timeout_s + WALMART_SEARCH_SETTLE_MS / 1000 + timeout_s + s.CRAWL_SETTLE_S
-        return budget
+        return budget * (BROWSER_CLOSED_RETRIES + 1)
 
 
 # ---------------------------------------------------------------------------

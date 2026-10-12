@@ -18,6 +18,7 @@ from mcp.server.mcpserver import MCPServer
 
 from . import queue
 from .config import get_settings
+from .crawl.shorturl import resolve_short_url
 from .db import db
 from .fetch import (
     fetch_page as _fetch_page,
@@ -29,6 +30,7 @@ from .providers import get_gateway
 from .search_web import render_search_markdown, search_web as _search_web
 from .serialize import resolve_format, to_json
 from .truncation import STRATEGIES
+from .urlnorm import normalize_url
 from .worker import crawl_url
 
 TREND_WINDOWS = {"24h": 1, "7d": 7, "30d": 30}  # index_stats search-trend windows (label → days)
@@ -164,9 +166,12 @@ def _tool_search_web(server: MCPServer) -> None:
             "was used — provider: ms), then result blocks of Title/URL/Snippet "
             "separated by --- lines. Local hits include a Last Crawled line per "
             "result and cost zero provider credits; on a miss, top result URLs "
-            "are indexed in the background — no need to wait. If Degraded is "
-            "true, all providers failed and only local results are shown (see "
-            "the Provider Errors header line). Set search_mode to choose the "
+             "are indexed in the background — no need to wait. If Degraded is "
+             "true, either all providers failed and only local results are "
+             "shown (see the Provider Errors header line), or auto mode's "
+             "per-domain cap shrank a would-be full local set below num_results "
+             "(no Provider Errors line in that case). Set search_mode to choose "
+             "the "
             "source: \"auto\" (default, local first then provider), \"local\" "
             "(index only — an error if the index has nothing), or \"provider\" "
             "(bypass the local index and force a live provider answer, use when "
@@ -299,7 +304,7 @@ def _tool_seed_url(server: MCPServer) -> None:
         row = await db.fetch_one(
             "SELECT status, attempts, enqueued_at FROM crawl_queue WHERE url = %s "
             "ORDER BY enqueued_at DESC LIMIT 1",
-            (url,),
+            (normalize_url(url),),
         )
         pos = await db.fetch_one(
             "SELECT count(*) AS ahead FROM crawl_queue WHERE status = 'pending' "
@@ -333,14 +338,21 @@ def _tool_refresh_page(server: MCPServer) -> None:
         try:
             r = await crawl_url(url, trigger="manual")
         except Exception as e:
-            page = await db.page_get(url)
+            # A resolved short URL records its state under the final URL; look up
+            # both keys so last_status is reported for either form.
+            page = await db.page_get(normalize_url(url))
+            if page is None:
+                resolved = await resolve_short_url(normalize_url(url))
+                if resolved and normalize_url(resolved) != normalize_url(url):
+                    page = await db.page_get(normalize_url(resolved))
             return _clean({
                 "ok": False,
                 "url": url,
                 "error": str(e),
                 "last_status": (page or {}).get("last_status"),
             })
-        page = await db.page_get(url)
+        # The row is stored under the canonical URL the crawl resolved to.
+        page = await db.page_get(r.get("url") or normalize_url(url))
         return _clean({
             "ok": True,
             "url": url,

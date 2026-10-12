@@ -17,6 +17,7 @@ worker for the same semaphore:
 Usage:
   python -m wellisearch.recrawl                 # re-crawl all pages
   python -m wellisearch.recrawl --limit 50      # first 50 (by fetch_count)
+  python -m wellisearch.recrawl --domain amazon.com   # one domain (+ subdomains)
   python -m wellisearch.recrawl --dry-run       # report what would be re-crawled
 """
 from __future__ import annotations
@@ -59,8 +60,12 @@ def main() -> None:
         "--resume", action="store_true",
         help="skip pages already crawled in the last 24h (resume a partially-finished run)"
     )
+    ap.add_argument(
+        "--domain", default=None,
+        help="only re-crawl this domain and its subdomains (e.g. amazon.com)"
+    )
     args = ap.parse_args()
-    asyncio.run(_run(limit=args.limit, dry_run=args.dry_run, resume=args.resume))
+    asyncio.run(_run(limit=args.limit, dry_run=args.dry_run, resume=args.resume, domain=args.domain))
 
 
 # ---------------------------------------------------------------------------
@@ -71,26 +76,31 @@ async def _run(
     limit: int,
     dry_run: bool,
     resume: bool = False,
+    domain: str | None = None,
 ) -> None:
-    """Select the target pages (optionally limited/resumable) and re-crawl
-    them in BATCH-sized batches, reporting progress and stats."""
+    """Select the target pages (optionally limited/resumable/domain-filtered)
+    and re-crawl them in BATCH-sized batches, reporting progress and stats."""
     s = get_settings()
     conc = s.CRAWL_MAX_PARALLEL
     await db.startup()
     try:
         q = ("SELECT url FROM pages "
              "WHERE fit_markdown IS NOT NULL AND disabled = false ")
+        params: list = []
+        if domain:
+            # Suffix match so both the bare host and subdomains (www.) are covered.
+            q += "AND (domain = %s OR domain LIKE %s) "
+            params.extend([domain, f"%.{domain}"])
         if resume:
             # Skip pages already refreshed in a prior run of this script: they
             # have a recent last_crawled. Pages that failed were never stored,
             # so their last_crawled is old and they stay in the set.
             q += "AND last_crawled < now() - interval '24 hours' "
         q += "ORDER BY fetch_count DESC, url"
-        params: tuple = ()
         if limit:
             q += " LIMIT %s"
-            params = (limit,)
-        rows = await db.fetch_all(q, params)
+            params.append(limit)
+        rows = await db.fetch_all(q, tuple(params))
         urls = [r["url"] for r in rows]
         total = len(urls)
         print(f"recrawl: {total} pages, concurrency={conc}", flush=True)

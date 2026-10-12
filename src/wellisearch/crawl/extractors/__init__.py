@@ -57,6 +57,7 @@ from . import (  # noqa: E402,F401
     brave,
     greenhouse,
     guardian,
+    homedepot,
     nytimes,
     reddit,
     reuters,

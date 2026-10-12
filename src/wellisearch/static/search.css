@@ -200,10 +200,56 @@ dialog::backdrop { background: #010409c9; }
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 7px;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: 13px/1.65 ui-monospace, "Cascadia Code", Consolas, monospace;
 }
+
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body p { margin: 0 0 12px; line-height: 1.65; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3,
+.markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 18px 0 10px;
+}
+.markdown-body h1 { font-size: 20px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.markdown-body h2 { font-size: 17px; }
+.markdown-body h3 { font-size: 15px; }
+.markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 13px; }
+.markdown-body ul, .markdown-body ol { margin: 0 0 12px; padding-left: 22px; }
+.markdown-body li { margin-bottom: 4px; line-height: 1.65; }
+.markdown-body li > ul, .markdown-body li > ol { margin: 4px 0 0; }
+.markdown-body code {
+  padding: 1px 5px;
+  background: #21262d;
+  border-radius: 4px;
+  font-size: .95em;
+}
+.markdown-body pre {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  background: #010409;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow-x: auto;
+}
+.markdown-body pre code { padding: 0; background: none; font-size: inherit; }
+.markdown-body blockquote {
+  margin: 0 0 12px;
+  padding: 4px 0 4px 14px;
+  border-left: 3px solid var(--border);
+  color: var(--dim);
+}
+.markdown-body table { width: 100%; border-collapse: collapse; margin: 0 0 12px; }
+.markdown-body th, .markdown-body td {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+.markdown-body thead th { background: #21262d; }
+.markdown-body img { max-width: 100%; border-radius: 4px; }
+.markdown-body hr { margin: 16px 0; border: 0; border-top: 1px solid var(--border); }
 
 @media (max-width: 620px) {
   .header-inner { padding: 10px 16px; gap: 20px; }

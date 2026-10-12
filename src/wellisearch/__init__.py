@@ -5,4 +5,4 @@ One process serves the MCP tools (LLM surface), the REST API + dashboard
 """
 from __future__ import annotations
 
-__version__ = "1.2.0"
+__version__ = "1.9.0"
