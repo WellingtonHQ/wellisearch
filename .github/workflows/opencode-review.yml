@@ -50,12 +50,15 @@ jobs:
             - Run `gh pr diff "$PR_NUMBER"` to see the code changes.
             - Run `gh pr view "$PR_NUMBER" --comments` to read the PR description and any existing review comments.
             - Read CODING_STYLES.md and the changed files in the working directory.
+            - Read relevant surrounding code, callers, tests, docs, and configuration comments needed to understand the intended behavior and its end-to-end effects; do not judge a changed line in isolation.
+            - Treat the PR rationale and repository documentation/comments as evidence of intent.
 
             Then review the changes:
             - Check for violations of project's CODING_STYLES.md and code quality issues.
             - Look for potential bugs or vulnerabilities.
             - Focus only on the code changes in this pull request.
             - Explain why something is a problem and what can be done about it.
+            - Evaluate each concern against the documented intended behavior. A **Warning** requires evidence of a concrete, material risk for intended use; a design or cost trade-off alone is not a defect. If you cannot establish that the impact is unintended, omit the finding.
 
             Write your final review to a file named `review.md` in the current directory.
             It will be posted to the PR verbatim as a GitHub comment - it IS the deliverable.
