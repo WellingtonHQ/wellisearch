@@ -23,15 +23,14 @@ _UNIVERSAL_TRACKING_PARAMS = frozenset({
 
 # Host-scoped tracking: these names can define content on other sites, so
 # they only count as tracking where the site is known to append them.
-_AMAZON_TRACKING = frozenset({"ref", "ref_", "rsd", "social_share", "edk", "gi", "scm"})
-_ALIBABA_TRACKING = frozenset({"spm", "scm"})
+_AMAZON_TRACKING = frozenset({"edk", "gi", "ref", "ref_", "rsd", "scm", "social_share"})
+_ALIBABA_TRACKING = frozenset({"scm", "spm"})
 
 _HOST_TRACKING_PARAMS: dict[str, frozenset[str]] = {
-    # Amazon's a.co redirect chain appends ref/ref_/social_share/rsd/edk
-    # (plus gi and scm) to product URLs.
+    # Amazon's a.co redirect chain appends edk/gi/ref/ref_/rsd/scm/social_share to product URLs.
     "a.co": _AMAZON_TRACKING,
     "amazon.com": _AMAZON_TRACKING,
-    # Alibaba-family hosts append spm/scm campaign codes.
+    # Alibaba-family hosts append scm/spm campaign codes.
     "1688.com": _ALIBABA_TRACKING,
     "aliexpress.com": _ALIBABA_TRACKING,
     "alibaba.com": _ALIBABA_TRACKING,

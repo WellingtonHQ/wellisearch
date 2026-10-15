@@ -22,7 +22,7 @@ class Policy:
 
 POLICY: dict[str, Policy] = {
     "amazon.com": Policy(
-        "amazon", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
+        "amazon", ("http", "browser", "stealth"), ("network_idle", "settle"), ("price", "stock"), "dedicated",
     ),
     "apnews.com": Policy("ap", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "bestbuy.com": Policy(
@@ -31,10 +31,10 @@ POLICY: dict[str, Policy] = {
     "boardgamegeek.com": Policy("bgg", ("http", "browser", "stealth"), ("settle",), (), "dedicated"),
     # SvelteKit SERP: client-rendered results need a browser + network_idle wait; the raw HTML is empty.
     "search.brave.com": Policy(
-        "brave", ("browser",), ("settle", "network_idle"), (), "shared",
+        "brave", ("browser",), ("network_idle", "settle"), (), "shared",
     ),
     # Client-rendered careers app: server HTML is a config-JSON shell; job content arrives via JS + API.
-    "eightfold.ai": Policy("eightfold", ("browser",), ("settle", "network_idle"), (), "shared"),
+    "eightfold.ai": Policy("eightfold", ("browser",), ("network_idle", "settle"), (), "shared"),
     # JSON-LD-driven product pages: everything (price, specs, review bodies) is in the
     # server HTML; Akamai walls are intermittent, so the http tier lands a real page
     # whenever the wall lets a request through.
@@ -43,10 +43,10 @@ POLICY: dict[str, Policy] = {
     ),
     "nytimes.com": Policy("nytimes", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     # Post comments arrive after hydration; the HTTP response contains only the post.
-    "reddit.com": Policy("reddit", ("browser", "stealth"), ("settle", "network_idle"), (), "shared"),
+    "reddit.com": Policy("reddit", ("browser", "stealth"), ("network_idle", "settle"), (), "shared"),
     "reuters.com": Policy("reuters", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     "target.com": Policy(
-        "target", ("http", "browser", "stealth"), ("settle", "network_idle"), ("price", "stock"), "dedicated",
+        "target", ("http", "browser", "stealth"), ("network_idle", "settle"), ("price", "stock"), "dedicated",
     ),
     "theguardian.com": Policy("guardian", ("http", "browser", "stealth"), ("settle",), (), "shared"),
     # Product pages carry a ProductGroup JSON-LD node (price, specs, review bodies) in the

@@ -1,4 +1,4 @@
-"""URL filter: reject known-garbage URLs (binary media, archives, executables,
+"""URL filter: reject known-garbage URLs (archives, binary media, executables,
 HLS video segments) at enqueue time so they never enter the crawl queue.
 
 Pure function of the URL string — no I/O, no settings. Wired into
@@ -45,7 +45,7 @@ _HLS_SEGMENT_RE = re.compile(r"(?:^|/)hls\d*/|(?:^|/)seg-\d+", re.IGNORECASE)
 # ---------------------------------------------------------------------------
 
 def is_garbage_url(url: str) -> bool:
-    """True when the URL is a known-garbage pattern (binary media, archive,
+    """True when the URL is a known-garbage pattern (archive, binary media,
     executable, or HLS video segment) that the HTML crawler cannot process."""
     ext = _path_ext(url)
     if ext in GARBAGE_EXTENSIONS:

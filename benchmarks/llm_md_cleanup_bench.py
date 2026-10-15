@@ -128,11 +128,11 @@ _BOILERPLATE_PATTERNS = [
 _BOILERPLATE_RE = re.compile("|".join(_BOILERPLATE_PATTERNS), re.IGNORECASE)
 
 _STOPWORDS = frozenset(
-    """a an and are as at be but by for from has have he her his i if in is it
-    its me my no nor not of on or our she so that the their them they this to
-    was we were what when where which who will with you your about into than
-    then there here how any all each more most other some such only own same
-    s t can just don don't should now""".split()
+    """a about all an and any are as at be but by can don don't each for from
+    has have he her here his how i if in into is it its just me more most my no
+    nor not now of on only or other our own s same she should so some such t
+    than that the their them then there they this to was we were what when where
+    which who will with you your""".split()
 )
 
 @dataclass

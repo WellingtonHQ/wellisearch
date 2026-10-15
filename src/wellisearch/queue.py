@@ -2,8 +2,8 @@
 
 - enqueue is deduped by the partial unique index (one pending/in_flight row
   per URL).
-- The in-flight set (url → future) is shared across worker, fetch_page,
-  fetch_pages and REST — the same URL is never crawled twice concurrently.
+- The in-flight set (url → future) is shared across fetch_page, fetch_pages,
+  REST and worker — the same URL is never crawled twice concurrently.
   It is in-memory; on boot, queue rows stuck in 'in_flight' reset to
   'pending' (db.queue_reset_in_flight).
 - kick() is debounced (KICK_DEBOUNCE_S): a burst of enqueues coalesces into

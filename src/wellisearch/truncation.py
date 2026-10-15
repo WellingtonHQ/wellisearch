@@ -1,12 +1,12 @@
 """Swappable, boundary-safe truncation strategies for fetch_pages (plan §7).
 
 Strategies:
+  even     — budget split evenly; head-trim each
+  head     — budget proportional to page length; keep the FIRST n chars
+  priority — budget proportional to fetch_count (+1); head-trim each
   smart    — allocate budget by prominence (fetch_count; falls back to even
              when no prominence exists — §15), head-trim each page
-  head     — budget proportional to page length; keep the FIRST n chars
   tail     — budget proportional to page length; keep the LAST n chars
-  even     — budget split evenly; head-trim each
-  priority — budget proportional to fetch_count (+1); head-trim each
 
 Every cut is boundary-safe: it lands on whitespace (never mid-word), and if
 the raw cut would land inside an HTML tag, it backs up to the previous `>`.
@@ -109,7 +109,7 @@ def truncate_page(
         return content, False
     if strategy == "tail":
         return boundary_cut_tail(content, chars), True
-    # smart/head/even/priority all keep the lead (article lead = best
+    # even/head/priority/smart all keep the lead (article lead = best
     # generic signal-per-char without a query context)
     return boundary_cut_head(content, chars), True
 
