@@ -10,7 +10,8 @@ are needed:
 Scenarios pinned to the dataset below:
   Q1 on-topic query, a full set passes all gate conditions -> served local (zero credits)
   Q2 first misses, then one strong provider result is indexed -> repeat served local
-  Three moderate passing rows, no strong row               -> partial set served local (per-domain cap trims the third example.com row)
+  Three moderate passing rows, no strong row -> partial set served local
+      (per-domain cap trims the third example.com row)
   Marginal partial row passes ordinary gate but not strong gate -> provider
   Off-brand pages clear coverage+similarity but miss every distinctive word -> provider
   An on-brand page (distinctive_coverage 1.0) serves; off-brand companions dropped
@@ -195,7 +196,15 @@ async def _check_gate_columns() -> None:
     by_url = {r["url"]: r for r in rows}
     dump = by_url[WORD_DUMP]
     article = by_url[CAR_SEAT_A]
-    print("gate columns:", {u: (round(r["coverage"], 3), round(r["distinctive_coverage"] or -1, 3), round(r["similarity"] or -1, 3)) for u, r in by_url.items()})
+    gate_dump = {
+        u: (
+            round(r["coverage"], 3),
+            round(r["distinctive_coverage"] or -1, 3),
+            round(r["similarity"] or -1, 3),
+        )
+        for u, r in by_url.items()
+    }
+    print("gate columns:", gate_dump)
     # the word dump contains every query word but is not topically similar
     assert dump["coverage"] >= 0.9, f"word dump coverage {dump['coverage']}"
     assert dump["similarity"] is not None and dump["similarity"] < s.LOCAL_MIN_SIMILARITY, (
@@ -342,7 +351,9 @@ async def _check_distinctive_coverage_offbrand() -> None:
     row = by_url[CAR_SEAT_A]
     # covers the common words (would clear the old coverage gate) but has no brand word
     assert row["coverage"] >= s.LOCAL_MIN_COVERAGE, f"off-brand coverage {row['coverage']}"
-    assert row["distinctive_coverage"] == 0.0, f"off-brand distinctive should be 0: {row['distinctive_coverage']}"
+    assert row["distinctive_coverage"] == 0.0, (
+        f"off-brand distinctive should be 0: {row['distinctive_coverage']}"
+    )
     print("OK distinctive coverage marks an off-brand page as missing the brand word")
 
 
