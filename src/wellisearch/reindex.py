@@ -73,6 +73,15 @@ async def _stale_batch(
     )
 
 
+def _print_progress(done: int, stale_n: int, stats: dict[str, int]) -> None:
+    """Print a progress line at each PROGRESS_INTERVAL boundary and on the last page."""
+    if done % PROGRESS_INTERVAL == 0 or done == stale_n:
+        print(
+            f"  {done}/{stale_n} (ok={stats['ok']} unchanged={stats['unchanged']} "
+            f"failed={stats['failed']})"
+        )
+
+
 async def _run(force: bool, dry_run: bool) -> None:
     """Re-chunk + re-embed every page needing it (all when --force).
 
@@ -104,11 +113,7 @@ async def _run(force: bool, dry_run: bool) -> None:
                 outcome = await _reembed_page(p)
                 stats[outcome] += 1
                 done += 1
-                if done % PROGRESS_INTERVAL == 0 or done == stale_n:
-                    print(
-                        f"  {done}/{stale_n} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                        f"failed={stats['failed']})"
-                    )
+                _print_progress(done, stale_n, stats)
             last_url = batch[-1]["url"]
 
         print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
