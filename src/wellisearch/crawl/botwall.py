@@ -52,13 +52,13 @@ _HTML_MIME_TYPES = ("application/xhtml+xml", "text/html")
 # content pages with embedded CF assets run into the thousands.
 _STRUCTURAL_MAX_VISIBLE_CHARS = 1000
 
-_SCRIPT_RE = re.compile(r"<script\b.*?</script>", re.IGNORECASE | re.DOTALL)
-_STYLE_RE = re.compile(r"<style\b.*?</style>", re.IGNORECASE | re.DOTALL)
-_NOSCRIPT_RE = re.compile(r"<noscript\b.*?</noscript>", re.IGNORECASE | re.DOTALL)
-_CODE_BLOCK_RE = re.compile(r"</?(?:pre|code)\b[^>]*>.*?</(?:pre|code)>", re.IGNORECASE | re.DOTALL)
-_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-_ATTR_RE = re.compile(r"\s+[a-zA-Z][\w-]*\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)")
-_TAG_RE = re.compile(r"<[^>]+>")
+_BLOCK_TAGS = ("!--", "code", "noscript", "pre", "script", "style")
+_BLOCK_OPEN_RE = re.compile(r"<!--|<(code|noscript|pre|script|style)\b", re.IGNORECASE)
+_BLOCK_CLOSE_RES = {
+    tag: re.compile(r"</" + tag + r"\s*>", re.IGNORECASE)
+    for tag in _BLOCK_TAGS if tag != "!--"
+}
+_TAG_PART_RE = re.compile(r"[<>\"']")
 
 
 def is_botwall(
@@ -89,6 +89,33 @@ def is_botwall(
     return None
 
 
+def strip_html_blocks(html: str, tags: tuple[str, ...]) -> str:
+    """Strip selected hidden blocks with forward-only scans, including unclosed ones.
+
+    A lazy '.*?</script>' substitution retries the remaining document for every
+    unmatched opening tag. One forward closing-tag search per consumed block
+    avoids that quadratic behavior on malformed or adversarial pages.
+    """
+    out: list[str] = []
+    pos = 0
+    scan = 0
+    while opening := _BLOCK_OPEN_RE.search(html, scan):
+        scan = opening.end()
+        tag = (opening.group(1) or "!--").lower()
+        if tag not in tags:
+            continue
+        if tag == "!--":
+            end = html.find("-->", scan)
+            scan = len(html) if end == -1 else end + len("-->")
+        else:
+            closing = _BLOCK_CLOSE_RES[tag].search(html, scan)
+            scan = len(html) if closing is None else closing.end()
+        out.extend((html[pos:opening.start()], " "))
+        pos = scan
+    out.append(html[pos:])
+    return "".join(out)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -96,10 +123,34 @@ def is_botwall(
 def _visible_text(html: str) -> str:
     """Reduce html to its visible text: drop script/style/noscript/code
     content and attribute values, then strip the remaining tags."""
-    for rx in (_SCRIPT_RE, _STYLE_RE, _NOSCRIPT_RE, _CODE_BLOCK_RE, _COMMENT_RE):
-        html = rx.sub(" ", html)
-    html = _ATTR_RE.sub(" ", html)
-    return re.sub(r"\s+", " ", _TAG_RE.sub(" ", html)).strip()
+    html = strip_html_blocks(html, _BLOCK_TAGS)
+    return re.sub(r"\s+", " ", _strip_tags(html)).strip()
+
+
+def _strip_tags(html: str) -> str:
+    """Strip tags/attributes in one pass, including quoted '>' and unclosed tags."""
+    out: list[str] = []
+    pos = 0
+    tag_start: int | None = None
+    quote: str | None = None
+    for token in _TAG_PART_RE.finditer(html):
+        char = token.group()
+        if tag_start is None:
+            if char == "<":
+                tag_start = token.start()
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+            continue
+        if char in ("\"", "'"):
+            quote = char
+        elif char == ">":
+            out.extend((html[pos:tag_start], " "))
+            pos = token.end()
+            tag_start = None
+    out.append(html[pos:] if tag_start is None else html[pos:tag_start])
+    return "".join(out)
 
 
 def _is_non_html(content_type: str | None) -> bool:

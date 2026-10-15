@@ -520,7 +520,6 @@ function renderLog(logs) {
 // ---------------------------------------------------------------------------
 const SQ_PAGE_SIZE = 10;
 let sqPage = 0;
-let sqSeq = 0;      // discards search-page renders superseded by a newer refresh()
 let sqLast = [];
 let sqTotal = 0;
 const sqExpanded = new Set();
@@ -578,17 +577,29 @@ function renderRecentQueries(searches, total) {
 // ---------------------------------------------------------------------------
 // Refresh
 // ---------------------------------------------------------------------------
+const REFRESH_TIMEOUT_MS = 15000;
+let refreshRunning = false;
+let refreshPending = false;
+
 async function refresh() {
-  const mySqSeq = ++sqSeq; // a later refresh supersedes this one's search-page render
+  // Coalesce polling and user actions instead of adding seven more requests
+  // every five seconds while the service is slow or recovering from an OOM.
+  if (refreshRunning) { refreshPending = true; return; }
+  refreshRunning = true;
+  refreshPending = false;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
+  const read = path => api(path, { signal: controller.signal });
+  const searchPage = sqPage;
   try {
     const [st, prov, pagesF, searches, win, logsData, health] = await Promise.all([
-      api("/api/stats"),
-      api("/api/providers"),
-      api("/api/pages?limit=0"),
-      api(`/api/logs/searches?limit=${SQ_PAGE_SIZE}&offset=${sqPage * SQ_PAGE_SIZE}`),
-      api("/api/window?secs=" + winSecs),
-      api("/api/logs?secs=" + winSecs + "&limit=200&q=" + encodeURIComponent(logQ)),
-      api("/health").catch(() => null),
+      read("/api/stats"),
+      read("/api/providers"),
+      read("/api/pages?limit=0"),
+      read(`/api/logs/searches?limit=${SQ_PAGE_SIZE}&offset=${searchPage * SQ_PAGE_SIZE}`),
+      read("/api/window?secs=" + winSecs),
+      read("/api/logs?secs=" + winSecs + "&limit=200&q=" + encodeURIComponent(logQ)),
+      read("/health").catch(() => null),
     ]);
     if (health) {
       const el = $("#health");
@@ -603,7 +614,7 @@ async function refresh() {
     renderProviders(prov);
     renderActivity(win);
     renderIndex(st, pagesF, win);
-    if (mySqSeq === sqSeq) { // skip stale search pages from overlapping refresh() calls
+    if (searchPage === sqPage) {
       sqLast = searches.searches || [];
       renderRecentQueries(sqLast, searches.total ?? sqLast.length);
     }
@@ -616,6 +627,11 @@ async function refresh() {
     if (String(e.message).includes("401")) return; // auth box is showing
     $("#health").textContent = "error: " + e.message;
     $("#health").className = "pill bad";
+  } finally {
+    clearTimeout(timeout);
+    controller.abort(); // Stop sibling reads too when one request failed early.
+    refreshRunning = false;
+    if (refreshPending) setTimeout(refresh, 0);
   }
 }
 

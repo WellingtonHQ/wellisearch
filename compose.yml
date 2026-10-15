@@ -20,7 +20,12 @@ services:
     build: .
     container_name: wellisearch
     restart: unless-stopped
+    # Leave host CPU/process headroom if a crawled page creates runaway work.
+    cpus: 4.0
     mem_limit: 16G
+    # Fail over-budget crawls instead of spending minutes thrashing in swap.
+    memswap_limit: 16G
+    pids_limit: 1024
     env_file: .env
     environment:
       # Cap glibc per-thread arenas so the uvicorn process's RSS plateau stays

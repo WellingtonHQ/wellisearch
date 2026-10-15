@@ -20,6 +20,9 @@
 - `env_file: .env` (all config comes from the environment).
 - `ports: 8780:8780`.
 - `restart: unless-stopped`.
+- Resource limits reserve host headroom: four CPUs, 16 GiB of RAM, no additional
+  swap, and 1,024 processes/threads. These are safeguards, not a substitute for
+  crawler lifecycle limits.
 - a `healthcheck` (Python `urllib` probe of `/health`, 60 s start period).
 - one project-managed network, `wellisearch_default`, pinned by name so the
   OWUI/agent stack can join it and reach `wellisearch:8780` for the MCP endpoints.
@@ -94,6 +97,8 @@ The crawler is native and in-process (no separate service, no `CRAWL4AI_*` vars)
 |---|---|---|
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | worker + server **must** match; changing it invalidates all vectors |
 | `EMBED_DIMS` | `384` | guarded at load time against the model's real size |
+| `EMBED_THREADS` | `2` | ONNX execution threads; avoids CPU oversubscription |
+| `EMBED_BATCH_SIZE` | `16` | document chunks per inference batch; bounds attention-buffer memory without changing the embedding model |
 | `REINDEX_BATCH_SIZE` | `1000` | reindex url-keyset batch — only one batch of fit_markdown is resident at a time, keeping RSS flat on large indexes |
 
 ### Search
@@ -128,6 +133,8 @@ may increase provider calls; queries with no rare words are unaffected.
 | `FETCH_DEFAULT_STRATEGY` | `smart` | `smart\|head\|tail\|even\|priority` |
 | `FETCH_MAX_CHARS` | `40000` | total budget when `max_chars` omitted (`0` = unlimited) |
 | `FETCH_PER_PAGE_CHARS` | `12000` | per-page cap |
+| `FETCH_MAX_URLS` | `50` | rejects oversized bulk calls before reading page bodies |
+| `FETCH_MAX_PARALLEL` | `4` | simultaneous bulk resolutions, including stored-page and short-link lookups |
 | `FETCH_PROBE_TIMEOUT_S` | `15` | per-tier timeout cap while a fetch crawls on demand — bot-walls surface within one probe instead of each tier burning its full crawl timeout; the background worker is always uncapped |
 | `FETCH_TIMEOUT_S` | `45` | hard deadline for one on-demand crawl (incl. waiting for a free crawl slot); past it the fetch fails fast with a retry hint and the URL is re-queued for the worker; the abandoned probe then runs under the grace window below |
 | `FETCH_ORPHAN_GRACE_S` | `15` | grace after a client abandons an on-demand probe (deadline or disconnect): its in-flight tier attempt gets this long to finish and store before we stop it — default = one per-tier budget, so only further failover attempts are cut off and the slot + dedup entry can't be held indefinitely |
@@ -144,7 +151,18 @@ may increase provider calls; queries with no rare words are unaffected.
 | `REFRESH_BACKOFF_BASE_HOURS` | `6` | consecutive failed refreshes back off `base × 2^(streak−1)`, capped at `REFRESH_MIN_AGE_HOURS`; a successful crawl resets the streak |
 | `CRAWL_TIMEOUT_S` | `45` | per-URL crawl timeout |
 | `CRAWL_MAX_PARALLEL` | `8` | concurrent crawls |
-| `CRAWL_POOL_SIZE` | `3` | concurrent fast-lane browser pages; keep low to bound renderer memory |
+| `CRAWL_POOL_SIZE` | `3` | bounds concurrent fast-lane leases **and** retained warm browser processes |
+| `CRAWL_CF_POOL_SIZE` | `1` | separate bound for challenge-lane browser leases and retained browsers |
+| `CRAWL_PROFILE_MAX` | `8` | LRU ceiling, additionally capped by the corresponding pool size |
+| `CRAWL_BROWSER_CLEANUP_TIMEOUT_S` | `5` | bounded page/context/driver cleanup; failed retirement reaps the exact profile's process tree |
+| `CRAWL_BROWSER_LAUNCH_TIMEOUT_S` | `30` | launch deadline; failed or cancelled launches reap orphan processes before retry |
+| `CRAWL_BROWSER_MAX_AGE_S` | `900` | stop admitting pages to an aged context, drain its active leases, and recycle it |
+| `CRAWL_BROWSER_MAX_USES` | `50` | completed leases before the same drain/recycle procedure |
+| `CRAWL_HTML_MAX_BYTES` | `5242880` | decompressed HTTP body/captured UTF-8 HTML limit before parsing; known oversized or binary payloads do not escalate into browsers |
+| `CRAWL_HTTP_MAX_REDIRECTS` | `10` | redirects per HTTP or short-link request; short-link resolution reads headers only |
+| `CRAWL_EXTRACT_MAX_PARALLEL` | `2` | actual concurrent botwall/extraction jobs across lanes; cancellation retains a running thread's slot until completion |
+| `CRAWL_EXTRACT_TIMEOUT_S` | `30` | processing admission plus caller-wait deadline; on-demand probe budgets clamp it |
+| `CRAWL_STEALTH_MAX_PARALLEL` | `1` | synchronous Scrapling sessions run in disposable process groups; cancellation kills their browsers before returning capacity |
 | `CRAWL_MAX_REVIEWS` | `5` | maximum top reviews included per product page |
 | `CRAWL_IGNORE_SSL_ERRORS` | `true` | the tiers are read-only (fetch public pages, never send data), so untrusted TLS certs are accepted; set `false` to enforce strict verification |
 | `CRAWL_LAUNCH_RETRY_AFTER_S` | `30` | relaunch backoff after a failed browser launch; keep equal to the entrypoint.sh Xvfb self-heal poll interval |
@@ -166,6 +184,46 @@ curl http://localhost:8780/health
 curl -H "Authorization: Bearer $KEY" http://localhost:8780/api/stats
 ```
 `/health` probes the DB, the native crawler, and each provider (configured + state).
+
+### Memory and browser pressure
+
+Keep both browser pools small. Each dedicated persistent context launches a
+separate Chromium process tree, not merely a lightweight browser tab. Total
+browser capacity includes the fast pool, the challenge pool, and disposable
+stealth workers. Increasing `CRAWL_MAX_PARALLEL` primarily increases HTTP and
+indexing throughput; do not increase every browser pool alongside it.
+
+The pools close unexpected idle pages, block persistent service workers, retain
+Chrome's popup blocker, and recycle contexts after their use/age limits. Cleanup
+finishes before a lease is returned, even during repeated cancellation. Warm
+profile directories and cookies remain on the profiles volume.
+
+HTML bodies are bounded before parsing, including inflated gzip/chunked HTTP
+responses. Text and JSON responses remain supported; known binary and oversized
+responses fail without falling through to an expensive browser download. Every
+extractor, including the generic fallback, applies `CRAWL_MD_MAX_CHARS`. The
+fixed-size processing pool keeps CPU-heavy parsing off the API event loop;
+its timeout stops waiting, not the underlying thread, whose slot stays reserved
+until it really finishes.
+
+Use `docker stats wellisearch --no-stream` to check memory, CPU, and process/thread
+counts. On Linux, cgroup `memory.events`, `memory.swap.current`, and
+`memory.pressure` distinguish normal resident memory from out-of-memory kills
+and swap thrashing. Capture them **before** recreating an overloaded container.
+See [the October 2026 incident report](memory-incident-2026-10-15.md) for the
+observed failure and verification results.
+
+The dashboard coalesces refreshes and cancels slow read batches after 15 seconds,
+so an open tab cannot build an unlimited backlog of seven requests every five
+seconds. Reload an already-open dashboard after deploying this change.
+Log filtering/counting/pagination runs inside Postgres, so `limit=200` no longer
+requires Python to load the entire selected day or complete search-result bodies.
+
+For a repeatable local-fixture browser soak, copy `tests/test_memory_soak.py` to
+the running container and execute it. It opens temporary profiles, repeatedly
+recycles real browsers, tests cancelled stealth sessions and compressed downloads,
+and measures health latency and cgroup memory without changing index rows or
+spending provider credits.
 
 ### Manual worker run (drain now)
 ```

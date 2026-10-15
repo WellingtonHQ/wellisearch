@@ -45,6 +45,10 @@ class CrawlResult:
     flags: dict = field(default_factory=dict)
 
 
+class PayloadRejectedError(ValueError):
+    """A known oversized/binary payload must not escalate to a costlier browser."""
+
+
 class Escalate(Exception):
     """Raised by an extractor to ask the engine for a higher tier."""
 

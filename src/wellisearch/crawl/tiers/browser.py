@@ -6,6 +6,7 @@ challenge poll loop, and the Walmart soft-404 search recovery.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -15,16 +16,20 @@ from urllib.parse import quote_plus, urlparse
 
 from ...config import get_settings
 from ..botwall import is_botwall
+from ..cleanup import bounded_operation, complete_cleanup
+from ..html_size import CAPTURE_BOUNDED_HTML_JS
 from ..lane import CF, get_lane
 from ..policy import Policy
 from ..pool import get_cf_pool, get_pool, is_closed_context_error
 from ..probe import clamp
-from ..results import ChallengeDetected, Rendered
+from ..results import ChallengeDetected, PayloadRejectedError, Rendered
 from ..wait import NETWORK_IDLE_TIMEOUT_S, network_idle, settle
 from . import register
 
 if TYPE_CHECKING:
-    from patchright.async_api import Page
+    from patchright.async_api import BrowserContext, Page
+
+    from ..pool import BrowserPool
 
 log = logging.getLogger("wellisearch.crawl.tiers.browser")
 
@@ -44,6 +49,8 @@ TURNSTILE_OFFSET_X = 24
 WALMART_SEARCH_SETTLE_MS = 4000
 # Retry once after replacing a context/transport that has closed unexpectedly.
 BROWSER_CLOSED_RETRIES = 1
+# These are missing/invalid pages, not interactive bot challenges.
+PERMANENT_HTTP_ERRORS = frozenset({400, 404, 405, 410, 451})
 
 # Walmart serves missing items as a 200 soft-404 shell. Anchor to the visible
 # <h1>: the strings also appear in walmart's site-wide JS bundle on good pages.
@@ -81,9 +88,7 @@ class BrowserTier:
                     raise
                 log.warning("browser context %s closed; retrying once with a fresh context", key)
             finally:
-                if page is not None:
-                    await _safe_close(page)
-                await pool.release(ctx, key)
+                await complete_cleanup(_release_page(pool, ctx, key, page))
         raise RuntimeError("browser recovery loop ended without a result")
 
     async def _crawl(
@@ -101,21 +106,28 @@ class BrowserTier:
             url, wait_until="domcontentloaded", timeout=timeout_s * 1000
         )
         status = resp.status if resp is not None else 200
+        if status in PERMANENT_HTTP_ERRORS:
+            raise RuntimeError(f"HTTP {status}: page cannot be challenge-solved")
         content_type = _response_content_type(resp)
         await settle(page)
         if "network_idle" in p.waits:
             await network_idle(page, clamp(NETWORK_IDLE_TIMEOUT_S))
-        html = await page.content()
+        html = await _page_html(page)
 
         if is_cf:
             # CF lane: run the full turnstile loop with the high budget.
             html = await self._resolve_challenge(
-                page, url, html, status, content_type=content_type, budget=timeout_s
+                page,
+                url,
+                html,
+                status,
+                content_type=content_type,
+                budget=min(timeout_s, s.CRAWL_CHALLENGE_BUDGET_S),
             )
         else:
             # Fast lane: probe only — a bot-wall means route to the CF lane
             # instead of spending the fast lane's time on the challenge loop.
-            if is_botwall(html, status, content_type) is not None:
+            if await _botwall(html, status, content_type) is not None:
                 raise ChallengeDetected(url)
 
         notes: str | None = None
@@ -129,7 +141,7 @@ class BrowserTier:
                 )
                 status = resp2.status if resp2 is not None else status
                 await settle(page)
-                html = await page.content()
+                html = await _page_html(page)
             if _WALMART_404_RE.search(html) is not None:
                 notes = "walmart 404 shell"
 
@@ -156,18 +168,29 @@ class BrowserTier:
     ) -> str:
         """Click the turnstile checkbox until clean or the budget is exhausted."""
         budget = budget if budget is not None else get_settings().CRAWL_CHALLENGE_BUDGET_S
-        start = time.monotonic()
+        deadline = time.monotonic() + budget
         round_no = 0
-        while (
-            is_botwall(html, status, content_type) is not None
-            and (time.monotonic() - start) < budget
-        ):
-            round_no += 1
-            log.info("challenge present (poll %d, budget %ds) — clicking turnstile", round_no, budget)
-            await _click_turnstile_checkbox(page)
-            await page.wait_for_timeout(CHALLENGE_POLL_MS)
-            html = await page.content()
-        if is_botwall(html, status, content_type) is not None:
+        timeout = asyncio.timeout_at(deadline)
+        try:
+            async with timeout:
+                marker = await _botwall(html, status, content_type)
+                while marker is not None:
+                    round_no += 1
+                    log.info(
+                        "challenge present (poll %d, budget %ds) — clicking turnstile",
+                        round_no,
+                        budget,
+                    )
+                    await _click_turnstile_checkbox(page)
+                    await page.wait_for_timeout(CHALLENGE_POLL_MS)
+                    html = await _page_html(page)
+                    marker = await _botwall(html, status, content_type)
+        except TimeoutError:
+            if not timeout.expired():
+                raise
+            log.warning("challenge budget exhausted after %ds for %s", budget, url)
+            return html
+        if marker is not None:
             log.warning("challenge still present after %ds budget for %s", budget, url)
         return html
 
@@ -185,7 +208,7 @@ class BrowserTier:
         if "network_idle" in p.waits:
             budget += clamp(NETWORK_IDLE_TIMEOUT_S)
         if is_cf:
-            budget += timeout_s  # full challenge loop budget
+            budget += min(timeout_s, s.CRAWL_CHALLENGE_BUDGET_S)
         # Walmart soft-404 search recovery (worst case): search goto + settle +
         # item goto + settle.
         budget += timeout_s + WALMART_SEARCH_SETTLE_MS / 1000 + timeout_s + s.CRAWL_SETTLE_S
@@ -196,12 +219,49 @@ class BrowserTier:
 # Helpers
 # ---------------------------------------------------------------------------
 
+async def _page_html(page: Page) -> str:
+    """Measure and capture a bounded DOM in one browser-side operation."""
+    from ..engine import check_html_size
+
+    limit = get_settings().CRAWL_HTML_MAX_BYTES
+    html = await page.evaluate(CAPTURE_BOUNDED_HTML_JS, limit)
+    if html is None:
+        raise PayloadRejectedError(f"HTML exceeds CRAWL_HTML_MAX_BYTES ({limit} bytes)")
+    check_html_size(html)
+    return html
+
+
+async def _botwall(
+    html: str,
+    status: int,
+    content_type: str | None,
+) -> str | None:
+    """Share bounded off-loop CPU admission with the extraction engine."""
+    from ..engine import run_processing
+
+    return await run_processing(is_botwall, html, status, content_type)
+
+
 async def _safe_close(page: Page) -> None:
-    """Close the page; never raises (runs in a finally, even on cancellation)."""
+    """Close a page with a finite timeout, including after navigation cancellation."""
+    await bounded_operation(page.close(), timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S)
+
+
+async def _release_page(
+    pool: BrowserPool,
+    ctx: BrowserContext,
+    key: str,
+    page: Page | None,
+) -> None:
+    """Retire failed page cleanup and always return its lease exactly once."""
     try:
-        await page.close()
-    except Exception:
-        pass
+        if page is not None:
+            try:
+                await _safe_close(page)
+            except Exception:
+                await pool.invalidate(key, ctx, RuntimeError("transport closed during cleanup"))
+    finally:
+        await pool.release(ctx, key)
 
 
 def _response_content_type(resp: object) -> str | None:

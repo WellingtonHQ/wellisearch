@@ -24,8 +24,17 @@ jobs:
       - name: Run unit tests
         run: python tests/test_units.py
 
+      - name: Run dashboard polling tests
+        run: node tests/test_dashboard_polling.mjs
+
       - name: Run browser pool tests
         run: python tests/test_browser_pool.py
+
+      - name: Run resource lifecycle tests
+        run: python tests/test_resource_lifecycle.py
+
+      - name: Run crawl memory tests
+        run: python tests/test_crawl_memory.py
 
       - name: Run crawl lane tests
         run: python tests/test_lanes.py

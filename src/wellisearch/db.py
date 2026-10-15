@@ -538,6 +538,14 @@ class Database:
         )
         return cur_ok > 0
 
+    async def queue_release(self, url: str) -> None:
+        """Return a cancelled claim without consuming a crawl retry attempt."""
+        await self.execute(
+            "UPDATE crawl_queue SET status = 'pending', attempts = greatest(0, attempts - 1) "
+            "WHERE url = %s AND status = 'in_flight'",
+            (url,),
+        )
+
     async def queue_done(
         self,
         url: str,

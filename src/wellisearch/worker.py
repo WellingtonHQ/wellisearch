@@ -30,7 +30,7 @@ At the end of every tick, freed glibc arena memory is returned to the OS
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 import ctypes
 import datetime as dt
 import logging
@@ -38,6 +38,7 @@ import time
 
 from . import crawler, queue
 from .config import get_settings
+from .crawl.cleanup import complete_cleanup
 from .crawl.extractors.base import title_from_markdown
 from .crawl.lane import CF, FAST, reset_lane, set_lane
 from .crawl.results import ChallengeDetected
@@ -241,7 +242,6 @@ async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
     """
     s = get_settings()
     processed = 0
-    sem = asyncio.Semaphore(s.CRAWL_MAX_PARALLEL)
 
     src_filter = "\n          AND source = 'manual'" if manual_only else ""
     rows = await db.fetch_all(
@@ -249,7 +249,7 @@ async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
         SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'fast'
           {src_filter} ORDER BY enqueued_at LIMIT %s
         """,
-        (s.WORKER_BUDGET_PER_RUN * 2,),
+        (s.WORKER_BUDGET_PER_RUN,),
     )
     log.info(
         "tick: draining fast lane (%d pending in budget window)%s",
@@ -262,26 +262,28 @@ async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
         nonlocal processed
         if time.monotonic() > deadline:
             return
-        if not await db.queue_claim(url):
+        if not await _claim_queue_row(url):
             return
         token = set_lane(FAST)
         try:
-            async with sem:
-                try:
-                    await crawl_url(url, "search")
-                    await db.queue_done(url, ok=True)
-                except ChallengeDetected:
-                    log.info("challenge detected — routing %s to the CF lane", url)
-                    await db.queue_route_to_cf(url)
-                except Exception as e:
-                    log.warning("queue crawl failed for %s: %s", url, e)
-                    await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
-                finally:
-                    processed += 1
+            try:
+                await crawl_url(url, "search")
+                await db.queue_done(url, ok=True)
+            except ChallengeDetected:
+                log.info("challenge detected — routing %s to the CF lane", url)
+                await db.queue_route_to_cf(url)
+            except Exception as e:
+                log.warning("queue crawl failed for %s: %s", url, e)
+                await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
+            finally:
+                processed += 1
+        except asyncio.CancelledError:
+            await complete_cleanup(db.queue_release(url))
+            raise
         finally:
             reset_lane(token)
 
-    await asyncio.gather(*(process(r["url"]) for r in rows))
+    await _run_bounded([r["url"] for r in rows], process, deadline, s.CRAWL_MAX_PARALLEL)
     return {"processed": processed}
 
 
@@ -324,7 +326,7 @@ async def _drain_cf_queue(deadline: float, manual_only: bool = False) -> dict:
         nonlocal processed
         if time.monotonic() > deadline:
             return
-        if not await db.queue_claim(url):
+        if not await _claim_queue_row(url):
             return
         token = set_lane(CF)
         try:
@@ -336,10 +338,13 @@ async def _drain_cf_queue(deadline: float, manual_only: bool = False) -> dict:
                 await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
             finally:
                 processed += 1
+        except asyncio.CancelledError:
+            await complete_cleanup(db.queue_release(url))
+            raise
         finally:
             reset_lane(token)
 
-    await asyncio.gather(*(process(r["url"]) for r in rows))
+    await _run_bounded([r["url"] for r in rows], process, deadline, s.CRAWL_CHALLENGE_PARALLEL)
     return {"processed": processed}
 
 
@@ -403,10 +408,69 @@ async def _refresh_watchlist(deadline: float) -> dict:
                 {"url": url, "status": "error", "error": str(e)[:REFRESH_ERROR_MAX_LEN]}
             )
 
-    await asyncio.gather(*(refresh(r) for r in rows))
+    await _run_bounded(rows, refresh, deadline, s.CRAWL_MAX_PARALLEL)
     unchanged = sum(1 for r in results if r.get("status") == "unchanged")
     challenged = sum(1 for r in results if r.get("status") == "challenge")
     return {"refreshed": len(results), "unchanged": unchanged, "challenged": challenged}
+
+
+async def _run_bounded(
+    items: list,
+    process: Callable[[object], Awaitable[None]],
+    deadline: float,
+    parallel: int,
+) -> None:
+    """Use a fixed number of tasks, checking deadlines when work actually starts.
+
+    A task per row passes all deadline checks before waiting for crawl slots.
+    Fixed runners bound pending work and cancel active crawls at the deadline;
+    their resource cleanup finishes before another tick can acquire capacity.
+    """
+    pending = iter(items)
+
+    async def run() -> None:
+        """Take the next row only while this tick still has wall-clock budget."""
+        while time.monotonic() < deadline:
+            item = next(pending, None)
+            if item is None:
+                return
+            try:
+                async with asyncio.timeout(max(0, deadline - time.monotonic())):
+                    await process(item)
+            except TimeoutError:
+                return
+
+    tasks = [asyncio.create_task(run()) for _ in range(min(len(items), max(1, parallel)))]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        await complete_cleanup(_cancel_runners(tasks))
+
+
+async def _cancel_runners(tasks: list[asyncio.Task]) -> None:
+    """Join every runner so cancellation cannot leave an unowned crawl behind."""
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _claim_queue_row(url: str) -> bool:
+    """Settle a claim before cancellation, returning an acquired row if interrupted."""
+    claimed = False
+
+    async def claim() -> None:
+        """Record ownership even if cancellation arrives as the transaction commits."""
+        nonlocal claimed
+        claimed = await db.queue_claim(url)
+
+    try:
+        await complete_cleanup(claim())
+    except asyncio.CancelledError:
+        if claimed:
+            await complete_cleanup(db.queue_release(url))
+        raise
+    return claimed
 
 
 async def _log_event(message: str, info: dict | None = None) -> None:

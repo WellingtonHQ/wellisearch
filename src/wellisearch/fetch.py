@@ -23,6 +23,7 @@ from psycopg_pool import PoolTimeout
 
 from . import crawler, queue
 from .config import Settings, get_settings
+from .crawl.cleanup import complete_cleanup
 from .crawl.extractors.amazon import needs_refresh as amazon_needs_refresh
 from .crawl.extractors.base import title_from_markdown
 from .crawl.extractors.homedepot import needs_refresh as homedepot_needs_refresh
@@ -47,6 +48,7 @@ log = logging.getLogger("wellisearch.fetch")
 ERROR_MAX_LEN = 300  # max chars kept in a per-URL fetch error message
 
 _OMITTED = object()  # sentinel: "parameter not provided"
+_probe_tasks: set[asyncio.Task] = set()
 
 
 def render_fetch_page_markdown(out: dict) -> str:
@@ -205,6 +207,13 @@ async def fetch_pages(
         return t
 
     # --- validate + dedupe (preserve first-seen order)
+    if len(urls) > s.FETCH_MAX_URLS:
+        return {
+            "ok": False,
+            "error": f"too many urls (maximum {s.FETCH_MAX_URLS})",
+            "pages": [],
+            "timing": _timing(),
+        }
     clean, bad = _validate_urls(urls)
 
     if not clean:
@@ -383,6 +392,8 @@ async def _resolve_page(url: str) -> dict:
     t_crawl = time.monotonic()
     token = set_probe_budget(s.FETCH_PROBE_TIMEOUT_S)  # inherited by the crawl task below
     task = asyncio.create_task(_probe_crawl(url, paused))
+    _probe_tasks.add(task)
+    task.add_done_callback(_probe_tasks.discard)
     try:
         done, _pending = await asyncio.wait({task}, timeout=s.FETCH_TIMEOUT_S)
     except BaseException:
@@ -466,6 +477,19 @@ def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
     task.add_done_callback(_watched)
 
 
+async def shutdown_probes() -> None:
+    """Stop and join adopted fetch probes before closing browser pools or the DB."""
+    tasks = list(_probe_tasks)
+    for task in tasks:
+        task.cancel()
+    await complete_cleanup(_join_probes(tasks))
+
+
+async def _join_probes(tasks: list[asyncio.Task]) -> None:
+    """Keep ownership of cancelled probes through their resource cleanup."""
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def _botwall_error(s: Settings, paused: bool = False) -> str:
     """Client-facing bot-wall failure; retry ETA covers one kick plus a full challenge budget.
     While the worker is paused the queued challenge won't run until resume, so no
@@ -518,7 +542,7 @@ def _validate_urls(urls: list[str]) -> tuple[list[str], list[dict]]:
 
 
 async def _resolve_all(urls: list[str]) -> tuple[list[dict], list[dict]]:
-    """Resolve every URL in parallel (in-flight-deduped).
+    """Resolve URLs with a fixed number of runners (in-flight-deduped).
     Returns (resolved, failed)."""
     resolved: list[dict] = []
     failed: list[dict] = []
@@ -531,7 +555,14 @@ async def _resolve_all(urls: list[str]) -> tuple[list[dict], list[dict]]:
             log.warning("fetch_pages: %s failed: %s", u, e)
             failed.append({"url": u, "error": _friendly_error(e)})
 
-    await asyncio.gather(*(_one(u) for u in urls))
+    pending = iter(urls)
+
+    async def run() -> None:
+        """Resolve the next URL without creating a task for every requested page."""
+        for url in pending:
+            await _one(url)
+
+    await asyncio.gather(*(run() for _ in range(min(len(urls), max(1, get_settings().FETCH_MAX_PARALLEL)))))
     return resolved, failed
 
 

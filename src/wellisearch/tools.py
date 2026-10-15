@@ -249,8 +249,8 @@ def _tool_fetch_pages(server: MCPServer) -> None:
     )
     async def fetch_pages(
         urls: list[str],
-        max_chars: int | None = None,  # null = full content (spec §7)
-        per_page_chars: int | None = None,
+        max_chars: int | None = get_settings().FETCH_MAX_CHARS,  # explicit null = full content (spec §7)
+        per_page_chars: int | None = get_settings().FETCH_PER_PAGE_CHARS,
         strategy: str = "smart",
         format: str = "markdown",  # "json" | "markdown"
     ) -> str:

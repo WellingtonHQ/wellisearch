@@ -39,7 +39,7 @@ def embed(texts: list[str]) -> list[list[float]]:
         return []
     m = _get_model()
     with _lock:
-        return [list(v) for v in m.embed(list(texts))]
+        return [list(v) for v in m.embed(texts, batch_size=max(1, get_settings().EMBED_BATCH_SIZE))]
 
 
 def embed_one(text: str) -> list[float]:
