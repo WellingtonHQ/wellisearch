@@ -635,22 +635,6 @@ else:  # pragma: no cover
         return {"service": "wellisearch", "docs": "/docs"}
 
 
-def main() -> None:
-    """Entry point: run the app under uvicorn, forcing the selector event loop
-    on Windows (psycopg async requirement)."""
-    import sys
-
-    import uvicorn
-
-    s = get_settings()
-    kwargs: dict = {"host": "0.0.0.0", "port": s.BIND_PORT, "log_level": "info"}
-    if sys.platform == "win32":
-        # uvicorn 0.36+ forces the proactor loop on Windows; psycopg's async
-        # needs the selector loop (see loopfix.py)
-        kwargs["loop"] = "wellisearch.loopfix:loop_factory"
-    uvicorn.run("wellisearch.app:app", **kwargs)
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -767,6 +751,26 @@ def _load_owui_spec() -> dict[str, Any]:
         spec = json.load(f)
     spec["info"]["version"] = __version__  # single source of truth (0.0.0 placeholder on disk)
     return spec
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """Entry point: run the app under uvicorn, forcing the selector event loop
+    on Windows (psycopg async requirement)."""
+    import sys
+
+    import uvicorn
+
+    s = get_settings()
+    kwargs: dict = {"host": "0.0.0.0", "port": s.BIND_PORT, "log_level": "info"}
+    if sys.platform == "win32":
+        # uvicorn 0.36+ forces the proactor loop on Windows; psycopg's async
+        # needs the selector loop (see loopfix.py)
+        kwargs["loop"] = "wellisearch.loopfix:loop_factory"
+    uvicorn.run("wellisearch.app:app", **kwargs)
 
 
 if __name__ == "__main__":

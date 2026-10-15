@@ -731,48 +731,6 @@ def report_from_disk(cfg: Config) -> None:
     write_report(cfg, payload)
 
 # ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def main() -> None:
-    """CLI entry point: parse args and dispatch sample/run/report/all."""
-    _load_dotenv()
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["sample", "run", "report", "all"])
-    p.add_argument("--models", help="comma list label=ollama_tag (default: the 5 benchmark models)")
-    p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
-    p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
-    p.add_argument(
-        "--concurrency", type=int, default=1,
-        help="parallel pages per model (default 1 = fair CPU timing)",
-    )
-    p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")
-    p.add_argument("--judge-url", help="judge OpenAI-compatible base URL")
-    p.add_argument("--out-dir", help="output directory (default benchmarks/results)")
-    p.add_argument("--smoke", action="store_true", help="2 pages x first 2 models, quick sanity check")
-    args = p.parse_args()
-
-    cfg = load_config(args)
-
-    if args.command in ("all", "sample"):
-        pages = asyncio.run(build_sample(cfg))
-        save_sample(cfg, pages)
-        domains = sorted({p_["domain"] for p_ in pages})
-        log(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
-
-    if args.command in ("all", "run"):
-        asyncio.run(run_all(cfg))
-        log(f"[run] results -> {cfg.results_file}")
-
-    if args.command in ("all", "report"):
-        if not cfg.results_file.exists():
-            raise SystemExit(f"no results at {cfg.results_file} — run the `run` step first")
-        payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
-        write_report(cfg, payload)
-        log(f"[report] -> {cfg.report_file}")
-        print_summary(cfg, payload)
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1017,6 +975,48 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
             )
         lines.append("")
     return lines
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """CLI entry point: parse args and dispatch sample/run/report/all."""
+    _load_dotenv()
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("command", choices=["sample", "run", "report", "all"])
+    p.add_argument("--models", help="comma list label=ollama_tag (default: the 5 benchmark models)")
+    p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
+    p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")
+    p.add_argument(
+        "--concurrency", type=int, default=1,
+        help="parallel pages per model (default 1 = fair CPU timing)",
+    )
+    p.add_argument("--ollama-url", help="Ollama OpenAI-compatible base URL")
+    p.add_argument("--judge-url", help="judge OpenAI-compatible base URL")
+    p.add_argument("--out-dir", help="output directory (default benchmarks/results)")
+    p.add_argument("--smoke", action="store_true", help="2 pages x first 2 models, quick sanity check")
+    args = p.parse_args()
+
+    cfg = load_config(args)
+
+    if args.command in ("all", "sample"):
+        pages = asyncio.run(build_sample(cfg))
+        save_sample(cfg, pages)
+        domains = sorted({p_["domain"] for p_ in pages})
+        log(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
+
+    if args.command in ("all", "run"):
+        asyncio.run(run_all(cfg))
+        log(f"[run] results -> {cfg.results_file}")
+
+    if args.command in ("all", "report"):
+        if not cfg.results_file.exists():
+            raise SystemExit(f"no results at {cfg.results_file} — run the `run` step first")
+        payload = json.loads(cfg.results_file.read_text(encoding="utf-8"))
+        write_report(cfg, payload)
+        log(f"[report] -> {cfg.report_file}")
+        print_summary(cfg, payload)
 
 if __name__ == "__main__":
     main()

@@ -438,6 +438,59 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     a.model = a.model or DEFAULT_MODELS
     return a
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _effective_max_len(tok: object, args_max: int) -> int:
+    """Cap the requested max length at the model's true limit (if known)."""
+    native = getattr(tok, "model_max_length", None)
+    try:
+        native = int(native)
+    except (TypeError, ValueError):
+        native = None
+    if native is None or native > 100000:  # sentinel / unknown -> trust args
+        return args_max
+    return min(args_max, native)
+
+def _l2_normalize(X: np.ndarray) -> np.ndarray:
+    """L2-normalize along the last axis (zero-safe)."""
+    n = np.linalg.norm(X, axis=-1, keepdims=True)
+    n[n == 0] = 1.0
+    return (X / n).astype(np.float32)
+
+def _tok_len(
+    tok: object,
+    text: str,
+    max_len: int,
+) -> int:
+    """Token count of text after truncation to max_len."""
+    return len(
+        tok(
+            text, 
+            truncation=True, 
+            max_length=max_len, 
+            add_special_tokens=False
+        )["input_ids"]
+    )
+
+def _read_proc_cpuinfo() -> str | None:
+    """Return the CPU model name from /proc/cpuinfo, or None if unavailable."""
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8", errors="ignore") as f:
+            nextGenerator = (
+                line.split(":", 1)[1].strip()
+                for line in f
+                if line.lower().startswith("model name")
+            )
+            return next(nextGenerator, None)
+    except Exception:
+        return None
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main(argv: list[str] | None = None) -> int:
     """Run the benchmark across all models, print the report, write result files."""
     args = parse_args(argv)
@@ -523,55 +576,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"wrote {sout}")
     return 0
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _effective_max_len(tok: object, args_max: int) -> int:
-    """Cap the requested max length at the model's true limit (if known)."""
-    native = getattr(tok, "model_max_length", None)
-    try:
-        native = int(native)
-    except (TypeError, ValueError):
-        native = None
-    if native is None or native > 100000:  # sentinel / unknown -> trust args
-        return args_max
-    return min(args_max, native)
-
-def _l2_normalize(X: np.ndarray) -> np.ndarray:
-    """L2-normalize along the last axis (zero-safe)."""
-    n = np.linalg.norm(X, axis=-1, keepdims=True)
-    n[n == 0] = 1.0
-    return (X / n).astype(np.float32)
-
-def _tok_len(
-    tok: object,
-    text: str,
-    max_len: int,
-) -> int:
-    """Token count of text after truncation to max_len."""
-    return len(
-        tok(
-            text, 
-            truncation=True, 
-            max_length=max_len, 
-            add_special_tokens=False
-        )["input_ids"]
-    )
-
-def _read_proc_cpuinfo() -> str | None:
-    """Return the CPU model name from /proc/cpuinfo, or None if unavailable."""
-    try:
-        with open("/proc/cpuinfo", encoding="utf-8", errors="ignore") as f:
-            nextGenerator = (
-                line.split(":", 1)[1].strip()
-                for line in f
-                if line.lower().startswith("model name")
-            )
-            return next(nextGenerator, None)
-    except Exception:
-        return None
 
 if __name__ == "__main__":
     raise SystemExit(main())

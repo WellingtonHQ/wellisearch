@@ -16,26 +16,6 @@ os.environ["POSTGRES_DB"] = "wellisearch_test"
 from wellisearch.db import db  # noqa: E402
 
 
-async def main() -> None:
-    """Run the full DB integration suite (schema, store_page, search, queue,
-    quota, provider state/order, app state, event log)."""
-    await db.startup()
-    print("OK startup (schema applied)")
-    await _clean_slate()
-    await _check_tables()
-    await _check_fn_search_local_nonsense()
-    await _store_page_roundtrip()
-    await _check_local_hit()
-    await _check_queue_quota_provider_state()
-    await _check_provider_order()
-    await _check_app_state()
-    await _check_event_log()
-    await _check_merge_dupes()
-    await _cleanup()
-    await db.close()
-    print("ALL DB INTEGRATION TESTS PASSED")
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -329,6 +309,30 @@ async def _cleanup() -> None:
     await db.execute("DELETE FROM pages WHERE url LIKE 'https://example.com/%%'")
     await db.execute("DELETE FROM crawl_queue WHERE url LIKE 'https://example.com/%%'")
     print("OK cleanup")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+async def main() -> None:
+    """Run the full DB integration suite (schema, store_page, search, queue,
+    quota, provider state/order, app state, event log)."""
+    await db.startup()
+    print("OK startup (schema applied)")
+    await _clean_slate()
+    await _check_tables()
+    await _check_fn_search_local_nonsense()
+    await _store_page_roundtrip()
+    await _check_local_hit()
+    await _check_queue_quota_provider_state()
+    await _check_provider_order()
+    await _check_app_state()
+    await _check_event_log()
+    await _check_merge_dupes()
+    await _cleanup()
+    await db.close()
+    print("ALL DB INTEGRATION TESTS PASSED")
 
 
 asyncio.run(main())

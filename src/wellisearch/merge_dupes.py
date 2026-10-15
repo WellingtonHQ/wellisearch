@@ -36,15 +36,6 @@ log = logging.getLogger("wellisearch.merge_dupes")
 CHUNKS_FK_NAME = "chunks_url_fkey"
 
 
-def main() -> None:
-    """CLI entry point: parse args and run the merge."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dry-run", action="store_true", help="report what would be merged")
-    args = ap.parse_args()
-    asyncio.run(_run(dry_run=args.dry_run))
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -136,6 +127,19 @@ async def _merge_group(
         len(group), canonical, keep["fetch_count"],
     )
     return renamed, len(drop)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """CLI entry point: parse args and run the merge."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--dry-run", action="store_true", help="report what would be merged")
+    args = ap.parse_args()
+    asyncio.run(_run(dry_run=args.dry_run))
 
 
 if __name__ == "__main__":

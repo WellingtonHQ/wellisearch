@@ -679,36 +679,6 @@ async def mcp_http_pass() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-async def main() -> None:
-    """Run the whole E2E pass, in order (later steps reuse earlier state)."""
-    async with httpx.AsyncClient(base_url=BASE, headers=H, timeout=120) as c:
-        await test_health(c)
-        await test_auth()
-        url = await test_search_gateway(c)
-        await test_fetch(c, url)
-        await test_page_indexed(c, url)
-        await test_local_search(c, url)
-        await test_search_mode_provider(c)
-        await test_search_mode_local(c, url)
-        await test_search_mode_invalid(c)
-        await test_fetch_bulk(c)
-        await test_provider_failover(c)
-        await test_provider_order(c)
-        await test_worker_pause(c)
-        await test_stats_logs(c, url)
-        await test_window_logs(c)
-        await test_dashboard(c)
-        await test_format_json(c, url)
-        await mcp_http_pass()
-
-    print(f"\n===== E2E RESULT: {PASS} passed, {FAIL} failed =====")
-    sys.exit(1 if FAIL else 0)
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -829,6 +799,36 @@ async def _mcp_http_tool_call_checks(session: ClientSession) -> None:
         and len(md) > 200,
         md[:120].replace("\n", " | ")
     )
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+async def main() -> None:
+    """Run the whole E2E pass, in order (later steps reuse earlier state)."""
+    async with httpx.AsyncClient(base_url=BASE, headers=H, timeout=120) as c:
+        await test_health(c)
+        await test_auth()
+        url = await test_search_gateway(c)
+        await test_fetch(c, url)
+        await test_page_indexed(c, url)
+        await test_local_search(c, url)
+        await test_search_mode_provider(c)
+        await test_search_mode_local(c, url)
+        await test_search_mode_invalid(c)
+        await test_fetch_bulk(c)
+        await test_provider_failover(c)
+        await test_provider_order(c)
+        await test_worker_pause(c)
+        await test_stats_logs(c, url)
+        await test_window_logs(c)
+        await test_dashboard(c)
+        await test_format_json(c, url)
+        await mcp_http_pass()
+
+    print(f"\n===== E2E RESULT: {PASS} passed, {FAIL} failed =====")
+    sys.exit(1 if FAIL else 0)
 
 
 if __name__ == "__main__":

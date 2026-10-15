@@ -147,24 +147,6 @@ async def run_once() -> dict:
     return await tick()
 
 
-def main() -> None:
-    """CLI entry point: run one tick (--once) and exit."""
-    import sys
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
-    if "--once" not in sys.argv:
-        print(
-            "worker --once not given; run `python -m wellisearch.worker --once` "
-            "for a manual run (the app starts the worker itself).", file=sys.stderr
-        )
-        sys.exit(2)
-    result = asyncio.run(_once())
-    print(result)
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -488,6 +470,28 @@ async def _once() -> dict:
         return await run_once()
     finally:
         await _db.close()
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """CLI entry point: run one tick (--once) and exit."""
+    import sys
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+    if "--once" not in sys.argv:
+        print(
+            "worker --once not given; run `python -m wellisearch.worker --once` "
+            "for a manual run (the app starts the worker itself).", file=sys.stderr
+        )
+        sys.exit(2)
+    result = asyncio.run(_once())
+    print(result)
 
 
 if __name__ == "__main__":

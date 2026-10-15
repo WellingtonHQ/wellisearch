@@ -350,6 +350,24 @@ class FakeShortSession:
         return FakeShortResponse(self.final_url)
 
 
+class ShortUrlRecordingTier:
+    """Fake http tier recording the URL + policy it was asked to fetch."""
+
+    name = "http"
+    requested_url: str | None = None
+    requested_policy: Policy | None = None
+
+    async def fetch(
+        self,
+        url: str,
+        p: Policy,
+    ) -> Rendered:
+        """Record the request and return generic-gate-clearing content."""
+        self.requested_url = url
+        self.requested_policy = p
+        return Rendered(html=GOOD_HTML, title="Test Article", status=200, ms=1, engine="fake")
+
+
 assert is_short_url(SHORT_URL)
 assert not is_short_url("https://www.amazon.com/dp/B08WM3LJQB")
 assert not is_short_url("https://notaco.com/x")  # suffix match must not false-positive
@@ -375,24 +393,6 @@ with patch("curl_cffi.requests.AsyncSession", side_effect=_shorturl_boom):
 # a chain that never leaves the shortener host (JS/meta redirect) also yields None
 with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(SHORT_URL)):
     assert asyncio.run(resolve_short_url(SHORT_URL)) is None
-
-
-class ShortUrlRecordingTier:
-    """Fake http tier recording the URL + policy it was asked to fetch."""
-
-    name = "http"
-    requested_url: str | None = None
-    requested_policy: Policy | None = None
-
-    async def fetch(
-        self,
-        url: str,
-        p: Policy,
-    ) -> Rendered:
-        """Record the request and return generic-gate-clearing content."""
-        self.requested_url = url
-        self.requested_policy = p
-        return Rendered(html=GOOD_HTML, title="Test Article", status=200, ms=1, engine="fake")
 
 
 short_tier = ShortUrlRecordingTier()
