@@ -45,7 +45,11 @@ class WalmartExtractor:
             flags={"extractor": "walmart"},
         )
 
-    def _fit_structured(self, node: dict, r: Rendered) -> Fitted:
+    def _fit_structured(
+        self,
+        node: dict,
+        r: Rendered,
+    ) -> Fitted:
         """Structured markdown from the JSON-LD product node."""
         limit = max(1, get_settings().CRAWL_MAX_REVIEWS)
         variant = _variant(node)

@@ -150,7 +150,11 @@ class FakePool:
         """Record invalidated contexts."""
         self.invalidated.append((key, ctx, error))
 
-    async def release(self, ctx: FakeContext, key: str | None = None) -> None:
+    async def release(
+        self,
+        ctx: FakeContext,
+        key: str | None = None,
+    ) -> None:
         """Record released contexts."""
         self.released.append((ctx, key))
 
@@ -465,7 +469,11 @@ class BackoffDB:
         """Initialize a fake db recording streak bumps."""
         self.bumped = []
 
-    async def log_crawl(self, *args: object, **kwargs: object) -> None:
+    async def log_crawl(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
         """No-op crawl-log sink."""
 
     async def execute(
