@@ -927,7 +927,7 @@ assert ex.accept(fitted)
 print("OK ap")
 
 # ---------------------------------------------------------------------------
-# Generic (loading-stub escalation)
+# Generic (Loading-Stub Escalation)
 # ---------------------------------------------------------------------------
 
 assert _is_loading_stub(
@@ -983,7 +983,7 @@ assert for_url("https://example.com/x").name == "generic"
 print("OK registry")
 
 # ---------------------------------------------------------------------------
-# title_from_markdown
+# Title From Markdown
 # ---------------------------------------------------------------------------
 
 assert title_from_markdown(

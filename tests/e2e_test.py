@@ -382,7 +382,7 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Worker pause / resume
+# Worker Pause / Resume
 # ---------------------------------------------------------------------------
 
 async def test_worker_pause(c: httpx.AsyncClient) -> None:

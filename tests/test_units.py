@@ -107,9 +107,8 @@ assert normalize_url(once) == once, "idempotent"
 print("OK url normalization")
 
 # ---------------------------------------------------------------------------
-# Tier Title Extraction (last <title> wins, matching browser document.title)
+# Tier Title Extraction (Last <title> Wins, Matching Browser document.title)
 # ---------------------------------------------------------------------------
-
 
 class _FakeTitleEl:
     def __init__(self, text: str) -> None:
@@ -203,7 +202,7 @@ assert not trunc and text == "x" * 100
 print("OK per-page trim")
 
 # ---------------------------------------------------------------------------
-# Timing Header (feature: response timing)
+# Timing Header (Feature: Response Timing)
 # ---------------------------------------------------------------------------
 
 # format_timing: None/empty -> no line
@@ -313,7 +312,7 @@ assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")
 
 # ---------------------------------------------------------------------------
-# URL Filter (garbage URL rejection)
+# URL Filter (Garbage URL Rejection)
 # ---------------------------------------------------------------------------
 
 # binary / non-page files must be rejected
@@ -395,7 +394,7 @@ assert failure_detail(_result([])) == "all tiers failed or empty markdown"
 print("OK failure detail")
 
 # ---------------------------------------------------------------------------
-# Search Serving Policies (search_web auto-mode helpers)
+# Search Serving Policies (search_web Auto-Mode Helpers)
 # ---------------------------------------------------------------------------
 
 # _registrable_domain: www stripping, plain host, two-part TLDs, garbage in

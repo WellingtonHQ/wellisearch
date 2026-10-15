@@ -30,7 +30,7 @@ CLEAN_HTML = (
 
 
 # ---------------------------------------------------------------------------
-# Fake browser page / pool
+# Fake Browser Page / Pool
 # ---------------------------------------------------------------------------
 
 class FakeResp:
@@ -168,7 +168,7 @@ def _install_fake_pool(page: FakePage) -> FakePool:
 
 
 # ---------------------------------------------------------------------------
-# 1. lane contextvar
+# 1. Lane Contextvar
 # ---------------------------------------------------------------------------
 
 assert get_lane() == FAST
@@ -181,7 +181,7 @@ assert get_lane() == FAST
 print("OK lane contextvar")
 
 # ---------------------------------------------------------------------------
-# 2. fast-lane browser tier: botwall -> ChallengeDetected (probe, no click)
+# 2. Fast-Lane Browser Tier: Botwall -> ChallengeDetected (Probe, No Click)
 # ---------------------------------------------------------------------------
 
 page = FakePage([BOTWALL_HTML])
@@ -201,7 +201,7 @@ finally:
 print("OK fast-lane probe raises ChallengeDetected")
 
 # ---------------------------------------------------------------------------
-# 3. CF-lane browser tier: botwall -> full challenge loop (clicks, resolves)
+# 3. CF-Lane Browser Tier: Botwall -> Full Challenge Loop (Clicks, Resolves)
 # ---------------------------------------------------------------------------
 
 page = FakePage([BOTWALL_HTML, CLEAN_HTML])
@@ -217,7 +217,7 @@ finally:
 print("OK CF-lane runs the challenge loop")
 
 # ---------------------------------------------------------------------------
-# 4. fast-lane browser tier: clean page -> success (no raise)
+# 4. Fast-Lane Browser Tier: Clean Page -> Success (No Raise)
 # ---------------------------------------------------------------------------
 
 page = FakePage([CLEAN_HTML])
@@ -233,9 +233,8 @@ finally:
 print("OK fast-lane clean page succeeds")
 
 # ---------------------------------------------------------------------------
-# 4a. closed browser transport is invalidated and retried once
+# 4a. Closed Browser Transport Is Invalidated and Retried Once
 # ---------------------------------------------------------------------------
-
 
 class ClosedContext(FakeContext):
     async def new_page(self) -> FakePage:
@@ -260,9 +259,8 @@ assert len(fake_pool.released) == 2, fake_pool.released
 print("OK browser tier replaces a closed context and retries once")
 
 # ---------------------------------------------------------------------------
-# 4b. ordinary crawl timeouts are not retried as a closed browser
+# 4b. Ordinary Crawl Timeouts Are Not Retried as a Closed Browser
 # ---------------------------------------------------------------------------
-
 
 class TimeoutContext(FakeContext):
     async def new_page(self) -> FakePage:
@@ -288,7 +286,7 @@ assert len(fake_pool.released) == 1, fake_pool.released
 print("OK browser tier does not retry ordinary timeouts")
 
 # ---------------------------------------------------------------------------
-# 5. CF pool is separate from the fast pool (and each is a singleton)
+# 5. CF Pool Is Separate from the Fast Pool (and Each Is a Singleton)
 # ---------------------------------------------------------------------------
 
 assert pool_mod.get_pool() is not pool_mod.get_cf_pool()
@@ -297,7 +295,7 @@ assert pool_mod.get_cf_pool() is pool_mod.get_cf_pool()
 print("OK separate pools")
 
 # ---------------------------------------------------------------------------
-# 6. CF semaphore is separate from the fast semaphore (and each is a singleton)
+# 6. CF Semaphore Is Separate from the Fast Semaphore (and Each Is a Singleton)
 # ---------------------------------------------------------------------------
 
 assert crawler_mod.crawl_semaphore() is not crawler_mod.cf_crawl_semaphore()
@@ -306,7 +304,7 @@ assert crawler_mod.cf_crawl_semaphore() is crawler_mod.cf_crawl_semaphore()
 print("OK separate semaphores")
 
 # ---------------------------------------------------------------------------
-# 7. crawl_deduped picks the semaphore by lane
+# 7. crawl_deduped Picks the Semaphore by Lane
 # ---------------------------------------------------------------------------
 
 called = []
@@ -364,7 +362,7 @@ finally:
 print("OK crawl_deduped picks semaphore by lane")
 
 # ---------------------------------------------------------------------------
-# 8. engine propagates ChallengeDetected (does not swallow it as a tier error)
+# 8. Engine Propagates ChallengeDetected (Does Not Swallow It as a Tier Error)
 # ---------------------------------------------------------------------------
 
 class ChallengeTier:
@@ -398,7 +396,7 @@ finally:
 print("OK engine propagates ChallengeDetected")
 
 # ---------------------------------------------------------------------------
-# 9. worker routes ChallengeDetected to the CF lane (fake db)
+# 9. Worker Routes ChallengeDetected to the CF Lane (Fake Db)
 # ---------------------------------------------------------------------------
 
 class FakeDB:
@@ -460,9 +458,8 @@ finally:
 print("OK worker routes ChallengeDetected to CF lane")
 
 # ---------------------------------------------------------------------------
-# 10. watchlist caller owns refresh backoff so it can target the selected row
+# 10. Watchlist Caller Owns Refresh Backoff so It Can Target the Selected Row
 # ---------------------------------------------------------------------------
-
 
 class BackoffDB:
     def __init__(self) -> None:
@@ -523,7 +520,7 @@ for trigger in ("fetch", "manual", "recrawl", "refresh", "search"):
 print("OK crawl attempt leaves watchlist backoff to its caller")
 
 # ---------------------------------------------------------------------------
-# 11. worker refresh: bot-walled probe → CF lane + queued pages skipped (fake db)
+# 11. Worker Refresh: Bot-Walled Probe → CF Lane + Queued Pages Skipped (Fake Db)
 # ---------------------------------------------------------------------------
 
 WALLED = "https://example.com/walled"
@@ -642,9 +639,8 @@ assert stats["refreshed"] == 1 and stats["unchanged"] == 0, stats
 print("OK failed refresh backs off the selected legacy URL alias")
 
 # ---------------------------------------------------------------------------
-# 12. read-path enqueues kick via queue.enqueue — and only on fresh inserts
+# 12. Read-Path Enqueues Kick via queue.enqueue — and Only on Fresh Inserts
 # ---------------------------------------------------------------------------
-
 
 class KickDB:
     def __init__(self, insert_ok: bool) -> None:
@@ -741,7 +737,6 @@ print("OK read-path enqueues kick via queue.enqueue on fresh inserts only")
 # 13. grace-cancel of a deduped owner settles its shared future: joiners unblock
 #     with a CrawlError instead of hanging on shield(fut) forever
 # ---------------------------------------------------------------------------
-
 
 ORPHAN_URL = "https://example.com/dedup-orphan"
 

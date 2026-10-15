@@ -317,7 +317,7 @@ assert any("botwall" in a.get("error", "") for a in res.attempts), res.attempts
 print("OK engine loop")
 
 # ---------------------------------------------------------------------------
-# Short URL Resolution (a.co → final URL)
+# Short URL Resolution (a.co → Final URL)
 # ---------------------------------------------------------------------------
 
 SHORT_URL = "https://a.co/d/0aNZTVwt"
@@ -422,7 +422,7 @@ with patch.object(engine, "resolve_short_url", AsyncMock(return_value=None)):
 print("OK short url resolution")
 
 # ---------------------------------------------------------------------------
-# Worker Short-URL Guard (crawl_url entry)
+# Worker Short-URL Guard (crawl_url Entry)
 # ---------------------------------------------------------------------------
 
 # unresolvable short URL fails before any crawl (no dedup, no store)
@@ -447,7 +447,7 @@ delete.assert_awaited_once_with("DELETE FROM pages WHERE url = %s", (SHORT_URL,)
 print("OK worker short-url guard")
 
 # ---------------------------------------------------------------------------
-# Probe Budget (read-path fast detection)
+# Probe Budget (Read-Path Fast Detection)
 # ---------------------------------------------------------------------------
 
 s = get_settings()
