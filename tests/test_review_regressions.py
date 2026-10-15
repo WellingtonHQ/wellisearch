@@ -364,11 +364,11 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         seen_k = []
 
         async def fake_index(
-            query,
-            k,
-            max_age_days,
-            widened=False,
-        ):
+            query: str,
+            k: int,
+            max_age_days: float | None,
+            widened: bool = False,
+        ) -> tuple[list[dict], int, str | None]:
             seen_k.append(k)
             return [], 0, None
 
