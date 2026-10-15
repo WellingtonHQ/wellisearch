@@ -51,6 +51,7 @@ log = logging.getLogger("wellisearch.worker")
 ERROR_DETAIL_MAX_LEN = 1000    # max chars kept in a crawl error detail (crawl_log)
 ERROR_REPR_MAX_LEN = 500       # max chars kept in a crash repr (crawl_log)
 REFRESH_ERROR_MAX_LEN = 200    # max chars kept in a refresh-stats error entry
+DRAIN_OVERFETCH = 2            # claim window per drain: up to N× the effective cap, so failures/routing don't starve a tick
 TRIM_THRESHOLD = 0             # malloc_trim threshold: 0 releases all returnable memory
 
 # runtime state for the dashboard "Now" panel
@@ -231,7 +232,7 @@ async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
         SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'fast'
           {src_filter} ORDER BY enqueued_at LIMIT %s
         """,
-        (s.WORKER_BUDGET_PER_RUN * 2,),
+        (s.WORKER_BUDGET_PER_RUN * DRAIN_OVERFETCH,),
     )
     log.info(
         "tick: draining fast lane (%d pending in budget window)%s",
@@ -286,7 +287,7 @@ async def _drain_cf_queue(deadline: float, manual_only: bool = False) -> dict:
         SELECT url FROM crawl_queue WHERE status = 'pending' AND lane = 'cf'
           {src_filter} ORDER BY enqueued_at LIMIT %s
         """,
-        (s.CRAWL_CHALLENGE_PARALLEL * 2,),
+        (s.CRAWL_CHALLENGE_PARALLEL * DRAIN_OVERFETCH,),
     )
     if not rows:
         return {"processed": 0}
