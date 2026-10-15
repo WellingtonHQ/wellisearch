@@ -751,10 +751,12 @@ async def _orphan_release() -> str:
     started = asyncio.Event()
 
     async def owner_fn() -> None:
+        """Signal start, then hang until its task is cancelled."""
         started.set()
         await asyncio.sleep(30.0)  # hangs until its task is cancelled
 
     async def unused_fn() -> None:
+        """Placeholder; joiners never run fn — they dedup onto the in-flight future."""
         return None  # joiners never run fn — they dedup onto the in-flight future
 
     owner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "fetch", owner_fn))

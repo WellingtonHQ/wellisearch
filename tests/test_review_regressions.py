@@ -369,6 +369,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             max_age_days: float | None,
             widened: bool = False,
         ) -> tuple[list[dict], int, str | None]:
+            """Record the requested k (asserted to be clamped) and return an empty local hit."""
             seen_k.append(k)
             return [], 0, None
 

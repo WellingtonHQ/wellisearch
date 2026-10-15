@@ -113,17 +113,21 @@ print("OK url normalization")
 
 class _FakeTitleEl:
     def __init__(self, text: str) -> None:
+        """Store the title text."""
         self._text = text
 
     def get_all_text(self) -> str:
+        """Return the stored title text."""
         return self._text
 
 
 class _FakeStealthPage:
     def __init__(self, texts: list[str]) -> None:
+        """Store the list of <title> texts."""
         self._texts = texts
 
     def css(self, selector: str) -> list[_FakeTitleEl]:
+        """Assert the selector is 'title' and return one fake element per text."""
         assert selector == "title"
         return [_FakeTitleEl(t) for t in self._texts]
 
@@ -360,6 +364,7 @@ print("OK refresh backoff formula")
 # ---------------------------------------------------------------------------
 
 def _result(attempts: list[dict]) -> CrawlResult:
+    """Build a failed CrawlResult from tier attempts (failure_detail fixture)."""
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
 
 
