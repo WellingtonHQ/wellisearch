@@ -372,9 +372,37 @@ async def _resolve_page(url: str) -> dict:
             "crawl_ms": 0,
         }
 
-    # While the worker is paused, fetch-sourced queue rows (bot-wall challenges,
-    # timeout re-queues) won't run until resume — error text must say so instead
-    # of quoting a seconds-based retry ETA that would never come true.
+    t_crawl = await _run_probe_with_deadline(url, s, needs_refresh)
+    # store_page canonicalized the URL, so read back by the canonical form.
+    page = await db.page_get(normalize_url(url))
+    crawl_ms = int((time.monotonic() - t_crawl) * 1000)
+    md = (page or {}).get("fit_markdown") or ""
+    if not md:
+        raise RuntimeError(f"crawl succeeded but no content stored for {url}")
+    return {
+        "url": url,
+        "title": (page or {}).get("title") or title_from_markdown(md) or url,
+        "content": md,
+        "from_index": False,
+        "fetch_count": (page or {}).get("fetch_count") or 0,
+        "index_ms": index_ms,
+        "crawl_ms": crawl_ms,
+    }
+
+
+async def _run_probe_with_deadline(
+    url: str,
+    s: Settings,
+    needs_refresh: bool,
+) -> float:
+    """The on-demand probe leg of _resolve_page: run the crawl task under
+    FETCH_TIMEOUT_S and return its start time (t_crawl).
+
+    While the worker is paused, fetch-sourced queue rows (bot-wall challenges,
+    timeout re-queues) won't run until resume — error text must say so instead
+    of quoting a seconds-based retry ETA that would never come true. A deadline
+    hit adopts the orphan probe and re-queues the URL; a failed refresh-triggered
+    re-crawl bumps its backoff."""
     paused = await db.worker_paused()
 
     if await db.queue_challenge_in_flight(normalize_url(url)):
@@ -408,21 +436,7 @@ async def _resolve_page(url: str) -> dict:
         # backoff bump the next fetch would run the same full browser crawl.
         await _record_failed_refresh(url, needs_refresh)
         raise
-    # store_page canonicalized the URL, so read back by the canonical form.
-    page = await db.page_get(normalize_url(url))
-    crawl_ms = int((time.monotonic() - t_crawl) * 1000)
-    md = (page or {}).get("fit_markdown") or ""
-    if not md:
-        raise RuntimeError(f"crawl succeeded but no content stored for {url}")
-    return {
-        "url": url,
-        "title": (page or {}).get("title") or title_from_markdown(md) or url,
-        "content": md,
-        "from_index": False,
-        "fetch_count": (page or {}).get("fetch_count") or 0,
-        "index_ms": index_ms,
-        "crawl_ms": crawl_ms,
-    }
+    return t_crawl
 
 
 async def _probe_crawl(url: str, paused: bool = False) -> dict:

@@ -68,24 +68,7 @@ async def store_page(
 
     # unchanged? (hash + model must both match, else re-embed is required)
     existing = await db.page_get(url)
-    if (
-        existing
-        and existing.get("content_hash") == digest
-        and existing.get("embedding_model") == s.EMBED_MODEL
-    ):
-        # Re-embed only: the content is already current, so nothing is written
-        # — and no crawl-time values are stamped (nothing was fetched).
-        if not crawled:
-            return "unchanged", 0
-        # Backfill the title too: pages crawled before titles were stored have
-        # title IS NULL, and recrawl/refresh must refresh crawl-time values
-        # even when the content hash matches. COALESCE keeps the stored title
-        # when no fresh one was crawled (title=None passes NULL through).
-        await db.execute(
-            "UPDATE pages SET title = COALESCE(%s, title), last_status = 'unchanged', "
-            "last_crawled = now(), crawl_count = crawl_count + 1 WHERE url = %s",
-            (title, url),
-        )
+    if await _unchanged_short_circuit(existing, digest, crawled, title, url):
         return "unchanged", 0
 
     # chunk + embed (CPU-bound → both off the event loop; chunking on the
@@ -95,6 +78,78 @@ async def store_page(
     if chunks and len(vectors) != len(chunks):
         raise RuntimeError(f"embed returned {len(vectors)} vectors for {len(chunks)} chunks")
 
+    page_sql, page_params = _page_upsert_sql(url, title, markdown, digest, crawled)
+
+    # chunks.last_crawled is NOT NULL: when re-storing without a fresh fetch,
+    # mirror the page's real last crawl time (a re-embed doesn't make content
+    # fresher); COALESCE falls back to now() for pages never crawled.
+    chunk_ts = None if crawled else (existing or {}).get("last_crawled")
+
+    async with db.transaction() as conn:
+        await conn.execute(page_sql, page_params)
+        await conn.execute("DELETE FROM chunks WHERE url = %s", (url,))
+        if chunks:
+            # vectors pass as list[float]; the pgvector adapter (db.py) serializes.
+            # executemany = batch mode (all executions sent in one message)
+            cur = conn.cursor()
+            await cur.executemany(
+                "INSERT INTO chunks (url, seq, text, embedding, last_crawled) "
+                "VALUES (%s, %s, %s, %s, COALESCE(%s, now()))",
+                [(url, i, text, vec, chunk_ts) for i, (text, vec) in enumerate(zip(chunks, vectors))],
+            )
+    return "ok", len(chunks)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _unchanged_short_circuit(
+    existing: dict | None,
+    digest: str,
+    crawled: bool,
+    title: str | None,
+    url: str,
+) -> bool:
+    """Whether the stored page is already current (same content hash AND same
+    embedding model). When it is and `crawled` is set, backfill the title and
+    refresh crawl-time values — pages crawled before titles were stored have
+    title IS NULL, and recrawl/refresh must refresh crawl-time values even when
+    the content hash matches. COALESCE keeps the stored title when no fresh one
+    was crawled (title=None passes NULL through). True means skip chunking /
+    embedding entirely."""
+    s = get_settings()
+    if not (
+        existing
+        and existing.get("content_hash") == digest
+        and existing.get("embedding_model") == s.EMBED_MODEL
+    ):
+        return False
+    # Re-embed only: the content is already current, so nothing is written
+    # — and no crawl-time values are stamped (nothing was fetched).
+    if not crawled:
+        return True
+    await db.execute(
+        "UPDATE pages SET title = COALESCE(%s, title), last_status = 'unchanged', "
+        "last_crawled = now(), crawl_count = crawl_count + 1 WHERE url = %s",
+        (title, url),
+    )
+    return True
+
+
+def _page_upsert_sql(
+    url: str,
+    title: str | None,
+    markdown: str,
+    digest: str,
+    crawled: bool,
+) -> tuple[str, tuple[object, ...]]:
+    """The pages upsert SQL + params for a fresh store.
+
+    `crawled=True` stamps crawl-time values (last_crawled = now(), last_status
+    'ok', crawl_count + 1); a re-embed of already-stored content passes
+    crawled=False so those keep their stored values."""
+    s = get_settings()
     domain = domain_of(url)
     if crawled:
         page_sql = """
@@ -128,30 +183,8 @@ async def store_page(
               embedding_model = EXCLUDED.embedding_model
             """
         page_params = (url, title, domain, markdown, digest, s.EMBED_MODEL, title, domain)
+    return page_sql, page_params
 
-    # chunks.last_crawled is NOT NULL: when re-storing without a fresh fetch,
-    # mirror the page's real last crawl time (a re-embed doesn't make content
-    # fresher); COALESCE falls back to now() for pages never crawled.
-    chunk_ts = None if crawled else (existing or {}).get("last_crawled")
-
-    async with db.transaction() as conn:
-        await conn.execute(page_sql, page_params)
-        await conn.execute("DELETE FROM chunks WHERE url = %s", (url,))
-        if chunks:
-            # vectors pass as list[float]; the pgvector adapter (db.py) serializes.
-            # executemany = batch mode (all executions sent in one message)
-            cur = conn.cursor()
-            await cur.executemany(
-                "INSERT INTO chunks (url, seq, text, embedding, last_crawled) "
-                "VALUES (%s, %s, %s, %s, COALESCE(%s, now()))",
-                [(url, i, text, vec, chunk_ts) for i, (text, vec) in enumerate(zip(chunks, vectors))],
-            )
-    return "ok", len(chunks)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _with_title(markdown: str, title: str | None) -> str:
     """Prepend the page title as an H1 so it participates in chunking and

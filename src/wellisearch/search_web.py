@@ -108,32 +108,9 @@ async def search_web(
             query, k, max_age_days, widened=(search_mode == "auto")
         )
 
-    # Auto mode: each row must clear all three per-row gates — coverage, similarity,
-    # and distinctive-term coverage (a page missing every rare / brand query word
-    # cannot serve). A full set of k passing rows serves; an incomplete set can also
-    # serve if several pass or one is strongly similar. This lets indexed provider
-    # hits satisfy repeat queries without trusting a marginal lone match or off-brand
-    # junk. Local mode bypasses the gate; provider mode has no local rows.
-    # Auto-mode serving policies (docs/ranking.md): a union candidate window
-    # (top-N by score ∪ top-M by similarity) so semantically close pages are
-    # always considered, and a job-board de-rank for non-job-intent queries.
-    # Local mode serves the raw index order untouched.
-    candidates = local_rows
-    if search_mode == "auto":
-        candidates = _candidate_rows(local_rows, k)
-        if not _job_intent(query, s.job_intent_terms):
-            candidates = _apply_job_board_penalty(
-                candidates,
-                s.job_boards,
-                s.SEARCH_JOB_BOARD_PENALTY,
-            )
-    passing = [r for r in candidates if _passes_local_gate(r)]
-    # Among gate-passing rows, similarity is the primary topical signal and score
-    # is rank-only (docs/ranking.md) — serve the most topically similar first, with
-    # score as the tie-break. This keeps a semantically strong page ahead of pages
-    # that only accumulate RRF mass from many lexically matching chunks.
-    passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
-    strong = [r for r in passing if _passes_partial_local_gate(r)]
+    # Auto mode gates the rows before serving (docs/ranking.md); local mode
+    # serves the raw index order untouched; provider mode has no local rows.
+    passing, strong = _gate_local_rows(local_rows, k, query, search_mode)
 
     source: str
     results: list[dict]
@@ -174,10 +151,80 @@ async def search_web(
 
     await db.log_search(query, source, len(results), results)
 
-    # Envelope: structured data only. The Markdown body is rendered at the
-    # surfaces (tools.py for MCP, app.py for REST) via render_search_markdown.
-    # index_ms is only present when the index leg actually ran — provider
-    # mode never consults the index, so `index: 0 ms` would mislead.
+    return _build_envelope(
+        results,
+        source,
+        degraded,
+        errors,
+        provider_ms,
+        index_ms,
+        search_mode,
+        t_start,
+        index_error,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _gate_local_rows(
+    local_rows: list[dict],
+    k: int,
+    query: str,
+    search_mode: str,
+) -> tuple[list[dict], list[dict]]:
+    """Gate the local rows before serving (docs/ranking.md): a union candidate
+    window (top-N by score ∪ top-M by similarity) so semantically close pages
+    are always considered, and a job-board de-rank for non-job-intent queries.
+    Each row must clear all three per-row gates — coverage, similarity, and
+    distinctive-term coverage (a page missing every rare / brand query word
+    cannot serve). A full set of k passing rows serves; an incomplete set can
+    also serve if several pass or one is strongly similar. This lets indexed
+    provider hits satisfy repeat queries without trusting a marginal lone match
+    or off-brand junk. Local mode bypasses the gate for serving: `passing` and
+    `strong` are still computed but unused, and the caller serves the raw index
+    order untouched; provider mode has no local rows at all. Returns
+    (passing, strong), where `strong` is the passing subset similar enough to
+    serve without a full set."""
+    s = get_settings()
+    candidates = local_rows
+    if search_mode == "auto":
+        candidates = _candidate_rows(local_rows, k)
+        if not _job_intent(query, s.job_intent_terms):
+            candidates = _apply_job_board_penalty(
+                candidates,
+                s.job_boards,
+                s.SEARCH_JOB_BOARD_PENALTY,
+            )
+    passing = [r for r in candidates if _passes_local_gate(r)]
+    # Among gate-passing rows, similarity is the primary topical signal and score
+    # is rank-only (docs/ranking.md) — serve the most topically similar first, with
+    # score as the tie-break. This keeps a semantically strong page ahead of pages
+    # that only accumulate RRF mass from many lexically matching chunks.
+    passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
+    strong = [r for r in passing if _passes_partial_local_gate(r)]
+    return passing, strong
+
+
+def _build_envelope(
+    results: list[dict],
+    source: str,
+    degraded: bool,
+    errors: list[dict],
+    provider_ms: int | None,
+    index_ms: int,
+    search_mode: str,
+    t_start: float,
+    index_error: str | None,
+) -> dict:
+    """The structured response envelope (structured data only — the Markdown
+    body is rendered at the surfaces via render_search_markdown).
+
+    `index_ms` is only present when the index leg actually ran — provider mode
+    never consults the index, so `index: 0 ms` would mislead. A local-mode
+    failure carries its diagnostics in `index_error` (mirrors provider_errors)
+    so "the index is empty" and "the index is down" are distinguishable."""
     timing: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
     if search_mode != "provider":
         timing["index_ms"] = index_ms
@@ -200,10 +247,6 @@ async def search_web(
         out["index_error"] = index_error
     return out
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _passes_local_gate(r: dict) -> bool:
     """Whether one local row clears all three gate conditions: coverage, similarity,

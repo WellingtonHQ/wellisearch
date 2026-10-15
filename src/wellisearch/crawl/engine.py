@@ -33,29 +33,7 @@ async def crawl(url: str) -> CrawlResult:
     url = await resolve_short_url(url)
     if url is None:
         raise RuntimeError(f"could not resolve short url {original} to its final destination")
-    p = match(url)
-    ex = extractors.for_url(url)
-    request_url = url
-    if p.name == "reddit":
-        # Only single-post pages need browser-first comment hydration; other
-        # reddit pages (listings, profiles, search) keep the standard ladder.
-        if extractors.reddit.is_post_url(url):
-            request_url = extractors.reddit.comment_request_url(url)
-        else:
-            p = DEFAULT_POLICY
-            ex = extractors.GenericExtractor()
-    if p.name == "homedepot":
-        # Only product detail pages carry the JSON-LD Product node; category and
-        # review pages keep the standard generic path.
-        if not extractors.homedepot.is_product_url(url):
-            p = DEFAULT_POLICY
-            ex = extractors.GenericExtractor()
-    if p.name == "walmart":
-        # Only product detail pages carry the JSON-LD ProductGroup node; search and
-        # category pages keep the standard generic path.
-        if not extractors.walmart.is_product_url(url):
-            p = DEFAULT_POLICY
-            ex = extractors.GenericExtractor()
+    request_url, p, ex = _select_policy_and_extractor(url)
     attempts: list[dict] = []
     best: Fitted | None = None
     start = time.monotonic()
@@ -127,6 +105,38 @@ async def crawl(url: str) -> CrawlResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _select_policy_and_extractor(url: str) -> tuple[str, Policy, "extractors.Extractor"]:
+    """Policy + extractor selection for one URL, plus the request URL.
+
+    Reddit single-post pages get browser-first comment hydration (a rewritten
+    request URL); reddit listings/profiles/search and non-product homedepot /
+    walmart pages fall back to the generic policy + extractor."""
+    p = match(url)
+    ex = extractors.for_url(url)
+    request_url = url
+    if p.name == "reddit":
+        # Only single-post pages need browser-first comment hydration; other
+        # reddit pages (listings, profiles, search) keep the standard ladder.
+        if extractors.reddit.is_post_url(url):
+            request_url = extractors.reddit.comment_request_url(url)
+        else:
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
+    if p.name == "homedepot":
+        # Only product detail pages carry the JSON-LD Product node; category and
+        # review pages keep the standard generic path.
+        if not extractors.homedepot.is_product_url(url):
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
+    if p.name == "walmart":
+        # Only product detail pages carry the JSON-LD ProductGroup node; search and
+        # category pages keep the standard generic path.
+        if not extractors.walmart.is_product_url(url):
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
+    return request_url, p, ex
+
 
 def _next_index_after_escalation(
     p: Policy,
