@@ -19,11 +19,17 @@ from wellisearch.crawl.extractors.base import (
     generic_md,
     title_from_markdown,
 )
+from wellisearch.crawl.extractors.base import (
+    LOADING_STUB_MAX_CHARS,
+    GenericExtractor,
+    _is_loading_stub,
+)
 from wellisearch.crawl.extractors.bestbuy import BestBuyExtractor
 from wellisearch.crawl.extractors.brave import (
     BraveExtractor,
     _visible_text_markdown,
 )
+import wellisearch.crawl.extractors.brave as _brave_mod
 from wellisearch.crawl.extractors.greenhouse import GreenhouseExtractor
 from wellisearch.crawl.extractors.guardian import GuardianExtractor
 from wellisearch.crawl.extractors.homedepot import (
@@ -624,7 +630,6 @@ assert ex.accept(fitted)
 
 # trafilatura-blind DOM (e.g. a future Svelte build): the visible-text fallback
 # must rescue it and flag itself so the failure mode stays diagnosable.
-import wellisearch.crawl.extractors.brave as _brave_mod
 _orig_generic = _brave_mod.generic_md
 _brave_mod.generic_md = lambda html: ""
 try:
@@ -924,12 +929,6 @@ print("OK ap")
 # ---------------------------------------------------------------------------
 # Generic (loading-stub escalation)
 # ---------------------------------------------------------------------------
-
-from wellisearch.crawl.extractors.base import (
-    LOADING_STUB_MAX_CHARS,
-    GenericExtractor,
-    _is_loading_stub,
-)
 
 assert _is_loading_stub(
     "Intro text about the page.", "<html><body>Loading...</div></body></html>"
