@@ -280,7 +280,7 @@ def _passes_partial_local_gate(r: dict) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Serving policies (auto mode only; docs/ranking.md)
+# Serving Policies (Auto Mode Only; docs/ranking.md)
 # ---------------------------------------------------------------------------
 
 def _split_url(url: str) -> tuple[str, str] | None:
