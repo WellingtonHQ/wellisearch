@@ -214,6 +214,7 @@ def get_gateway() -> Gateway:
 async def shutdown_gateway() -> None:
     """Close the gateway (if any) and clear the singleton."""
     global _gateway
-    if _gateway is not None:
-        await _gateway.close()
-        _gateway = None
+    if _gateway is None:
+        return
+    await _gateway.close()
+    _gateway = None

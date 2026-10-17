@@ -185,11 +185,12 @@ def _first_price_text(soup: BeautifulSoup, sel: str) -> str | None:
 def _stock(soup: BeautifulSoup) -> str | None:
     """Availability text from #availability."""
     el = soup.find(id="availability")
-    if el:
-        t = el.get_text(" ", strip=True)
-        if t:
-            return t
-    return None
+    if el is None:
+        return None
+    t = el.get_text(" ", strip=True)
+    if not t:
+        return None
+    return t
 
 
 def _feature_bullets(soup: BeautifulSoup) -> list[str]:
@@ -248,11 +249,12 @@ def _rating(soup: BeautifulSoup) -> str | None:
 def _review_count(soup: BeautifulSoup) -> str | None:
     """Review/rating count text from #acrCustomerReviewText."""
     el = soup.find(id="acrCustomerReviewText")
-    if el is not None:
-        t = el.get_text(strip=True)
-        if t:
-            return t
-    return None
+    if el is None:
+        return None
+    t = el.get_text(strip=True)
+    if not t:
+        return None
+    return t
 
 
 def _reported_review_count(soup: BeautifulSoup) -> int | None:
@@ -269,11 +271,12 @@ def _reported_review_count(soup: BeautifulSoup) -> int | None:
 def _seller(soup: BeautifulSoup) -> str | None:
     """Buy-box "Sold by" seller from #sellerProfileTriggerId."""
     el = soup.find(id="sellerProfileTriggerId")
-    if el is not None:
-        t = el.get_text(strip=True)
-        if t:
-            return t
-    return None
+    if el is None:
+        return None
+    t = el.get_text(strip=True)
+    if not t:
+        return None
+    return t
 
 
 def _reviews_heading(limit: int) -> str:

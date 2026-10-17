@@ -769,13 +769,14 @@ def _pick_from_domain(
     picked: list[dict[str, Any]],
 ) -> bool:
     """Pick the next row for a domain if within the cap and not already seen."""
-    if round_idx < min(cap, len(rows)):
-        row = rows[round_idx]
-        if row["url"] not in seen:
-            seen.add(row["url"])
-            picked.append(row)
-            return True
-    return False
+    if round_idx >= min(cap, len(rows)):
+        return False
+    row = rows[round_idx]
+    if row["url"] in seen:
+        return False
+    seen.add(row["url"])
+    picked.append(row)
+    return True
 
 def _parse_models(spec: str) -> list[tuple[str, str]]:
     """(label, tag) pairs from a comma-separated --models spec (label=tag or bare tag)."""

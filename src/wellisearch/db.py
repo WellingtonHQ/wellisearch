@@ -147,9 +147,10 @@ class Database:
 
     async def close(self: Database) -> None:
         """Close the pool (if open) and clear the reference."""
-        if self._pool is not None:
-            await self._pool.close()
-            self._pool = None
+        if self._pool is None:
+            return
+        await self._pool.close()
+        self._pool = None
 
     # ---------------------------------------------------------------------------
     # Raw API
@@ -562,12 +563,7 @@ class Database:
     ) -> None:
         """Finish a claimed row: done on success, else back to pending (attempts
         left) or failed (attempts exhausted)."""
-        if ok:
-            await self.execute(
-                "UPDATE crawl_queue SET status = 'done' WHERE url = %s AND status = 'in_flight'",
-                (url,),
-            )
-        else:
+        if not ok:
             row = await self.fetch_one(
                 "SELECT attempts FROM crawl_queue WHERE url = %s AND status = 'in_flight'",
                 (url,),
@@ -585,6 +581,11 @@ class Database:
                     "WHERE url = %s AND status = 'in_flight'",
                     (error, url),
                 )
+            return
+        await self.execute(
+            "UPDATE crawl_queue SET status = 'done' WHERE url = %s AND status = 'in_flight'",
+            (url,),
+        )
 
     async def queue_challenge_in_flight(self: Database, url: str) -> bool:
         """True when a CF challenge solve is already queued or running for `url`."""
