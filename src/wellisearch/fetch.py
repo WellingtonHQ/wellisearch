@@ -45,6 +45,7 @@ from .worker import crawl_url
 log = logging.getLogger("wellisearch.fetch")
 
 ERROR_MAX_LEN = 300  # max chars kept in a per-URL fetch error message
+FAST_LANE_TIER_COUNT = 2  # default fast lane = http + browser; ETA assumes one CRAWL_TIMEOUT_S per tier
 
 _OMITTED = object()  # sentinel: "parameter not provided"
 
@@ -490,7 +491,7 @@ def _timed_out_error(s: Settings, paused: bool = False) -> str:
             "it keeps running in the background and was re-queued - "
             "it will run once background indexing resumes"
         )
-    eta = s.KICK_DEBOUNCE_S + 2 * int(s.CRAWL_TIMEOUT_S)
+    eta = s.KICK_DEBOUNCE_S + FAST_LANE_TIER_COUNT * int(s.CRAWL_TIMEOUT_S)
     return (
         f"on-demand crawl timed out after {int(s.FETCH_TIMEOUT_S)} seconds; "
         f"it keeps running in the background and was re-queued - try again in ~{eta} seconds"

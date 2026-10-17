@@ -20,6 +20,8 @@ from .base import trim_md
 from . import register
 from ..results import Fitted, Rendered
 
+MAX_STAR_RATING = 5  # star ratings are on a 1-5 scale
+
 
 class HomeDepotExtractor:
     """Home Depot product page: JSON-LD Product node + site gate."""
@@ -234,7 +236,7 @@ def _star_text(value: object) -> str | None:
         v = float(value)
     except (TypeError, ValueError):
         return None
-    if v <= 0 or v > 5:
+    if v <= 0 or v > MAX_STAR_RATING:
         return None
     return f"{v:g} out of 5 stars"
 

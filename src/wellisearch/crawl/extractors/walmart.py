@@ -25,6 +25,8 @@ from . import register
 from ..results import Fitted, Rendered
 from ..signals import find_price, find_stock
 
+MAX_STAR_RATING = 5  # star ratings are on a 1-5 scale
+
 
 class WalmartExtractor:
     """Walmart product page: JSON-LD ProductGroup (walmart.ca) or legacy generic fit."""
@@ -247,7 +249,7 @@ def _star_text(value: object) -> str | None:
         v = float(value)
     except (TypeError, ValueError):
         return None
-    if v <= 0 or v > 5:
+    if v <= 0 or v > MAX_STAR_RATING:
         return None
     return f"{v:g} out of 5 stars"
 

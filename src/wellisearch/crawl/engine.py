@@ -19,6 +19,8 @@ from .shorturl import resolve_short_url
 
 log = logging.getLogger("wellisearch.crawl.engine")
 
+CF_BACKSTOP_FACTOR = 2  # CF-lane browser backstop = goto + full challenge loop (one CF timeout each)
+
 
 async def crawl(url: str) -> CrawlResult:
     """Crawl one URL through its policy's tier ladder.
@@ -160,7 +162,7 @@ def _flat_backstop(name: str) -> float:
     if name == "stealth":
         return float(s.CRAWL_STEALTH_TIMEOUT_S)
     if name == "browser" and get_lane() == CF:
-        return float(s.CRAWL_CF_TIMEOUT_S) * 2
+        return float(s.CRAWL_CF_TIMEOUT_S) * CF_BACKSTOP_FACTOR
     return float(s.CRAWL_TIMEOUT_S)
 
 

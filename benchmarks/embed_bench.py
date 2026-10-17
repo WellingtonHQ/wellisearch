@@ -524,6 +524,9 @@ def main(argv: list[str] | None = None) -> int:
 # Helpers
 # ---------------------------------------------------------------------------
 
+NATIVE_MAX_LEN_SENTINEL = 100000  # model_max_length above this is a sentinel/unknown, so trust the CLI args
+
+
 def _effective_max_len(tok: object, args_max: int) -> int:
     """Cap the requested max length at the model's true limit (if known)."""
     native = getattr(tok, "model_max_length", None)
@@ -531,7 +534,7 @@ def _effective_max_len(tok: object, args_max: int) -> int:
         native = int(native)
     except (TypeError, ValueError):
         native = None
-    if native is None or native > 100000:  # sentinel / unknown -> trust args
+    if native is None or native > NATIVE_MAX_LEN_SENTINEL:  # sentinel / unknown -> trust args
         return args_max
     return min(args_max, native)
 
