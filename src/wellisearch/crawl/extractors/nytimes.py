@@ -1,9 +1,9 @@
 """NYTimesExtractor: full-body gate, stealth escalation on paywall stubs (design §3.2)."""
 from __future__ import annotations
 
-from ..results import Escalate, Fitted, Rendered
-from . import register
 from .base import generic_md, trim_md
+from . import register
+from ..results import Escalate, Fitted, Rendered
 
 MIN_ARTICLE_CHARS = 2000  # metered-paywall stub is ~1.8k chars; full articles 11k+
 

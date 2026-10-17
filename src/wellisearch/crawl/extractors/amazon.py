@@ -24,9 +24,9 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup, Tag
 
 from ...config import get_settings
-from ..results import Fitted, Rendered
-from . import register
 from .base import trim_md
+from . import register
+from ..results import Fitted, Rendered
 
 
 class AmazonExtractor:

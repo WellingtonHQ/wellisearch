@@ -16,7 +16,6 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from . import queue
 from .config import get_settings
 from .crawl.shorturl import resolve_short_url
 from .db import db
@@ -27,6 +26,7 @@ from .fetch import (
     render_fetch_pages_markdown,
 )
 from .providers import get_gateway
+from . import queue
 from .search_web import render_search_markdown, search_web as _search_web
 from .serialize import resolve_format, to_json
 from .truncation import STRATEGIES

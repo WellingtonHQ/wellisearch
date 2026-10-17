@@ -1,9 +1,9 @@
 """APExtractor: hybrid fit-markdown + head-decoy trim (design §3.2)."""
 from __future__ import annotations
 
-from ..results import Fitted, Rendered
-from . import register
 from .base import MIN_NEWS_ARTICLE_BODY_CHARS, generic_md, trim_md
+from . import register
+from ..results import Fitted, Rendered
 
 HEAD_DECOYS = ("AP News", "Most Popular", "Newsletters", "Sign up")
 MIN_REAL_PARA_CHARS = 80  # a real article paragraph, not a nav/decoy line

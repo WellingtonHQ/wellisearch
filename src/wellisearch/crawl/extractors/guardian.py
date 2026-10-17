@@ -1,9 +1,9 @@
 """GuardianExtractor: hybrid fit-markdown + related-links trim (design §3.2)."""
 from __future__ import annotations
 
-from ..results import Fitted, Rendered
-from . import register
 from .base import MIN_NEWS_ARTICLE_BODY_CHARS, cut_at_first, generic_md, trim_md
+from . import register
+from ..results import Fitted, Rendered
 
 RELATED = ("Explore more", "Most commented", "Most viewed", "Related stories")
 

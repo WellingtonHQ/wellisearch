@@ -12,9 +12,9 @@ from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify as mdify
 
 from ...config import get_settings
-from ..results import Fitted, Rendered
-from . import register
 from .base import GenericExtractor, trim_md
+from . import register
+from ..results import Fitted, Rendered
 
 _POST_PATH_RE = re.compile(r"^/(?:r/[^/]+/)?comments/[^/]+", re.IGNORECASE)
 

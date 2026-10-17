@@ -20,10 +20,10 @@ import re
 from urllib.parse import urlparse
 
 from ...config import get_settings
+from .base import MIN_PRODUCT_CHARS, generic_md, trim_md
+from . import register
 from ..results import Fitted, Rendered
 from ..signals import find_price, find_stock
-from . import register
-from .base import MIN_PRODUCT_CHARS, generic_md, trim_md
 
 
 class WalmartExtractor:

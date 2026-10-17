@@ -36,12 +36,12 @@ import datetime as dt
 import logging
 import time
 
-from . import crawler, queue
 from .config import get_settings
 from .crawl.extractors.base import title_from_markdown
 from .crawl.lane import CF, FAST, reset_lane, set_lane
 from .crawl.results import ChallengeDetected
 from .crawl.shorturl import resolve_short_url
+from . import crawler, queue
 from .db import db
 from .index import store_page
 from .urlnorm import normalize_url

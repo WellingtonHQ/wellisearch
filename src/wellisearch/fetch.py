@@ -21,7 +21,6 @@ from urllib.parse import urlparse
 
 from psycopg_pool import PoolTimeout
 
-from . import crawler, queue
 from .config import Settings, get_settings
 from .crawl.extractors.amazon import needs_refresh as amazon_needs_refresh
 from .crawl.extractors.base import title_from_markdown
@@ -31,6 +30,7 @@ from .crawl.extractors.walmart import needs_refresh as walmart_needs_refresh
 from .crawl.probe import reset_probe_budget, set_probe_budget
 from .crawl.results import ChallengeDetected
 from .crawl.shorturl import resolve_short_url
+from . import crawler, queue
 from .db import db
 from .serialize import format_timing
 from .truncation import (
