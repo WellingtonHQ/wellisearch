@@ -108,16 +108,42 @@ async def search_web(
             query, k, max_age_days, widened=(search_mode == "auto")
         )
 
-    # Auto mode: each row must clear all three per-row gates — coverage, similarity,
-    # and distinctive-term coverage (a page missing every rare / brand query word
-    # cannot serve). A full set of k passing rows serves; an incomplete set can also
-    # serve if several pass or one is strongly similar. This lets indexed provider
-    # hits satisfy repeat queries without trusting a marginal lone match or off-brand
-    # junk. Local mode bypasses the gate; provider mode has no local rows.
-    # Auto-mode serving policies (docs/ranking.md): a union candidate window
-    # (top-N by score ∪ top-M by similarity) so semantically close pages are
-    # always considered, and a job-board de-rank for non-job-intent queries.
-    # Local mode serves the raw index order untouched.
+    # Local-hit gating: candidate window, job-board de-rank, per-row gates
+    # (auto mode only; docs/ranking.md).
+    passing, strong = _gate_local_rows(local_rows, k, search_mode, query)
+
+    # Choose the serving source: local (full / partial / strong) or the
+    # provider gateway.
+    source, results, degraded, errors, provider_ms = await _serve_answer(
+        query, k, crawl_n, search_mode, local_rows, passing, strong
+    )
+
+    await db.log_search(query, source, len(results), results)
+
+    return _build_envelope(
+        results, source, degraded, errors, index_ms, index_error,
+        provider_ms, search_mode, t_start,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _gate_local_rows(
+    local_rows: list[dict],
+    k: int,
+    search_mode: str,
+    query: str,
+) -> tuple[list[dict], list[dict]]:
+    """Auto-mode local-hit gating (docs/ranking.md): a union candidate window
+    (top-N by score ∪ top-M by similarity) so semantically close pages are
+    always considered, a job-board de-rank for non-job-intent queries, and
+    the three per-row gates — coverage, similarity, and distinctive-term
+    coverage (a page missing every rare / brand query word cannot serve).
+    Local mode bypasses the gate; provider mode has no local rows.
+    Returns (passing, strong)."""
+    s = get_settings()
     candidates = local_rows
     if search_mode == "auto":
         candidates = _candidate_rows(local_rows, k)
@@ -134,13 +160,30 @@ async def search_web(
     # that only accumulate RRF mass from many lexically matching chunks.
     passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
     strong = [r for r in passing if _passes_partial_local_gate(r)]
+    return passing, strong
 
-    source: str
-    results: list[dict]
+
+async def _serve_answer(
+    query: str,
+    k: int,
+    crawl_n: int,
+    search_mode: str,
+    local_rows: list[dict],
+    passing: list[dict],
+    strong: list[dict],
+) -> tuple[str, list[dict], bool, list[dict], int | None]:
+    """Choose the serving source and serve it: a full set of k gate-passing
+    rows, an incomplete set when several pass or one is strongly similar
+    (this lets indexed provider hits satisfy repeat queries without trusting
+    a marginal lone match or off-brand junk), the raw index order in local
+    mode, or the provider gateway (auto: no qualifying local set; provider:
+    always). The per-domain cap keeps one site's near-duplicates from
+    flooding the answer set (auto mode only — local mode serves uncapped).
+    Returns (source, results, degraded, errors, provider_ms)."""
+    s = get_settings()
     degraded = False
     errors: list[dict] = []
     provider_ms: int | None = None
-
     if search_mode == "local":
         # local only: serve what the index has — the caller explicitly chose
         # local, so the gate does not apply. No provider fallback.
@@ -171,11 +214,23 @@ async def search_web(
         source, results, degraded, errors, provider_ms = await _provider_search(
             query, k, crawl_n, search_mode, local_rows
         )
+    return source, results, degraded, errors, provider_ms
 
-    await db.log_search(query, source, len(results), results)
 
-    # Envelope: structured data only. The Markdown body is rendered at the
-    # surfaces (tools.py for MCP, app.py for REST) via render_search_markdown.
+def _build_envelope(
+    results: list[dict],
+    source: str,
+    degraded: bool,
+    errors: list[dict],
+    index_ms: int,
+    index_error: str | None,
+    provider_ms: int | None,
+    search_mode: str,
+    t_start: float,
+) -> dict:
+    """The response envelope: structured data only. The Markdown body is
+    rendered at the surfaces (tools.py for MCP, app.py for REST) via
+    render_search_markdown."""
     # index_ms is only present when the index leg actually ran — provider
     # mode never consults the index, so `index: 0 ms` would mislead.
     timing: dict = {"total_ms": int((time.monotonic() - t_start) * 1000)}
@@ -200,10 +255,6 @@ async def search_web(
         out["index_error"] = index_error
     return out
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _passes_local_gate(r: dict) -> bool:
     """Whether one local row clears all three gate conditions: coverage, similarity,
