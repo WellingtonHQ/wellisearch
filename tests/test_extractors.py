@@ -349,7 +349,7 @@ assert not ex.accept(wall)
 # needs_refresh: stale (pre-feature) markdown re-crawls, current markdown doesn't
 hd_url = "https://www.homedepot.com/p/AQUA-TRU-Carafe/325993266"
 assert hd_is_product_url(hd_url)
-assert hd_is_product_url(hd_url + "?MERCH=REC-_-reorder")
+assert hd_is_product_url(f"{hd_url}?MERCH=REC-_-reorder")
 assert not hd_is_product_url("https://www.homedepot.com/p/reviews/AQUA-TRU-Carafe/325993266/1")
 assert not hd_is_product_url("https://www.homedepot.com/b/Appliances-Dishwashers/GE/N-5yc1vZ")
 assert not hd_is_product_url("https://notdepot.com/p/AQUA-TRU-Carafe/325993266")
@@ -709,7 +709,7 @@ reddit_url = "https://www.reddit.com/r/Appliances/comments/1s8pw99/dishwashers_a
 assert match(reddit_url).name == "reddit"
 assert isinstance(for_url(reddit_url), RedditExtractor)
 assert comment_request_url(reddit_url).endswith("?sort=top")
-assert comment_request_url(reddit_url + "?sort=new&foo=bar").endswith("?foo=bar&sort=top")
+assert comment_request_url(f"{reddit_url}?sort=new&foo=bar").endswith("?foo=bar&sort=top")
 assert (
     comment_request_url("https://www.reddit.com/r/x/comments/123/post/?context=3#t1_abc")
     == "https://www.reddit.com/r/x/comments/123/post/?context=3&sort=top#t1_abc"

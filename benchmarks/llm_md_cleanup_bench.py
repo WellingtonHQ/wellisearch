@@ -1023,7 +1023,7 @@ def _report_table_lines(
     if judge:
         header += ["judge_faith", "judge_noise", "judge_preserve"]
     header += ["ttft_ms", "total_ms", "tok_s", "out_tokens"]
-    lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    lines = [f"| {' | '.join(header)} |", f"|{'---|' * len(header)}"]
     for label in labels:
         a = agg[label]
         row = [
@@ -1046,7 +1046,7 @@ def _report_table_lines(
             _fmt_stat(a["tok_s"]),
             _fmt_stat(a["completion_tokens"]),
         ]
-        lines.append("| " + " | ".join(row) + " |")
+        lines.append(f"| {' | '.join(row)} |")
     lines.append("")
     return lines
 

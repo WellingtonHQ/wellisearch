@@ -449,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
     results = []
     run_t0 = time.perf_counter()
     for m in args.model:
-        print(f"### {m} " + "-" * max(0, 60 - len(m)))
+        print(f"### {m} {'-' * max(0, 60 - len(m))}")
         t0 = time.perf_counter()
         r = run_model(m, chunks, queries, truth, args)
         wall = time.perf_counter() - t0
@@ -460,11 +460,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         sp = r["speed"]
         lat = sp["doc_latency"] or {}
+        lat_part = (
+            f" | doc latency median {lat.get('median_ms')}ms / p95 {lat.get('p95_ms')}ms"
+            if lat else ""
+        )
         print(
             f"  speed: {sp['total_tokens']:,} tokens in {sp['embed_seconds']}s "
             f"= {sp['tokens_per_sec']} tok/s"
-            + (f" | doc latency median {lat.get('median_ms')}ms / p95 {lat.get('p95_ms')}ms" if lat else "")
-            + f" | wall {wall:.1f}s"
+            f"{lat_part}"
+            f" | wall {wall:.1f}s"
         )
         results.append(r)
     total_wall = time.perf_counter() - run_t0

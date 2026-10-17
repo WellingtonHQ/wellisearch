@@ -76,7 +76,7 @@ def _is_content_param(name: str, host: str) -> bool:
     if low.startswith("utm_") or low in _UNIVERSAL_TRACKING_PARAMS:
         return False
     for base, params in _HOST_TRACKING_PARAMS.items():
-        if (host == base or host.endswith("." + base)) and low in params:
+        if (host == base or host.endswith(f".{base}")) and low in params:
             return False
     return True
 

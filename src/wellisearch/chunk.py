@@ -108,7 +108,7 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
     if len(chunks) >= 2:
         last_tokens = _tokens(chunks[-1])
         if last_tokens < max(_MIN_CHUNK_TOKENS, budget // STUB_MERGE_DIVISOR):
-            chunks[-2] = chunks[-2] + "\n\n" + chunks[-1]
+            chunks[-2] = f"{chunks[-2]}\n\n{chunks[-1]}"
             chunks.pop()
 
     return chunks

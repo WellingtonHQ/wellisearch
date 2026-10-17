@@ -49,7 +49,7 @@ async def _check_merge_dupes() -> None:
     from wellisearch import merge_dupes
 
     canonical = "https://example.com/merge-review"
-    variant = canonical + "?utm_source=review"
+    variant = f"{canonical}?utm_source=review"
     await db.execute(
         "INSERT INTO pages (url, fetch_count, fit_markdown) VALUES (%s, 1, 'Old'), (%s, 5, 'New')",
         (canonical, variant),
@@ -74,7 +74,7 @@ async def _check_merge_dupes() -> None:
         result = await original(conn, url, group)
         await conn.execute(
             "INSERT INTO chunks (url, seq, text, last_crawled) VALUES (%s, 0, 'Orphan', now())",
-            (canonical + "-orphan",),
+            (f"{canonical}-orphan",),
         )
         return result
 
@@ -190,7 +190,7 @@ async def _store_page_roundtrip() -> None:
     # re-embed of new content (model-change path): rewrites chunks but still
     # must not stamp crawl-time values; chunks mirror the page's last crawl
     status, chunks = await store_page(
-        "https://example.com/pgvector-intro", md + "\n## extra\nextra text.",
+        "https://example.com/pgvector-intro", f"{md}\n## extra\nextra text.",
         title="pgvector introduction", crawled=False,
     )
     assert status == "ok" and chunks >= 2

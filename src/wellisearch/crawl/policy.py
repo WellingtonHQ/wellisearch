@@ -70,7 +70,7 @@ def match(url: str) -> Policy:
     for key in POLICY:
         if best_key is not None and len(key) <= len(best_key):
             continue
-        if host == key or host.endswith("." + key):
+        if host == key or host.endswith(f".{key}"):
             best_key = key
     if best_key is not None:
         return POLICY[best_key]

@@ -336,7 +336,7 @@ def _reviews(node: dict, limit: int) -> list[str]:
         date = review.get("datePublished")
         date_text = date.strip() if isinstance(date, str) else ""
         if isinstance(headline, str) and headline.strip():
-            block.append(f"**{headline.strip()}**" + (f" — {date_text}" if date_text else ""))
+            block.append(f"**{headline.strip()}**{' — ' + date_text if date_text else ''}")
         elif date_text:
             block.append(date_text)
         block.append(body)

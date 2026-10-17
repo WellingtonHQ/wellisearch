@@ -78,9 +78,10 @@ _S = type(_REAL_SETTINGS)(FETCH_TIMEOUT_S=5.0, FETCH_PROBE_TIMEOUT_S=1.0)
 _s = real_get_settings()
 URL_POST = "https://www.reddit.com/r/test/comments/abc123/a_post_title/"
 STALE_MD = "# A post title\n\nPost body without any comments heading."
-FRESH_MD = STALE_MD + "\n" + _comments_heading(
+reddit_heading = _comments_heading(
     _s.CRAWL_REDDIT_COMMENT_RANKING, max(1, _s.CRAWL_REDDIT_MAX_COMMENTS)
 )
+FRESH_MD = f"{STALE_MD}\n{reddit_heading}"
 
 # Preconditions: the fixtures must actually exercise needs_refresh.
 assert needs_refresh(URL_POST, STALE_MD) is True, "STALE_MD must lack the ranking heading"

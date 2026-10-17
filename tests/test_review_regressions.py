@@ -19,7 +19,7 @@ from wellisearch.crawl.extractors.homedepot import _product_node
 from wellisearch.crawl.results import ChallengeDetected
 
 CANONICAL = "https://example.com/article"
-VARIANT = CANONICAL + "?utm_source=review#section"
+VARIANT = f"{CANONICAL}?utm_source=review#section"
 STORED = {"title": "Article", "fit_markdown": "Stored article.", "fetch_count": 2}
 
 
@@ -321,9 +321,9 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
     def test_homedepot_accepts_a_list_at_type(self: ReviewRegressions) -> None:
         """A Product node whose @type is a list still matches (Walmart parity)."""
         html = (
-            '<script type="application/ld+json">'
-            + json.dumps({"@graph": [{"@type": ["Product", "WebPage"], "name": "Widget"}]})
-            + "</script>"
+            f'<script type="application/ld+json">'
+            f'{json.dumps({"@graph": [{"@type": ["Product", "WebPage"], "name": "Widget"}]})}'
+            f"</script>"
         )
         node = _product_node(html)
         self.assertIsNotNone(node)

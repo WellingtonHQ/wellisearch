@@ -97,4 +97,4 @@ class Provider:
         b = cut.rfind(" ")
         if b > limit // 2:
             cut = cut[:b]
-        return cut.rstrip(" ,.;:") + "…"
+        return f"{cut.rstrip(' ,.;:')}…"

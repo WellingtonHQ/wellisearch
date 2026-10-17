@@ -37,10 +37,10 @@ def check(
     global PASS, FAIL
     if cond:
         PASS += 1
-        print(f"  PASS  {name}" + (f"  [{detail}]" if detail else ""))
+        print(f"  PASS  {name}{'  [' + detail + ']' if detail else ''}")
     else:
         FAIL += 1
-        print(f"  FAIL  {name}" + (f"  [{detail}]" if detail else ""))
+        print(f"  FAIL  {name}{'  [' + detail + ']' if detail else ''}")
 
 
 def first_url(markdown: str) -> str | None:
@@ -165,7 +165,7 @@ async def test_search_mode_provider(c: httpx.AsyncClient) -> None:
 async def test_search_mode_local(c: httpx.AsyncClient, url: str) -> None:
     """GET /api/search search_mode=local: index only (a query the index has)."""
     params = {
-        "query": url.split("/")[2] + " introduction",
+        "query": f"{url.split('/')[2]} introduction",
         "k": "5",
         "search_mode": "local",
         "format": "json",
@@ -617,7 +617,7 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
         "fetch json: 200 + content-type json + envelope keys",
         r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
         and all(k in j for k in ("chars", "from_index", "markdown", "ok", "title", "truncated", "url")),
-        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
+        f"{r.headers.get('content-type', '')} {json.dumps(j)[:100]}"
     )
     check(
         "fetch json: timing object with total_ms + index_ms",
@@ -638,7 +638,7 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
         "fetch-bulk json: 200 + content-type json + envelope keys",
         r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
         and all(k in j for k in ("ok", "pages", "pages_fetched", "strategy", "total_chars")),
-        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
+        f"{r.headers.get('content-type', '')} {json.dumps(j)[:100]}"
     )
     check(
         "fetch-bulk json: pages list with content/chars",

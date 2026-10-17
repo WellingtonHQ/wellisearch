@@ -53,9 +53,8 @@ def render_search_markdown(out: dict) -> str:
         lines.append(tline)
     errors = out.get("provider_errors") or []
     if errors:
-        lines.append(
-            "Provider Errors: " + "; ".join(f"{e.get('provider')}: {e.get('error')}" for e in errors)
-        )
+        errs = "; ".join(f"{e.get('provider')}: {e.get('error')}" for e in errors)
+        lines.append(f"Provider Errors: {errs}")
     if out.get("index_error"):
         lines.append(f"Index Error: {out['index_error']}")
 
@@ -288,7 +287,7 @@ def _split_url(url: str) -> tuple[str, str] | None:
     """(lowercased host without www, path) of a URL — scheme optional.
     None on parse failure."""
     try:
-        parts = urllib.parse.urlsplit(url if "://" in url else "//" + url)
+        parts = urllib.parse.urlsplit(url if "://" in url else f"//{url}")
     except ValueError:
         return None
     host = (parts.hostname or "").lower().removeprefix("www.")
@@ -325,7 +324,7 @@ def _is_job_board(url: str, boards: tuple[str, ...]) -> bool:
         spec_host = spec_host.lower().removeprefix("www.")
         if not spec_host:
             continue
-        if host != spec_host and not host.endswith("." + spec_host):
+        if host != spec_host and not host.endswith(f".{spec_host}"):
             continue
         if not _path_matches(lp, sep, spec_tail):
             continue
@@ -338,8 +337,8 @@ def _path_matches(lp: str, sep: str, spec_tail: str) -> bool:
     prefixes it at a segment boundary."""
     if not sep:
         return True
-    spec_path = "/" + spec_tail.lower()
-    return lp == spec_path or lp.startswith(spec_path + "/")
+    spec_path = f"/{spec_tail.lower()}"
+    return lp == spec_path or lp.startswith(f"{spec_path}/")
 
 
 def _job_intent(query: str, terms: tuple[str, ...]) -> bool:
