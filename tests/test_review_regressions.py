@@ -276,7 +276,10 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             for i in range(200)
         ]
         with patch.object(search_web, "get_settings", return_value=s):
-            big = search_web._candidate_rows(rows[: max(s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM, 200)], k=200)
+            big = search_web._candidate_rows(
+                rows[: max(s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM, 200)],
+                k=200,
+            )
             small = search_web._candidate_rows(rows[: s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM], k=5)
         self.assertEqual(len(big), 200)
         self.assertEqual(len(small), s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM)
@@ -304,7 +307,9 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         """Config entries with mixed-case paths match lowercase live URLs."""
         boards = ("glassdoor.com/Job", "ziprecruiter.com/Jobs")
         self.assertTrue(search_web._is_job_board("https://www.glassdoor.com/job/listings", boards))
-        self.assertTrue(search_web._is_job_board("https://ziprecruiter.com/jobs/search?query=engineer", boards))
+        self.assertTrue(
+            search_web._is_job_board("https://ziprecruiter.com/jobs/search?query=engineer", boards)
+        )
         self.assertFalse(search_web._is_job_board("https://glassdoor.com/reviews", boards))
 
     def test_uk_second_level_domains_are_distinct(self) -> None:
