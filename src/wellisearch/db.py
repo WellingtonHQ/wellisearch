@@ -114,19 +114,23 @@ class Database:
             s.conninfo(s.POSTGRES_ADMIN_DB), autocommit=True
         )
         try:
-            async with admin.cursor() as cur:
-                await cur.execute(
-                    "SELECT 1 FROM pg_database WHERE datname = %s",
-                    (s.POSTGRES_DB,),
-                )
-                exists = await cur.fetchone()
-                if not exists:
-                    # identifier must be safe: it comes from our own config
-                    safe = s.POSTGRES_DB.replace('"', '""')
-                    await cur.execute(f'CREATE DATABASE "{safe}"')
-                    log.info("created database %s", s.POSTGRES_DB)
+            await self._create_app_db_if_missing(admin, s)
         finally:
             await admin.close()
+
+    async def _create_app_db_if_missing(self, admin: psycopg.AsyncConnection, s: Settings) -> None:
+        """Create the app database via the admin connection when it is missing."""
+        async with admin.cursor() as cur:
+            await cur.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s",
+                (s.POSTGRES_DB,),
+            )
+            exists = await cur.fetchone()
+            if not exists:
+                # identifier must be safe: it comes from our own config
+                safe = s.POSTGRES_DB.replace('"', '""')
+                await cur.execute(f'CREATE DATABASE "{safe}"')
+                log.info("created database %s", s.POSTGRES_DB)
 
         # Ensure the extensions the pool needs are present in the app DB, so a
         # fresh database boots without the "vector type not found" pool error.
@@ -173,12 +177,24 @@ class Database:
         psycopg.errors.QueryCanceled on expiry."""
         async with self.pool.connection() as conn:
             if timeout_ms is not None:
-                # SET does not accept parameter placeholders — inline the
-                # (int-coerced) value instead.
-                async with conn.transaction():
-                    await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
-                    cur = await conn.execute(sql, params or ())
-                    return list(await cur.fetchall())
+                return await self._fetch_all_timed(conn, sql, params, timeout_ms)
+            cur = await conn.execute(sql, params or ())
+            return list(await cur.fetchall())
+
+    async def _fetch_all_timed(
+        self,
+        conn: psycopg.AsyncConnection,
+        sql: str,
+        params: tuple | list | None,
+        timeout_ms: int,
+    ) -> list[dict[str, Any]]:
+        """Run a SELECT in an explicit transaction with a statement timeout.
+
+        SET does not accept parameter placeholders — inline the
+        (int-coerced) value instead.
+        """
+        async with conn.transaction():
+            await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
             cur = await conn.execute(sql, params or ())
             return list(await cur.fetchall())
 

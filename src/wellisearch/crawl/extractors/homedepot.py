@@ -144,14 +144,19 @@ def _parse_json(raw: str) -> object:
         return None
 
 
+def _first_product(items: list[object]) -> dict | None:
+    """First product found by recursive scan of a plain list, else None."""
+    for item in items:
+        found = _find_product(item)
+        if found is not None:
+            return found
+    return None
+
+
 def _find_product(node: object) -> dict | None:
     """A Product node, searching plain lists and @graph arrays."""
     if isinstance(node, list):
-        for item in node:
-            found = _find_product(item)
-            if found is not None:
-                return found
-        return None
+        return _first_product(node)
     if not isinstance(node, dict):
         return None
     t = node.get("@type")

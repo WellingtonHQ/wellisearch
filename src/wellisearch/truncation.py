@@ -44,15 +44,18 @@ def boundary_cut_tail(text: str, n: int) -> str:
     if n >= len(text):
         return text
     start = len(text) - n
+    tail = _safe_tail(text, start)
+    return tail if tail is not None else text
+
+
+def _safe_tail(text: str, start: int) -> str | None:
+    """First whitespace-advanced tail at/after start whose tags balance, else None."""
     i = start
     while i < len(text):
-        ch = text[i]
-        if ch in " \n\t":
-            seg = text[i:]
-            if seg.count("<") <= seg.count(">"):
-                return seg.lstrip()
+        if text[i] in " \n\t" and text[i:].count("<") <= text[i:].count(">"):
+            return text[i:].lstrip()
         i += 1
-    return text
+    return None
 
 
 def allocate_budgets(

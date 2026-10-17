@@ -24,7 +24,9 @@ from ..wait import NETWORK_IDLE_TIMEOUT_S, network_idle, settle
 from . import register
 
 if TYPE_CHECKING:
-    from patchright.async_api import Page
+    from patchright.async_api import BrowserContext, Page
+
+    from ..pool import BrowserPool
 
 log = logging.getLogger("wellisearch.crawl.tiers.browser")
 
@@ -74,15 +76,9 @@ class BrowserTier:
                 page = await ctx.new_page()
                 return await self._crawl(page, url, p)
             except Exception as e:
-                if not is_closed_context_error(e):
-                    raise
-                await pool.invalidate(key, ctx, e)
-                if attempt >= BROWSER_CLOSED_RETRIES:
-                    raise
-                log.warning("browser context %s closed; retrying once with a fresh context", key)
+                await self._on_crawl_error(pool, key, ctx, e, attempt)
             finally:
-                if page is not None:
-                    await _safe_close(page)
+                await _safe_close(page)
                 await pool.release(ctx, key)
         raise RuntimeError("browser recovery loop ended without a result")
 
@@ -171,6 +167,22 @@ class BrowserTier:
             log.warning("challenge still present after %ds budget for %s", budget, url)
         return html
 
+    async def _on_crawl_error(
+        self,
+        pool: BrowserPool,
+        key: str,
+        ctx: BrowserContext,
+        e: Exception,
+        attempt: int,
+    ) -> None:
+        """Handle a failed attempt: re-raise unless a fresh-context retry is due."""
+        if not is_closed_context_error(e):
+            raise e
+        await pool.invalidate(key, ctx, e)
+        if attempt >= BROWSER_CLOSED_RETRIES:
+            raise e
+        log.warning("browser context %s closed; retrying once with a fresh context", key)
+
     def worst_case_s(self, p: Policy) -> float:
         """Worst-case budget for the engine's wait_for backstop.
 
@@ -196,7 +208,7 @@ class BrowserTier:
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _safe_close(page: Page) -> None:
+async def _safe_close(page: Page | None) -> None:
     """Close the page; never raises (runs in a finally, even on cancellation)."""
     try:
         await page.close()

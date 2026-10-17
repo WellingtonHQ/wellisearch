@@ -58,6 +58,7 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
     while i < len(lines):
         line = lines[i]
         fence_match = _FENCE_RE.match(line)
+        closes_fence = fence_match is not None and fence_match.group(1) == fence_marker
 
         if fence_match and not in_fence:
             # open a fence: flush first so the block starts fresh when possible
@@ -69,11 +70,16 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
             i += 1
             continue
 
+        if closes_fence:
+            current.append(line)
+            current_tokens += _tokens(line)
+            in_fence = False
+            i += 1
+            continue
+
         if in_fence:
             current.append(line)
             current_tokens += _tokens(line)
-            if fence_match and fence_match.group(1) == fence_marker:
-                in_fence = False
             i += 1
             continue
 

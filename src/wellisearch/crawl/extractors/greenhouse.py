@@ -79,10 +79,18 @@ def _job_posting(soup: BeautifulSoup) -> dict | None:
             data = json.loads(tag.string or "")
         except (TypeError, ValueError):
             continue
-        items = data if isinstance(data, list) else [data]
-        for item in items:
-            if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
-                return item
+        posting = _posting_from_data(data)
+        if posting is not None:
+            return posting
+    return None
+
+
+def _posting_from_data(data: object) -> dict | None:
+    """The first JobPosting dict in parsed JSON-LD data (dict or list), else None."""
+    items = data if isinstance(data, list) else [data]
+    for item in items:
+        if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
+            return item
     return None
 
 
@@ -123,15 +131,21 @@ def _location(posting: dict) -> str | None:
         addr = (loc or {}).get("address")
         if not isinstance(addr, dict):
             continue
-        seen: list[str] = []
         primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
         candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
-        for piece in candidates:
-            if piece and piece not in seen:
-                seen.append(piece)
+        seen = _dedup_ordered(candidates)
         if seen:
             return ", ".join(seen)
     return None
+
+
+def _dedup_ordered(pieces: tuple[str | None, ...]) -> list[str]:
+    """Non-empty pieces in order; the first occurrence of each wins."""
+    out: list[str] = []
+    for piece in pieces:
+        if piece and piece not in out:
+            out.append(piece)
+    return out
 
 
 def _employment_type(posting: dict) -> str | None:

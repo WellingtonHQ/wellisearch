@@ -102,11 +102,15 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             store.assert_awaited_once_with(CANONICAL, "Body", title="Old title")
             fake_db.refresh_success_reset.assert_awaited_once_with(CANONICAL)
             error = crawler.CrawlError(CANONICAL, "failed")
-            with patch.object(worker.crawler, "fit_markdown", AsyncMock(side_effect=error)):
-                with self.assertRaises(crawler.CrawlError):
-                    await worker._crawl_and_store(VARIANT, "refresh")
+            await self._expect_refresh_crawl_error(error)
         self.assertEqual(fake_db.execute.await_args.args[1], (error.status_label(), CANONICAL))
         fake_db.refresh_fail_bump.assert_not_awaited()
+
+    async def _expect_refresh_crawl_error(self, error: crawler.CrawlError) -> None:
+        """A refresh crawl re-raises the CrawlError from the fit_markdown stage."""
+        with patch.object(worker.crawler, "fit_markdown", AsyncMock(side_effect=error)):
+            with self.assertRaises(crawler.CrawlError):
+                await worker._crawl_and_store(VARIANT, "refresh")
 
     async def test_challenge_lookup_and_existing_row_routing(self) -> None:
         """Variants see pending challenges and route existing rows by the canonical key."""
@@ -124,11 +128,15 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             fake_db.queue_challenge_in_flight.assert_awaited_once_with(CANONICAL)
             crawl.side_effect = ChallengeDetected(VARIANT)
             with patch.object(fetch.queue, "enqueue", AsyncMock(return_value=False)):
-                with self.assertRaises(crawler.CrawlError):
-                    await fetch._probe_crawl(VARIANT)
+                await self._expect_probe_crawl_error()
             await fetch._record_failed_refresh(VARIANT, True)
         fake_db.queue_route_to_cf.assert_awaited_once_with(CANONICAL)
         fake_db.refresh_fail_bump.assert_awaited_once_with(CANONICAL)
+
+    async def _expect_probe_crawl_error(self) -> None:
+        """A pending challenge routes the probe to the CF queue and raises CrawlError."""
+        with self.assertRaises(crawler.CrawlError):
+            await fetch._probe_crawl(VARIANT)
 
     async def test_seed_reports_canonical_queue_row(self) -> None:
         """A variant seed reports the actual enqueue time and queue position."""

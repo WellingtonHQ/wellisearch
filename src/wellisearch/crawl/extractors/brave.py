@@ -56,19 +56,23 @@ def _visible_text_markdown(html: str) -> str:
         soup = _soup(html)
         for tag in soup(["noscript", "script", "style", "template"]):
             tag.decompose()
-        root = soup.body or soup
-        lines: list[str] = []
-        seen: set[str] = set()
-        for el in root.find_all(True):
-            if el.find(True) is not None:
-                continue  # has a nested element — its text is emitted deeper down
-            text = " ".join(el.get_text().split())
-            if text and text not in seen:
-                seen.add(text)
-                lines.append(text)
-        return "\n".join(lines)
+        return _collect_visible_lines(soup.body or soup)
     except Exception:
         return ""
+
+
+def _collect_visible_lines(root: object) -> str:
+    """One whitespace-collapsed line per terminal element, deduped, in order."""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for el in root.find_all(True):
+        if el.find(True) is not None:
+            continue  # has a nested element — its text is emitted deeper down
+        text = " ".join(el.get_text().split())
+        if text and text not in seen:
+            seen.add(text)
+            lines.append(text)
+    return "\n".join(lines)
 
 
 def _soup(html: str):

@@ -83,6 +83,35 @@ async def _stale_batch(
     )
 
 
+async def _process_stale(force: bool, stale_n: int) -> dict[str, int]:
+    """Keyset-paginate the stale pages, re-embed each, and print progress.
+    Returns the ok/unchanged/failed stats."""
+    s = get_settings()
+    stats = {"failed": 0, "ok": 0, "unchanged": 0}
+    done = 0
+    last_url = ""
+    while True:
+        batch = await _stale_batch(force, s.EMBED_MODEL, last_url, s.REINDEX_BATCH_SIZE)
+        if not batch:
+            break
+        for p in batch:
+            outcome = await _reembed_page(p)
+            stats[outcome] += 1
+            done += 1
+            _maybe_print_progress(done, stale_n, stats)
+        last_url = batch[-1]["url"]
+    return stats
+
+
+def _maybe_print_progress(done: int, stale_n: int, stats: dict[str, int]) -> None:
+    """Print a progress line every PROGRESS_INTERVAL pages (and the last one)."""
+    if done % PROGRESS_INTERVAL == 0 or done == stale_n:
+        print(
+            f"  {done}/{stale_n} (ok={stats['ok']} unchanged={stats['unchanged']} "
+            f"failed={stats['failed']})"
+        )
+
+
 async def _run(force: bool, dry_run: bool) -> None:
     """Re-chunk + re-embed every page needing it (all when --force).
 
@@ -103,24 +132,7 @@ async def _run(force: bool, dry_run: bool) -> None:
         if dry_run or stale_n == 0:
             return
 
-        stats = {"failed": 0, "ok": 0, "unchanged": 0}
-        done = 0
-        last_url = ""
-        while True:
-            batch = await _stale_batch(force, s.EMBED_MODEL, last_url, s.REINDEX_BATCH_SIZE)
-            if not batch:
-                break
-            for p in batch:
-                outcome = await _reembed_page(p)
-                stats[outcome] += 1
-                done += 1
-                if done % PROGRESS_INTERVAL == 0 or done == stale_n:
-                    print(
-                        f"  {done}/{stale_n} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                        f"failed={stats['failed']})"
-                    )
-            last_url = batch[-1]["url"]
-
+        stats = await _process_stale(force, stale_n)
         print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
     finally:
         await db.close()

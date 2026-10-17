@@ -327,12 +327,19 @@ def _is_job_board(url: str, boards: tuple[str, ...]) -> bool:
             continue
         if host != spec_host and not host.endswith("." + spec_host):
             continue
-        if sep:
-            spec_path = "/" + spec_tail.lower()
-            if lp != spec_path and not lp.startswith(spec_path + "/"):
-                continue
+        if not _path_matches(lp, sep, spec_tail):
+            continue
         return True
     return False
+
+
+def _path_matches(lp: str, sep: str, spec_tail: str) -> bool:
+    """True when an entry has no path, or its lowercased path equals lp or
+    prefixes it at a segment boundary."""
+    if not sep:
+        return True
+    spec_path = "/" + spec_tail.lower()
+    return lp == spec_path or lp.startswith(spec_path + "/")
 
 
 def _job_intent(query: str, terms: tuple[str, ...]) -> bool:

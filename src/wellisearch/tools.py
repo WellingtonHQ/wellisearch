@@ -154,6 +154,16 @@ async def _index_stats_data() -> dict:
     }
 
 
+async def _page_for_status(url: str) -> dict[str, Any] | None:
+    """The stored page row for url, or for its resolved short-URL target."""
+    page = await db.page_get(normalize_url(url))
+    if page is None:
+        resolved = await resolve_short_url(normalize_url(url))
+        if resolved and normalize_url(resolved) != normalize_url(url):
+            page = await db.page_get(normalize_url(resolved))
+    return page
+
+
 def _tool_search_web(server: MCPServer) -> None:
     """Register the search_web tool."""
     @server.tool(
@@ -340,11 +350,7 @@ def _tool_refresh_page(server: MCPServer) -> None:
         except Exception as e:
             # A resolved short URL records its state under the final URL; look up
             # both keys so last_status is reported for either form.
-            page = await db.page_get(normalize_url(url))
-            if page is None:
-                resolved = await resolve_short_url(normalize_url(url))
-                if resolved and normalize_url(resolved) != normalize_url(url):
-                    page = await db.page_get(normalize_url(resolved))
+            page = await _page_for_status(url)
             return _clean({
                 "ok": False,
                 "url": url,
