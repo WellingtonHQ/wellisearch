@@ -242,9 +242,7 @@ PER_DOMAIN_CAP = 3
 # index.
 SAMPLE_POOL_LIMIT = 200
 
-def select_random_pages(
-    by_domain: dict[str, list[dict[str, Any]]], target: int
-) -> list[dict[str, Any]]:
+def select_random_pages(by_domain: dict[str, list[dict[str, Any]]], target: int) -> list[dict[str, Any]]:
     """Round-robin across domains; within a domain take pages in arrival order.
 
     build_sample draws the pool with ORDER BY random(), so the per-domain
