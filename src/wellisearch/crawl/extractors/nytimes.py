@@ -13,7 +13,7 @@ class NYTimesExtractor:
 
     name = "nytimes"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: NYTimesExtractor, r: Rendered) -> Fitted:
         """Hybrid markdown; raise Escalate('stealth') when the body is too thin."""
         base = generic_md(r.html)
         if len(base) < MIN_ARTICLE_CHARS:
@@ -25,7 +25,7 @@ class NYTimesExtractor:
             flags={"extractor": "nytimes"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: NYTimesExtractor, f: Fitted) -> bool:
         """Gate: a full article body, not a paywall stub."""
         return len(f.md.strip()) >= MIN_ARTICLE_CHARS
 

@@ -19,12 +19,12 @@ class Tavily(Provider):
     ENDPOINT = "https://api.tavily.com/search"
 
     @property
-    def configured(self) -> bool:
+    def configured(self: Tavily) -> bool:
         """True when TAVILY_API_KEY is set."""
         return bool(self.s.TAVILY_API_KEY)
 
     async def search(
-        self,
+        self: Tavily,
         query: str,
         num: int,
     ) -> list[Result]:

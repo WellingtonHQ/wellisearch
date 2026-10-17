@@ -157,7 +157,7 @@ class Config:
     results_file: Path = field(init=False)
     report_file: Path = field(init=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self: Config) -> None:
         """Create the output dir and derive the sample/results/report paths."""
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.sample_file = self.out_dir / "llm-cleanup.sample.json"

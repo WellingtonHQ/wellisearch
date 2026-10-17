@@ -26,7 +26,7 @@ STORED = {"title": "Article", "fit_markdown": "Stored article.", "fetch_count": 
 class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
     """Exercise variant URLs through the public paths and their shared state."""
 
-    async def test_fetch_counts_and_response_urls(self) -> None:
+    async def test_fetch_counts_and_response_urls(self: ReviewRegressions) -> None:
         """Single and bulk reads bump the stored key while preserving requested URLs."""
         fake_db = Mock(
             page_get=AsyncMock(return_value=STORED),
@@ -42,7 +42,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         fake_db.bump_fetch_count.assert_awaited_once_with(CANONICAL)
         fake_db.bump_fetch_counts.assert_awaited_once_with([CANONICAL])
 
-    async def test_variant_crawls_share_one_owner(self) -> None:
+    async def test_variant_crawls_share_one_owner(self: ReviewRegressions) -> None:
         """A worker crawl and a variant on-demand crawl share one result and slot."""
         started = asyncio.Event()
         release = asyncio.Event()
@@ -84,7 +84,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(queue.INFLIGHT), 0)
         attempt.assert_awaited_once_with(CANONICAL, "search")
 
-    async def test_crawl_updates_canonical_state(self) -> None:
+    async def test_crawl_updates_canonical_state(self: ReviewRegressions) -> None:
         """Success resets backoff; the watchlist caller owns failure backoff."""
         fake_db = Mock(
             page_get=AsyncMock(return_value={"title": "Old title"}),
@@ -106,13 +106,13 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fake_db.execute.await_args.args[1], (error.status_label(), CANONICAL))
         fake_db.refresh_fail_bump.assert_not_awaited()
 
-    async def _expect_refresh_crawl_error(self, error: crawler.CrawlError) -> None:
+    async def _expect_refresh_crawl_error(self: ReviewRegressions, error: crawler.CrawlError) -> None:
         """A refresh crawl re-raises the CrawlError from the fit_markdown stage."""
         with patch.object(worker.crawler, "fit_markdown", AsyncMock(side_effect=error)):
             with self.assertRaises(crawler.CrawlError):
                 await worker._crawl_and_store(VARIANT, "refresh")
 
-    async def test_challenge_lookup_and_existing_row_routing(self) -> None:
+    async def test_challenge_lookup_and_existing_row_routing(self: ReviewRegressions) -> None:
         """Variants see pending challenges and route existing rows by the canonical key."""
         fake_db = Mock(
             page_get=AsyncMock(return_value=None),
@@ -133,12 +133,12 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         fake_db.queue_route_to_cf.assert_awaited_once_with(CANONICAL)
         fake_db.refresh_fail_bump.assert_awaited_once_with(CANONICAL)
 
-    async def _expect_probe_crawl_error(self) -> None:
+    async def _expect_probe_crawl_error(self: ReviewRegressions) -> None:
         """A pending challenge routes the probe to the CF queue and raises CrawlError."""
         with self.assertRaises(crawler.CrawlError):
             await fetch._probe_crawl(VARIANT)
 
-    async def test_seed_reports_canonical_queue_row(self) -> None:
+    async def test_seed_reports_canonical_queue_row(self: ReviewRegressions) -> None:
         """A variant seed reports the actual enqueue time and queue position."""
         enqueued_at = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
         row = {"status": "pending", "attempts": 0, "enqueued_at": enqueued_at}
@@ -158,7 +158,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fake_db.fetch_one.await_args_list[0].args[1], (CANONICAL,))
         self.assertEqual(fake_db.fetch_one.await_args_list[1].args[1], (enqueued_at,))
 
-    async def test_tick_trims_on_another_thread(self) -> None:
+    async def test_tick_trims_on_another_thread(self: ReviewRegressions) -> None:
         """The awaited trim runs outside the event-loop thread."""
         threads = []
         fake_db = Mock(worker_paused=AsyncMock(return_value=True))
@@ -177,7 +177,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(threads), 1)
         self.assertNotEqual(threads[0], threading.get_ident())
 
-    async def test_merge_deletes_before_rename_and_rolls_back(self) -> None:
+    async def test_merge_deletes_before_rename_and_rolls_back(self: ReviewRegressions) -> None:
         """An FK validation failure leaves the entire merge in its transaction."""
         conn = Mock(execute=AsyncMock())
         transaction_outcomes = []
@@ -210,7 +210,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
                 await merge_dupes._merge_groups(groups)
         self.assertEqual(transaction_outcomes, ["commit", "rollback"])
 
-    async def test_refresh_reads_back_the_canonical_row(self) -> None:
+    async def test_refresh_reads_back_the_canonical_row(self: ReviewRegressions) -> None:
         """A short-URL refresh reports last_crawled from the row stored under its final URL."""
         short = "https://a.co/xyz3d"
         crawled_at = dt.datetime(2026, 10, 8, tzinfo=dt.timezone.utc)
@@ -231,7 +231,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["last_crawled"], str(crawled_at))
         fake_db.page_get.assert_awaited_once_with(CANONICAL)
 
-    async def test_api_refresh_reads_back_the_canonical_row(self) -> None:
+    async def test_api_refresh_reads_back_the_canonical_row(self: ReviewRegressions) -> None:
         """The REST refresh endpoint reports last_crawled from the final URL's row."""
         short = "https://a.co/xyz3d"
         crawled_at = dt.datetime(2026, 10, 8, tzinfo=dt.timezone.utc)
@@ -247,7 +247,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["last_crawled"], crawled_at)
         fake_db.page_get.assert_awaited_once_with(CANONICAL)
 
-    async def test_refresh_error_reports_canonical_status(self) -> None:
+    async def test_refresh_error_reports_canonical_status(self: ReviewRegressions) -> None:
         """A failed short-URL refresh reports last_status from the final URL's row."""
         short = "https://a.co/xyz3d"
         stored = {"last_status": "error"}
@@ -268,7 +268,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["last_status"], "error")
         self.assertEqual(fake_db.page_get.await_args_list[1].args, (CANONICAL,))
 
-    def test_candidate_head_covers_requested_k(self) -> None:
+    def test_candidate_head_covers_requested_k(self: ReviewRegressions) -> None:
         """A large k gates every fetched row; a small k keeps the union window."""
         s = Settings(_env_file=None)
         rows = [
@@ -284,7 +284,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(big), 200)
         self.assertEqual(len(small), s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM)
 
-    async def test_local_mode_fetches_the_raw_window(self) -> None:
+    async def test_local_mode_fetches_the_raw_window(self: ReviewRegressions) -> None:
         """Local mode fetches exactly k rows at the default vector leg; auto widens both."""
         s = Settings(_env_file=None)
         fake_db = Mock(fetch_all=AsyncMock(return_value=[]))
@@ -303,7 +303,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(params[2], max(5, s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM))
             self.assertEqual(params[3], s.SEARCH_VECTOR_LEG_LIMIT)
 
-    def test_job_board_paths_match_case_insensitively(self) -> None:
+    def test_job_board_paths_match_case_insensitively(self: ReviewRegressions) -> None:
         """Config entries with mixed-case paths match lowercase live URLs."""
         boards = ("glassdoor.com/Job", "ziprecruiter.com/Jobs")
         self.assertTrue(search_web._is_job_board("https://www.glassdoor.com/job/listings", boards))
@@ -312,13 +312,13 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(search_web._is_job_board("https://glassdoor.com/reviews", boards))
 
-    def test_uk_second_level_domains_are_distinct(self) -> None:
+    def test_uk_second_level_domains_are_distinct(self: ReviewRegressions) -> None:
         """*.gov.uk / *.ac.uk sites keep their own registrable domain for the cap."""
         self.assertEqual(search_web._registrable_domain("https://example.gov.uk/page"), "example.gov.uk")
         self.assertEqual(search_web._registrable_domain("https://ox.ac.uk/x"), "ox.ac.uk")
         self.assertEqual(search_web._registrable_domain("https://www.gov.uk/government"), "gov.uk")
 
-    def test_homedepot_accepts_a_list_at_type(self) -> None:
+    def test_homedepot_accepts_a_list_at_type(self: ReviewRegressions) -> None:
         """A Product node whose @type is a list still matches (Walmart parity)."""
         html = (
             '<script type="application/ld+json">'
@@ -329,7 +329,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(node)
         self.assertEqual(node["name"], "Widget")
 
-    async def test_cap_shrink_flags_degraded(self) -> None:
+    async def test_cap_shrink_flags_degraded(self: ReviewRegressions) -> None:
         """A per-domain cap that shrinks a would-be full set below k sets degraded."""
         s = Settings(_env_file=None)
         same_domain = [
@@ -366,17 +366,17 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(out["degraded"])
         self.assertEqual(len(out["results"]), 5)
 
-    async def test_num_results_clamped_to_max(self) -> None:
+    async def test_num_results_clamped_to_max(self: ReviewRegressions) -> None:
         """An oversized num_results is capped at SEARCH_MAX_K before the index leg."""
         s = Settings(_env_file=None)
         seen_k = []
 
         async def fake_index(
-            query,
-            k,
-            max_age_days,
-            widened=False,
-        ):
+            query: str,
+            k: int,
+            max_age_days: float | None,
+            widened: bool = False,
+        ) -> tuple[list[dict], int, str | None]:
             seen_k.append(k)
             return [], 0, None
 
@@ -390,7 +390,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen_k, [s.SEARCH_MAX_K])
         self.assertEqual(out["source"], "error")
 
-    async def test_fetch_pages_bumps_counts_in_one_statement(self) -> None:
+    async def test_fetch_pages_bumps_counts_in_one_statement(self: ReviewRegressions) -> None:
         """A bulk read serves each distinct page once and bumps fetch_count in one UPDATE."""
         pages = [
             {"url": u, "title": t, "content": t, "from_index": True,
@@ -425,7 +425,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             ["https://example.com/a", "https://example.com/b"]
         )
 
-    async def test_bulk_read_serves_variant_pages_once(self) -> None:
+    async def test_bulk_read_serves_variant_pages_once(self: ReviewRegressions) -> None:
         """Variant URLs of one stored page serve a single section, not one per variant."""
         fake_db = Mock(
             page_get=AsyncMock(return_value=STORED),

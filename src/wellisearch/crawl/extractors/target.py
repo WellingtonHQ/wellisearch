@@ -12,7 +12,7 @@ class TargetExtractor:
 
     name = "target"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: TargetExtractor, r: Rendered) -> Fitted:
         """Hybrid markdown with price/stock signals."""
         return Fitted(
             md=trim_md(generic_md(r.html)),
@@ -21,7 +21,7 @@ class TargetExtractor:
             flags={"extractor": "target"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: TargetExtractor, f: Fitted) -> bool:
         """Gate: a price signal and real product content (not a stub)."""
         return bool(f.signals.get("price")) and len(f.md.strip()) >= MIN_PRODUCT_CHARS
 

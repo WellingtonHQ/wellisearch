@@ -24,7 +24,7 @@ class HttpTier:
     name = "http"
 
     async def fetch(
-        self,
+        self: HttpTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -49,7 +49,7 @@ class HttpTier:
             content_type=r.headers.get("Content-Type"),
         )
 
-    def worst_case_s(self, p: Policy) -> float:
+    def worst_case_s(self: HttpTier, p: Policy) -> float:
         """Worst-case budget: a single impersonated GET (probe-clamped CRAWL_TIMEOUT_S)."""
         return clamp(get_settings().CRAWL_TIMEOUT_S)
 

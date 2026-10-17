@@ -133,7 +133,7 @@ class _Runtime:
     __slots__ = ("app", "server")
 
     def __init__(
-        self,
+        self: _Runtime,
         server: MCPServer,
         app: Starlette,
     ) -> None:
@@ -181,16 +181,16 @@ class _MCPMount:
     this object just tracks whichever one is live right now.
     """
 
-    def __init__(self) -> None:
+    def __init__(self: _MCPMount) -> None:
         """Starts with no active runtime (requests 503 until the lifespan sets one)."""
         self._runtime: _Runtime | None = None
 
-    def set_runtime(self, runtime: _Runtime | None) -> None:
+    def set_runtime(self: _MCPMount, runtime: _Runtime | None) -> None:
         """Track the active runtime (None on lifespan exit)."""
         self._runtime = runtime
 
     async def __call__(
-        self,
+        self: _MCPMount,
         scope: Scope,
         receive: Receive,
         send: Send,

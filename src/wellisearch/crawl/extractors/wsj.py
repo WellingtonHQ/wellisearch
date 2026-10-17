@@ -15,7 +15,7 @@ class WSJExtractor:
 
     name = "wsj"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: WSJExtractor, r: Rendered) -> Fitted:
         """Hybrid markdown + paywall flag (a stub is acceptable content)."""
         paywall = any(marker in r.html.lower() for marker in PAYWALL_MARKERS)
         return Fitted(
@@ -25,7 +25,7 @@ class WSJExtractor:
             flags={"extractor": "wsj", "paywall": paywall},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: WSJExtractor, f: Fitted) -> bool:
         """Gate: a lead paragraph is enough (a paywall stub is acceptable)."""
         return len(f.md.strip()) >= MIN_BODY_CHARS
 

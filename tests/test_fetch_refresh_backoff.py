@@ -20,24 +20,24 @@ import wellisearch.queue as queue_mod
 class FakeDB:
     """In-memory stand-in for the db helpers _resolve_page uses."""
 
-    def __init__(self, page: dict | None = None):
+    def __init__(self: FakeDB, page: dict | None = None) -> None:
         self.page = page
         self.bumped: list[str] = []
         self.enqueued: list[tuple] = []
         self.challenge_in_flight = False
         self.paused = False
 
-    async def page_get(self, url: str) -> dict | None:
+    async def page_get(self: FakeDB, url: str) -> dict | None:
         return self.page
 
-    async def worker_paused(self) -> bool:
+    async def worker_paused(self: FakeDB) -> bool:
         return self.paused
 
-    async def queue_challenge_in_flight(self, url: str) -> bool:
+    async def queue_challenge_in_flight(self: FakeDB, url: str) -> bool:
         return self.challenge_in_flight
 
     async def queue_enqueue(
-        self,
+        self: FakeDB,
         url: str,
         source: str = "fetch",
         lane: str | None = None,
@@ -45,7 +45,7 @@ class FakeDB:
         self.enqueued.append((url, source, lane))
         return True
 
-    async def refresh_fail_bump(self, url: str) -> int | None:
+    async def refresh_fail_bump(self: FakeDB, url: str) -> int | None:
         self.bumped.append(url)
         return 1
 
@@ -54,12 +54,12 @@ class TwoPhaseDB(FakeDB):
     """page_get returns `first` on the first call and `second` afterwards —
     simulates a crawl that stores fresh content between _resolve_page's reads."""
 
-    def __init__(self, first: dict | None, second: dict | None):
+    def __init__(self: TwoPhaseDB, first: dict | None, second: dict | None) -> None:
         super().__init__(first)
         self._second = second
         self._calls = 0
 
-    async def page_get(self, url: str) -> dict | None:
+    async def page_get(self: TwoPhaseDB, url: str) -> dict | None:
         self._calls += 1
         return self.page if self._calls == 1 else self._second
 

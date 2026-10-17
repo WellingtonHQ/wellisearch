@@ -25,7 +25,7 @@ class StealthTier:
     name = "stealth"
 
     async def fetch(
-        self,
+        self: StealthTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -34,7 +34,7 @@ class StealthTier:
         return await asyncio.to_thread(self._fetch_sync, url, timeout_s)
 
     def _fetch_sync(
-        self,
+        self: StealthTier,
         url: str,
         timeout_s: float,
     ) -> Rendered:
@@ -60,7 +60,7 @@ class StealthTier:
             content_type=_response_content_type(page),
         )
 
-    def worst_case_s(self, p: Policy) -> float:
+    def worst_case_s(self: StealthTier, p: Policy) -> float:
         """Worst-case budget: a single StealthySession fetch (clamped CRAWL_STEALTH_TIMEOUT_S)."""
         return clamp(get_settings().CRAWL_STEALTH_TIMEOUT_S)
 

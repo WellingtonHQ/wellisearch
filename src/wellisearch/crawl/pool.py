@@ -58,7 +58,7 @@ class BrowserPool:
     """Bounded pool of warm persistent browser contexts, keyed by profile."""
 
     def __init__(
-        self,
+        self: BrowserPool,
         size: int | None = None,
         prefix: str = "",
     ) -> None:
@@ -82,7 +82,7 @@ class BrowserPool:
     # Acquire
     # ---------------------------------------------------------------------------
 
-    async def acquire(self, key: str) -> BrowserContext:
+    async def acquire(self: BrowserPool, key: str) -> BrowserContext:
         """Acquire a context for key, launching (and LRU-evicting) as needed."""
         await self._sem.acquire()
         self._in_use[key] = self._in_use.get(key, 0) + 1
@@ -96,7 +96,7 @@ class BrowserPool:
             raise
 
     async def release(
-        self,
+        self: BrowserPool,
         ctx: BrowserContext,
         key: str | None = None,
     ) -> None:
@@ -107,7 +107,7 @@ class BrowserPool:
         self._sem.release()
 
     async def invalidate(
-        self,
+        self: BrowserPool,
         key: str,
         ctx: BrowserContext,
         error: Exception,
@@ -137,7 +137,7 @@ class BrowserPool:
             self._reaped.discard(key)
             await self._close_context(key, ctx)
 
-    async def close_all(self) -> None:
+    async def close_all(self: BrowserPool) -> None:
         """Close every cached context and stop playwright."""
         async with self._lock:
             contexts = list(self._contexts.items())
@@ -155,14 +155,14 @@ class BrowserPool:
     # Internals
     # ---------------------------------------------------------------------------
 
-    def _key_of(self, ctx: BrowserContext) -> str | None:
+    def _key_of(self: BrowserPool, ctx: BrowserContext) -> str | None:
         """Profile key for a context, or None when unknown."""
         for key, c in self._contexts.items():
             if c is ctx:
                 return key
         return None
 
-    def _launch_lock(self, key: str) -> asyncio.Lock:
+    def _launch_lock(self: BrowserPool, key: str) -> asyncio.Lock:
         """Per-key lock so one profile launches at a time."""
         lk = self._launch_locks.get(key)
         if lk is None:
@@ -170,7 +170,7 @@ class BrowserPool:
             self._launch_locks[key] = lk
         return lk
 
-    async def _ensure_playwright(self) -> Playwright:
+    async def _ensure_playwright(self: BrowserPool) -> Playwright:
         """Start the shared playwright instance once and return it."""
         if self._pw is None:
             from patchright.async_api import async_playwright
@@ -179,7 +179,7 @@ class BrowserPool:
         return self._pw
 
     async def _close_and_stop(
-        self,
+        self: BrowserPool,
         contexts: list[tuple[str, BrowserContext]],
         playwright: Playwright | None,
     ) -> None:
@@ -189,13 +189,13 @@ class BrowserPool:
         if playwright is not None:
             await self._stop_playwright(playwright)
 
-    async def _get_or_launch(self, key: str) -> BrowserContext:
+    async def _get_or_launch(self: BrowserPool, key: str) -> BrowserContext:
         """Return the cached context for key or launch a new one."""
         async with self._launch_lock(key):
             async with self._lock:
                 return await self._resolve_context(key)
 
-    async def _resolve_context(self, key: str) -> BrowserContext:
+    async def _resolve_context(self: BrowserPool, key: str) -> BrowserContext:
         """Under both locks: a cached hit, the launch-backoff check, or a fresh launch."""
         if key in self._contexts:
             self._last_used[key] = time.monotonic()
@@ -224,7 +224,7 @@ class BrowserPool:
         return ctx
 
     async def _close_context(
-        self,
+        self: BrowserPool,
         key: str,
         ctx: BrowserContext,
     ) -> None:
@@ -239,7 +239,7 @@ class BrowserPool:
         except Exception as e:
             log.debug("close retired context %s failed: %s", key, e)
 
-    async def _stop_playwright(self, playwright: Playwright) -> None:
+    async def _stop_playwright(self: BrowserPool, playwright: Playwright) -> None:
         """Best-effort stop for a Playwright driver being retired."""
         try:
             await asyncio.wait_for(
@@ -251,7 +251,7 @@ class BrowserPool:
         except Exception as e:
             log.warning("stop retired playwright driver failed: %s", e)
 
-    async def _evict_lru_if_needed(self) -> None:
+    async def _evict_lru_if_needed(self: BrowserPool) -> None:
         """Evict the least recently used idle context when at capacity."""
         max_profiles = get_settings().CRAWL_PROFILE_MAX
         while len(self._contexts) >= max_profiles:
@@ -269,7 +269,7 @@ class BrowserPool:
                 log.warning("evict close %s failed: %s", lru_key, e)
 
     async def _launch(
-        self,
+        self: BrowserPool,
         key: str,
         pw: Playwright,
     ) -> BrowserContext:

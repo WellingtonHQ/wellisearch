@@ -13,7 +13,7 @@ class ReutersExtractor:
 
     name = "reuters"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: ReutersExtractor, r: Rendered) -> Fitted:
         """Hybrid markdown cut at the first related marker."""
         base = cut_at_first(generic_md(r.html), RELATED)
         return Fitted(
@@ -23,7 +23,7 @@ class ReutersExtractor:
             flags={"extractor": "reuters"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: ReutersExtractor, f: Fitted) -> bool:
         """Gate: a real article body."""
         return len(f.md.strip()) >= MIN_NEWS_ARTICLE_BODY_CHARS
 

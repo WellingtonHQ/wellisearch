@@ -34,7 +34,7 @@ class GreenhouseExtractor:
 
     name = "greenhouse"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: GreenhouseExtractor, r: Rendered) -> Fitted:
         """Fit a Greenhouse job page into structured markdown (title, meta, body)."""
         soup = _soup(r.html)
         posting = _job_posting(soup) or {}
@@ -58,7 +58,7 @@ class GreenhouseExtractor:
             flags={"extractor": "greenhouse"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: GreenhouseExtractor, f: Fitted) -> bool:
         """Gate: a real job description body (length)."""
         return len(f.md.strip()) >= MIN_JOB_DESCRIPTION_CHARS
 

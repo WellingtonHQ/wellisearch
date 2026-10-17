@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 from wellisearch.config import get_settings
@@ -186,7 +187,7 @@ class FakeTier:
     name = "http"
 
     async def fetch(
-        self,
+        self: FakeTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -209,7 +210,7 @@ class RedditTier:
     requested_url: str | None = None
 
     async def fetch(
-        self,
+        self: RedditTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -233,7 +234,7 @@ class RedditListingTier:
     name = "browser"
 
     async def fetch(
-        self,
+        self: RedditListingTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -263,7 +264,7 @@ class HdCategoryHttpTier:
     name = "http"
 
     async def fetch(
-        self,
+        self: HdCategoryHttpTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -289,7 +290,7 @@ class BotwallHttpTier:
     name = "http"
 
     async def fetch(
-        self,
+        self: BotwallHttpTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -301,7 +302,7 @@ class FakeBotwallTier:
     name = "browser"
 
     async def fetch(
-        self,
+        self: FakeBotwallTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -328,23 +329,23 @@ FINAL_URL = "https://www.amazon.com/dp/B08WM3LJQB?tag=x-20"
 class FakeShortResponse:
     """Fake curl_cffi response carrying the final (post-redirect) URL."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self: FakeShortResponse, url: str) -> None:
         self.url = url
 
 
 class FakeShortSession:
     """Fake curl_cffi AsyncSession whose GET lands on a canned final URL."""
 
-    def __init__(self, final_url: str) -> None:
+    def __init__(self: FakeShortSession, final_url: str) -> None:
         self.final_url = final_url
 
-    async def __aenter__(self):
+    async def __aenter__(self: FakeShortSession) -> FakeShortSession:
         return self
 
-    async def __aexit__(self, *exc_info):
+    async def __aexit__(self: FakeShortSession, *exc_info: Any) -> bool:
         return False
 
-    async def get(self, url: str, **kwargs):
+    async def get(self: FakeShortSession, url: str, **kwargs: Any) -> FakeShortResponse:
         return FakeShortResponse(self.final_url)
 
 
@@ -362,7 +363,7 @@ with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(FINA
     assert asyncio.run(resolve_short_url(SHORT_URL)) == FINAL_URL
 
 
-def _shorturl_boom(**kwargs):
+def _shorturl_boom(**kwargs: Any) -> None:
     raise RuntimeError("network down")
 
 
@@ -383,7 +384,7 @@ class ShortUrlRecordingTier:
     requested_policy: Policy | None = None
 
     async def fetch(
-        self,
+        self: ShortUrlRecordingTier,
         url: str,
         p: Policy,
     ) -> Rendered:

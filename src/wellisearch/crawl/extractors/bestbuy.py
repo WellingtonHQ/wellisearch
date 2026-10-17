@@ -14,7 +14,7 @@ class BestBuyExtractor:
 
     name = "bestbuy"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: BestBuyExtractor, r: Rendered) -> Fitted:
         """Hybrid markdown with price (visible, else JSON-LD) + stock signals."""
         price = find_price(r.html)
         if price is None:
@@ -26,7 +26,7 @@ class BestBuyExtractor:
             flags={"extractor": "bestbuy"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: BestBuyExtractor, f: Fitted) -> bool:
         """Gate: a price signal and real product content (not a stub)."""
         return bool(f.signals.get("price")) and len(f.md.strip()) >= MIN_PRODUCT_CHARS
 

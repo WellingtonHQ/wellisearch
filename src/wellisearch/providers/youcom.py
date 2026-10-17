@@ -20,12 +20,12 @@ class YouCom(Provider):
     ENDPOINT = "https://api.you.com/v1/search"
 
     @property
-    def configured(self) -> bool:
+    def configured(self: YouCom) -> bool:
         """True when YOUCOM_API_KEY is set."""
         return bool(self.s.YOUCOM_API_KEY)
 
     async def search(
-        self,
+        self: YouCom,
         query: str,
         num: int,
     ) -> list[Result]:

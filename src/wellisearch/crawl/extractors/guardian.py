@@ -13,7 +13,7 @@ class GuardianExtractor:
 
     name = "guardian"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: GuardianExtractor, r: Rendered) -> Fitted:
         """Hybrid markdown cut at the first related marker."""
         base = cut_at_first(generic_md(r.html), RELATED)
         return Fitted(
@@ -23,7 +23,7 @@ class GuardianExtractor:
             flags={"extractor": "guardian"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: GuardianExtractor, f: Fitted) -> bool:
         """Gate: a real article body."""
         return len(f.md.strip()) >= MIN_NEWS_ARTICLE_BODY_CHARS
 

@@ -26,7 +26,7 @@ class HomeDepotExtractor:
 
     name = "homedepot"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: HomeDepotExtractor, r: Rendered) -> Fitted:
         """Fit a Home Depot product page into structured markdown."""
         product = _product_node(r.html)
         limit = max(1, get_settings().CRAWL_MAX_REVIEWS)
@@ -80,7 +80,7 @@ class HomeDepotExtractor:
             flags={"extractor": "homedepot"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: HomeDepotExtractor, f: Fitted) -> bool:
         """Gate: a Product node with a title and a price (real product content)."""
         return bool(f.title) and bool(f.signals.get("price"))
 

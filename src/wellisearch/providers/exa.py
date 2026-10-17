@@ -22,12 +22,12 @@ class Exa(Provider):
     ENDPOINT = "https://api.exa.ai/search"
 
     @property
-    def configured(self) -> bool:
+    def configured(self: Exa) -> bool:
         """True when EXA_API_KEY is set."""
         return bool(self.s.EXA_API_KEY)
 
     async def search(
-        self,
+        self: Exa,
         query: str,
         num: int,
     ) -> list[Result]:

@@ -42,7 +42,7 @@ REGISTRY: dict[str, type[Provider]] = {
 class GatewayExhausted(Exception):
     """All providers failed. Carries the per-provider error chain."""
 
-    def __init__(self, errors: list[dict]) -> None:
+    def __init__(self: GatewayExhausted, errors: list[dict]) -> None:
         """Keep the per-provider error chain and summarize it as the message."""
         self.errors = errors
         summary = "; ".join(f"{e['provider']}: {e['error']}" for e in errors) or "no providers configured"
@@ -52,7 +52,7 @@ class GatewayExhausted(Exception):
 class Gateway:
     """The ordered failover pool of configured providers, sharing one HTTP client."""
 
-    def __init__(self) -> None:
+    def __init__(self: Gateway) -> None:
         """Build the provider pool from SEARCH_PROVIDERS (skipping unknown
         names) and open the shared HTTP client."""
         self.s = get_settings()
@@ -68,7 +68,7 @@ class Gateway:
             self._by_name[p.name] = p
             self._env_order.append(p.name)
 
-    async def ordered_providers(self) -> list[Provider]:
+    async def ordered_providers(self: Gateway) -> list[Provider]:
         """The provider pool in the current failover order.
 
         The runtime override (provider_state.sort_order, dashboard /
@@ -90,7 +90,7 @@ class Gateway:
                 out.append(self._by_name[name])
         return out
 
-    async def order_names(self) -> tuple[list[str], str]:
+    async def order_names(self: Gateway) -> tuple[list[str], str]:
         """(order, source) where source is "runtime" or "env"."""
         order = await db.get_provider_order()
         if order is None:
@@ -98,7 +98,7 @@ class Gateway:
         return [n for n in order if n in self._by_name] or list(self._env_order), "runtime"
 
     async def _ev(
-        self,
+        self: Gateway,
         message: str,
         info: dict | None = None,
     ) -> None:
@@ -113,7 +113,7 @@ class Gateway:
     # ---------------------------------------------------------------------------
 
     async def search(
-        self,
+        self: Gateway,
         query: str,
         num: int,
     ) -> tuple[list[Result], str, list[dict]]:
@@ -174,7 +174,7 @@ class Gateway:
         raise GatewayExhausted(errors)
 
     async def _provider_available(
-        self,
+        self: Gateway,
         p: Provider,
         errors: list[dict],
     ) -> bool:
@@ -195,7 +195,7 @@ class Gateway:
             return False
         return True
 
-    async def close(self) -> None:
+    async def close(self: Gateway) -> None:
         """Close the shared HTTP client."""
         await self._client.aclose()
 

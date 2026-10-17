@@ -209,27 +209,27 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
 
     @property
-    def provider_order(self) -> list[str]:
+    def provider_order(self: Settings) -> list[str]:
         """Provider failover order from SEARCH_PROVIDERS (comma list, lowercased)."""
         names = [p.strip().lower() for p in self.SEARCH_PROVIDERS.split(",")]
         return [n for n in names if n]
 
     @property
-    def job_boards(self) -> tuple[str, ...]:
+    def job_boards(self: Settings) -> tuple[str, ...]:
         """Job-board host[/path] prefixes from SEARCH_JOB_BOARDS (comma list)."""
         return tuple(e.strip() for e in self.SEARCH_JOB_BOARDS.split(",") if e.strip())
 
     @property
-    def job_intent_terms(self) -> tuple[str, ...]:
+    def job_intent_terms(self: Settings) -> tuple[str, ...]:
         """Job-intent terms from SEARCH_JOB_INTENT_TERMS (comma list)."""
         return tuple(t.strip() for t in self.SEARCH_JOB_INTENT_TERMS.split(",") if t.strip())
 
     @property
-    def short_url_hosts(self) -> frozenset[str]:
+    def short_url_hosts(self: Settings) -> frozenset[str]:
         """Shortener hosts from CRAWL_SHORT_URL_HOSTS (comma list, lowercased)."""
         return frozenset(h.strip().lower() for h in self.CRAWL_SHORT_URL_HOSTS.split(",") if h.strip())
 
-    def env_quota_limit(self, provider: str) -> int | None:
+    def env_quota_limit(self: Settings, provider: str) -> int | None:
         """Default monthly quota for a provider (env-backed). None = unknown."""
         raw = {
             "brave": self.BRAVE_QUOTA_MONTHLY,
@@ -241,7 +241,7 @@ class Settings(BaseSettings):
             return None
         return int(raw)
 
-    def refresh_backoff_hours(self, streak: int) -> float:
+    def refresh_backoff_hours(self: Settings, streak: int) -> float:
         """Refresh delay in hours after `streak` consecutive failed crawls.
 
         Doubles from REFRESH_BACKOFF_BASE_HOURS (6h → 12h → 24h → ...) up to one
@@ -253,7 +253,7 @@ class Settings(BaseSettings):
         delay = self.REFRESH_BACKOFF_BASE_HOURS * (2 ** (streak - 1))
         return min(delay, float(self.REFRESH_MIN_AGE_HOURS))
 
-    def conninfo(self, dbname: str | None = None) -> str:
+    def conninfo(self: Settings, dbname: str | None = None) -> str:
         """psycopg connection string for ``dbname`` (default: POSTGRES_DB)."""
         return (
             f"host={self.POSTGRES_HOST} port={self.POSTGRES_PORT} "

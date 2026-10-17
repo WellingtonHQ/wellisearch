@@ -20,12 +20,12 @@ class Brave(Provider):
     ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 
     @property
-    def configured(self) -> bool:
+    def configured(self: Brave) -> bool:
         """True when BRAVE_API_KEY is set."""
         return bool(self.s.BRAVE_API_KEY)
 
     async def search(
-        self,
+        self: Brave,
         query: str,
         num: int,
     ) -> list[Result]:

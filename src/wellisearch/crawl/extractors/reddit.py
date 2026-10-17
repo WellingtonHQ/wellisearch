@@ -28,7 +28,7 @@ class RedditExtractor:
 
     name = "reddit"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: RedditExtractor, r: Rendered) -> Fitted:
         """Keep post content and comments ranked by score or Reddit Best."""
         soup = BeautifulSoup(r.html, "lxml")
         post = soup.select_one("shreddit-post")
@@ -62,7 +62,7 @@ class RedditExtractor:
             flags={"extractor": "reddit", "ranking": ranking},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: RedditExtractor, f: Fitted) -> bool:
         """Accept a post once comments are present, or Reddit reports none."""
         if f.flags.get("extractor") != "reddit":
             return GenericExtractor().accept(f)

@@ -36,7 +36,7 @@ class GenericExtractor:
 
     name = "generic"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: GenericExtractor, r: Rendered) -> Fitted:
         """Extract markdown (trafilatura, else readability) + title.
 
         Raises Escalate("browser") when the body is a short "Loading..." stub —
@@ -49,7 +49,7 @@ class GenericExtractor:
             title = _trafilatura_title(r.html)
         return Fitted(md=md, title=title, flags={"extractor": "generic"})
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: GenericExtractor, f: Fitted) -> bool:
         """Gate: markdown must clear the minimum length."""
         return len(f.md.strip()) >= MIN_MD_CHARS
 

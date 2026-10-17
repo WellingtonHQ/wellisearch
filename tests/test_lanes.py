@@ -34,18 +34,18 @@ CLEAN_HTML = (
 # ---------------------------------------------------------------------------
 
 class FakeResp:
-    def __init__(self, status: int) -> None:
+    def __init__(self: FakeResp, status: int) -> None:
         """Initialize a fake response with a status."""
         self.status = status
 
 
 class FakeMouse:
-    def __init__(self) -> None:
+    def __init__(self: FakeMouse) -> None:
         """Initialize a fake mouse click counter."""
         self.clicks = 0
 
     async def move(
-        self,
+        self: FakeMouse,
         x: int,
         y: int,
     ) -> None:
@@ -53,7 +53,7 @@ class FakeMouse:
         pass
 
     async def click(
-        self,
+        self: FakeMouse,
         x: int,
         y: int,
     ) -> None:
@@ -65,7 +65,7 @@ class FakePage:
     """Returns a sequence of html from content(); records turnstile clicks."""
 
     def __init__(
-        self,
+        self: FakePage,
         contents: list[str],
         status: int = 200,
     ) -> None:
@@ -76,7 +76,7 @@ class FakePage:
         self._last = CLEAN_HTML
 
     async def goto(
-        self,
+        self: FakePage,
         url: str,
         wait_until: str | None = None,
         timeout: float | None = None,
@@ -84,50 +84,50 @@ class FakePage:
         """Return a fake response for the goto."""
         return FakeResp(self._status)
 
-    async def content(self) -> str:
+    async def content(self: FakePage) -> str:
         """Pop the next content from the sequence."""
         if self._contents:
             return self._contents.pop(0)
         return self._last
 
-    async def title(self) -> str:
+    async def title(self: FakePage) -> str:
         """Return a fixed title."""
         return "Article"
 
-    async def wait_for_timeout(self, ms: float) -> None:
+    async def wait_for_timeout(self: FakePage, ms: float) -> None:
         """No-op wait."""
         pass
 
     async def wait_for_load_state(
-        self,
+        self: FakePage,
         state: str,
         timeout: float | None = None,
     ) -> None:
         """No-op wait."""
         pass
 
-    async def evaluate(self, code: str) -> str:
+    async def evaluate(self: FakePage, code: str) -> str:
         """Return a fake turnstile widget box."""
         # A valid turnstile widget box so _click_turnstile_checkbox actually clicks.
         return json.dumps([100, 200, 800, 70])
 
-    async def close(self) -> None:
+    async def close(self: FakePage) -> None:
         """No-op close."""
         pass
 
 
 class FakeContext:
-    def __init__(self, page: FakePage) -> None:
+    def __init__(self: FakeContext, page: FakePage) -> None:
         """Initialize a fake context wrapping a page."""
         self._page = page
 
-    async def new_page(self) -> FakePage:
+    async def new_page(self: FakeContext) -> FakePage:
         """Return the fake page."""
         return self._page
 
 
 class FakePool:
-    def __init__(self, page: FakePage) -> None:
+    def __init__(self: FakePool, page: FakePage) -> None:
         """Initialize a fake pool wrapping a fake context."""
         self._ctx = FakeContext(page)
         self.contexts = [self._ctx]
@@ -135,14 +135,14 @@ class FakePool:
         self.invalidated = []
         self.released = []
 
-    async def acquire(self, key: str) -> FakeContext:
+    async def acquire(self: FakePool, key: str) -> FakeContext:
         """Count the acquire and return the fake context."""
         ctx = self.contexts[min(self.acquired, len(self.contexts) - 1)]
         self.acquired += 1
         return ctx
 
     async def invalidate(
-        self,
+        self: FakePool,
         key: str,
         ctx: FakeContext,
         error: Exception,
@@ -150,7 +150,7 @@ class FakePool:
         """Record invalidated contexts."""
         self.invalidated.append((key, ctx, error))
 
-    async def release(self, ctx: FakeContext, key: str | None = None) -> None:
+    async def release(self: FakePool, ctx: FakeContext, key: str | None = None) -> None:
         """Record released contexts."""
         self.released.append((ctx, key))
 
@@ -234,7 +234,7 @@ print("OK fast-lane clean page succeeds")
 
 
 class ClosedContext(FakeContext):
-    async def new_page(self) -> FakePage:
+    async def new_page(self: ClosedContext) -> FakePage:
         """Simulate the closed Playwright transport seen in production."""
         raise RuntimeError(
             "BrowserContext.new_page: WriteUnixTransport closed=True; the handler is closed"
@@ -261,7 +261,7 @@ print("OK browser tier replaces a closed context and retries once")
 
 
 class TimeoutContext(FakeContext):
-    async def new_page(self) -> FakePage:
+    async def new_page(self: TimeoutContext) -> FakePage:
         """Simulate a page timeout unrelated to a closed browser context."""
         raise TimeoutError("navigation timed out")
 
@@ -309,16 +309,16 @@ called = []
 
 
 class FakeSem:
-    def __init__(self, name: str) -> None:
+    def __init__(self: FakeSem, name: str) -> None:
         """Initialize a fake semaphore with a name."""
         self.name = name
 
-    async def __aenter__(self) -> FakeSem:
+    async def __aenter__(self: FakeSem) -> FakeSem:
         """Record the semaphore name on enter."""
         called.append(self.name)
         return self
 
-    async def __aexit__(self, *a: object) -> bool:
+    async def __aexit__(self: FakeSem, *a: object) -> bool:
         """No-op exit."""
         return False
 
@@ -367,7 +367,7 @@ class ChallengeTier:
     name = "http"
 
     async def fetch(
-        self,
+        self: ChallengeTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -398,14 +398,14 @@ print("OK engine propagates ChallengeDetected")
 # ---------------------------------------------------------------------------
 
 class FakeDB:
-    def __init__(self) -> None:
+    def __init__(self: FakeDB) -> None:
         """Initialize a fake db with recorded calls."""
         self.routed = []
         self.done = []
         self.claimed = []
 
     async def fetch_all(
-        self,
+        self: FakeDB,
         sql: str,
         params: tuple | None = None,
         timeout_ms: int | None = None,
@@ -415,13 +415,13 @@ class FakeDB:
             return []
         return [{"url": "https://example.com/challenge"}]
 
-    async def queue_claim(self, url: str) -> bool:
+    async def queue_claim(self: FakeDB, url: str) -> bool:
         """Record the claim."""
         self.claimed.append(url)
         return True
 
     async def queue_done(
-        self,
+        self: FakeDB,
         url: str,
         ok: bool,
         error: str | None = None,
@@ -429,7 +429,7 @@ class FakeDB:
         """Record the done call."""
         self.done.append((url, ok))
 
-    async def queue_route_to_cf(self, url: str) -> bool:
+    async def queue_route_to_cf(self: FakeDB, url: str) -> bool:
         """Record the CF routing."""
         self.routed.append(url)
         return True
@@ -461,21 +461,21 @@ print("OK worker routes ChallengeDetected to CF lane")
 
 
 class BackoffDB:
-    def __init__(self) -> None:
+    def __init__(self: BackoffDB) -> None:
         """Initialize a fake db recording streak bumps."""
         self.bumped = []
 
-    async def log_crawl(self, *args: object, **kwargs: object) -> None:
+    async def log_crawl(self: BackoffDB, *args: object, **kwargs: object) -> None:
         """No-op crawl-log sink."""
 
     async def execute(
-        self,
+        self: BackoffDB,
         sql: str,
         params: tuple | None = None,
     ) -> None:
         """No-op statement sink (last_status update)."""
 
-    async def refresh_fail_bump(self, url: str) -> int | None:
+    async def refresh_fail_bump(self: BackoffDB, url: str) -> int | None:
         """Record a streak bump."""
         self.bumped.append(url)
         return 1
@@ -523,7 +523,7 @@ WALLED = "https://example.com/walled"
 
 class FakeRefreshDB:
     def __init__(
-        self,
+        self: FakeRefreshDB,
         enqueue_ok: bool = True,
         url: str = WALLED,
     ) -> None:
@@ -536,7 +536,7 @@ class FakeRefreshDB:
         self.sqls = []
 
     async def fetch_all(
-        self,
+        self: FakeRefreshDB,
         sql: str,
         params: tuple | None = None,
         timeout_ms: int | None = None,
@@ -546,7 +546,7 @@ class FakeRefreshDB:
         return [{"url": self.url, "fetch_count": 5}]
 
     async def queue_enqueue(
-        self,
+        self: FakeRefreshDB,
         url: str,
         source: str,
         lane: str = "fast",
@@ -555,12 +555,12 @@ class FakeRefreshDB:
         self.enqueued.append((url, source, lane))
         return self.enqueue_ok
 
-    async def queue_route_to_cf(self, url: str) -> bool:
+    async def queue_route_to_cf(self: FakeRefreshDB, url: str) -> bool:
         """Record the CF routing."""
         self.routed.append(url)
         return True
 
-    async def refresh_fail_bump(self, url: str) -> int | None:
+    async def refresh_fail_bump(self: FakeRefreshDB, url: str) -> int | None:
         """Record a streak bump (bot-walled pages back off)."""
         self.bumped.append(url)
         return 1
@@ -639,14 +639,14 @@ print("OK failed refresh backs off the selected legacy URL alias")
 
 
 class KickDB:
-    def __init__(self, insert_ok: bool) -> None:
+    def __init__(self: KickDB, insert_ok: bool) -> None:
         """Initialize a fake db that records enqueue/route calls."""
         self.inserted = []
         self.routed = []
         self.ok = insert_ok
 
     async def queue_enqueue(
-        self,
+        self: KickDB,
         url: str,
         source: str,
         lane: str = "fast",
@@ -655,7 +655,7 @@ class KickDB:
         self.inserted.append((url, source, lane))
         return self.ok
 
-    async def queue_route_to_cf(self, url: str) -> bool:
+    async def queue_route_to_cf(self: KickDB, url: str) -> bool:
         """Record CF routing of an already-pending URL."""
         self.routed.append(url)
         return True
@@ -742,11 +742,11 @@ async def _orphan_release() -> str:
     """Cancel the crawl_deduped owner mid-crawl (what _adopt_orphan's timer does); report what a joiner sees."""
     started = asyncio.Event()
 
-    async def owner_fn():
+    async def owner_fn() -> None:
         started.set()
         await asyncio.sleep(30.0)  # hangs until its task is cancelled
 
-    async def unused_fn():
+    async def unused_fn() -> None:
         return None  # joiners never run fn — they dedup onto the in-flight future
 
     owner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "fetch", owner_fn))

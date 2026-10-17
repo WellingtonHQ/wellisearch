@@ -58,7 +58,7 @@ class BrowserTier:
     name = "browser"
 
     async def fetch(
-        self,
+        self: BrowserTier,
         url: str,
         p: Policy,
     ) -> Rendered:
@@ -83,7 +83,7 @@ class BrowserTier:
         raise RuntimeError("browser recovery loop ended without a result")
 
     async def _crawl(
-        self,
+        self: BrowserTier,
         page: Page,
         url: str,
         p: Policy,
@@ -142,7 +142,7 @@ class BrowserTier:
         )
 
     async def _resolve_challenge(
-        self,
+        self: BrowserTier,
         page: Page,
         url: str,
         html: str,
@@ -168,7 +168,7 @@ class BrowserTier:
         return html
 
     async def _on_crawl_error(
-        self,
+        self: BrowserTier,
         pool: BrowserPool,
         key: str,
         ctx: BrowserContext,
@@ -183,7 +183,7 @@ class BrowserTier:
             raise e
         log.warning("browser context %s closed; retrying once with a fresh context", key)
 
-    def worst_case_s(self, p: Policy) -> float:
+    def worst_case_s(self: BrowserTier, p: Policy) -> float:
         """Worst-case budget for the engine's wait_for backstop.
 
         Covers the full work the tier may do: goto + settle (+ network_idle),

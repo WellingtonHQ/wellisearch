@@ -47,7 +47,7 @@ class Database:
     """Postgres access: pool, startup (self-create app DB + DDL), and helpers
     for pages, quotas, provider state, app-state flags, logs, and the crawl queue."""
 
-    def __init__(self) -> None:
+    def __init__(self: Database) -> None:
         """Starts with no pool; call startup() before use."""
         self._pool: AsyncConnectionPool | None = None
 
@@ -56,13 +56,13 @@ class Database:
     # ---------------------------------------------------------------------------
 
     @property
-    def pool(self) -> AsyncConnectionPool:
+    def pool(self: Database) -> AsyncConnectionPool:
         """The live connection pool; raises if startup() has not been called."""
         if self._pool is None:
             raise RuntimeError("database not started (call startup() first)")
         return self._pool
 
-    async def startup(self) -> None:
+    async def startup(self: Database) -> None:
         """Bring the database up: wait for Postgres, create the app DB if
         missing, open the pool, and apply schema.sql."""
         s = get_settings()
@@ -102,7 +102,7 @@ class Database:
             await conn.execute(schema_sql)
         log.info("schema applied (extensions, tables, fn_search_local)")
 
-    async def _ensure_app_db(self, s: Settings) -> None:
+    async def _ensure_app_db(self: Database, s: Settings) -> None:
         """Idempotently create the app DB (via the admin DB) and ensure the
         extensions the pool requires (vector, pg_trgm) exist in it.
 
@@ -118,7 +118,7 @@ class Database:
         finally:
             await admin.close()
 
-    async def _create_app_db_if_missing(self, admin: psycopg.AsyncConnection, s: Settings) -> None:
+    async def _create_app_db_if_missing(self: Database, admin: psycopg.AsyncConnection, s: Settings) -> None:
         """Create the app database via the admin connection when it is missing."""
         async with admin.cursor() as cur:
             await cur.execute(
@@ -145,7 +145,7 @@ class Database:
             await app.close()
         log.info("ensured extensions (vector, pg_trgm) in %s", s.POSTGRES_DB)
 
-    async def close(self) -> None:
+    async def close(self: Database) -> None:
         """Close the pool (if open) and clear the reference."""
         if self._pool is not None:
             await self._pool.close()
@@ -156,7 +156,7 @@ class Database:
     # ---------------------------------------------------------------------------
 
     async def execute(
-        self,
+        self: Database,
         sql: str,
         params: tuple | list | None = None,
     ) -> int:
@@ -166,7 +166,7 @@ class Database:
             return cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
 
     async def fetch_all(
-        self,
+        self: Database,
         sql: str,
         params: tuple | list | None = None,
         timeout_ms: int | None = None,
@@ -182,7 +182,7 @@ class Database:
             return list(await cur.fetchall())
 
     async def _fetch_all_timed(
-        self,
+        self: Database,
         conn: psycopg.AsyncConnection,
         sql: str,
         params: tuple | list | None,
@@ -199,7 +199,7 @@ class Database:
             return list(await cur.fetchall())
 
     async def fetch_one(
-        self,
+        self: Database,
         sql: str,
         params: tuple | list | None = None,
     ) -> dict[str, Any] | None:
@@ -210,7 +210,7 @@ class Database:
             return row
 
     @contextlib.asynccontextmanager
-    async def transaction(self) -> AsyncIterator[psycopg.AsyncConnection]:
+    async def transaction(self: Database) -> AsyncIterator[psycopg.AsyncConnection]:
         """Yield a pooled connection inside an explicit transaction (commit on
         success, roll back on exception)."""
         async with self.pool.connection() as conn:
@@ -221,12 +221,12 @@ class Database:
     # Pages / Fetch
     # ---------------------------------------------------------------------------
 
-    async def page_get(self, url: str) -> dict[str, Any] | None:
+    async def page_get(self: Database, url: str) -> dict[str, Any] | None:
         """The page row for a URL, or None."""
         return await self.fetch_one("SELECT * FROM pages WHERE url = %s", (url,))
 
     async def bump_fetch_count(
-        self,
+        self: Database,
         url: str,
         n: int = 1,
     ) -> None:
@@ -236,7 +236,7 @@ class Database:
             (n, url),
         )
 
-    async def bump_fetch_counts(self, urls: list[str]) -> None:
+    async def bump_fetch_counts(self: Database, urls: list[str]) -> None:
         """Increment fetch_count by 1 for every listed page in one statement
         (one round-trip instead of one per row — N serial UPDATEs on the hot path)."""
         if not urls:
@@ -246,7 +246,7 @@ class Database:
             (urls,),
         )
 
-    async def mark_search_hits(self, urls: list[str]) -> None:
+    async def mark_search_hits(self: Database, urls: list[str]) -> None:
         """Bump search_hit_count for every served result in one statement
         (one round-trip instead of one per row — k sequential UPDATEs on the
         hot path)."""
@@ -257,7 +257,7 @@ class Database:
             (urls,),
         )
 
-    async def refresh_fail_bump(self, url: str) -> int | None:
+    async def refresh_fail_bump(self: Database, url: str) -> int | None:
         """Record a failed crawl of `url` against its watchlist-refresh streak.
 
         The page is then excluded from the refresh pool until
@@ -279,7 +279,7 @@ class Database:
         )
         return streak
 
-    async def refresh_success_reset(self, url: str) -> None:
+    async def refresh_success_reset(self: Database, url: str) -> None:
         """Clear a page's refresh-failure backoff after a successful crawl."""
         await self.execute(
             "UPDATE pages SET refresh_fail_streak = 0, "
@@ -291,7 +291,7 @@ class Database:
     # Quota
     # ---------------------------------------------------------------------------
 
-    async def quota_used_limit(self, provider: str) -> tuple[int, int | None]:
+    async def quota_used_limit(self: Database, provider: str) -> tuple[int, int | None]:
         """Current-month (used, limit); limit = runtime override or env default."""
         s = get_settings()
         row = await self.fetch_one(
@@ -309,7 +309,7 @@ class Database:
         )
         return used, limit
 
-    async def quota_bump(self, provider: str) -> None:
+    async def quota_bump(self: Database, provider: str) -> None:
         """Record one provider call for the current month, preserving any
         runtime limit override."""
         s = get_settings()
@@ -341,12 +341,12 @@ class Database:
     # Provider State
     # ---------------------------------------------------------------------------
 
-    async def get_provider_state(self, provider: str) -> dict[str, Any] | None:
+    async def get_provider_state(self: Database, provider: str) -> dict[str, Any] | None:
         """The provider_state row for a provider, or None."""
         return await self.fetch_one("SELECT * FROM provider_state WHERE provider = %s", (provider,))
 
     async def set_provider_state(
-        self,
+        self: Database,
         provider: str,
         *,
         enabled: bool | None = None,
@@ -389,7 +389,7 @@ class Database:
     # Provider Order
     # ---------------------------------------------------------------------------
 
-    async def get_provider_order(self) -> list[str] | None:
+    async def get_provider_order(self: Database) -> list[str] | None:
         """The runtime failover order (dashboard override) or None = env default."""
         rows = await self.fetch_all(
             "SELECT provider, sort_order FROM provider_state WHERE sort_order IS NOT NULL"
@@ -401,7 +401,7 @@ class Database:
             for r in sorted(rows, key=lambda r: (r["sort_order"] or 0, r["provider"]))
         ]
 
-    async def set_provider_order(self, order: list[str]) -> None:
+    async def set_provider_order(self: Database, order: list[str]) -> None:
         """Persist a full failover order (positions 0..n-1). An empty list
         clears the override (falls back to the env default order)."""
         await self.execute(
@@ -420,13 +420,13 @@ class Database:
     # App State (runtime flags)
     # ---------------------------------------------------------------------------
 
-    async def get_app_value(self, key: str) -> Any | None:
+    async def get_app_value(self: Database, key: str) -> Any | None:
         """The runtime value stored under `key` in app_state, or None when the
         key is unset."""
         row = await self.fetch_one("SELECT value FROM app_state WHERE key = %s", (key,))
         return row["value"] if row else None
 
-    async def set_app_value(self, key: str, value: Any) -> None:
+    async def set_app_value(self: Database, key: str, value: Any) -> None:
         """Upsert the runtime value stored under `key` in app_state."""
         await self.execute(
             """
@@ -436,12 +436,12 @@ class Database:
             (key, json.dumps(value)),
         )
 
-    async def worker_paused(self) -> bool:
+    async def worker_paused(self: Database) -> bool:
         """Whether the background worker is paused. An absent key means not
         paused."""
         return (await self.get_app_value(INDEXING_PAUSED_KEY)) is True
 
-    async def set_worker_paused(self, paused: bool) -> None:
+    async def set_worker_paused(self: Database, paused: bool) -> None:
         """Pause or resume the background worker (persists across restarts)."""
         await self.set_app_value(INDEXING_PAUSED_KEY, bool(paused))
 
@@ -450,7 +450,7 @@ class Database:
     # ---------------------------------------------------------------------------
 
     async def log_search(
-        self,
+        self: Database,
         query: str,
         source: str,
         local_hits: int | None,
@@ -465,7 +465,7 @@ class Database:
         )
 
     async def log_crawl(
-        self,
+        self: Database,
         url: str,
         trigger: str,
         status: str,
@@ -481,7 +481,7 @@ class Database:
         )
 
     async def log_event(
-        self,
+        self: Database,
         message: str,
         info: dict[str, Any] | None = None,
     ) -> None:
@@ -493,7 +493,7 @@ class Database:
             (message, json.dumps(info, default=str) if info is not None else None),
         )
 
-    async def prune_logs(self, days: int) -> dict[str, int]:
+    async def prune_logs(self: Database, days: int) -> dict[str, int]:
         """Retention sweep for the log tables. Returns per-table deleted counts."""
         out: dict[str, int] = {}
         for table in ("crawl_log", "event_log", "search_log"):
@@ -508,7 +508,7 @@ class Database:
     # ---------------------------------------------------------------------------
 
     async def queue_enqueue(
-        self,
+        self: Database,
         url: str,
         source: str,
         lane: str = "fast",
@@ -537,14 +537,14 @@ class Database:
             )
             return (cur.rowcount or 0) > 0
 
-    async def queue_reset_in_flight(self) -> int:
+    async def queue_reset_in_flight(self: Database) -> int:
         """Boot-time: rows stuck in 'in_flight' (crash mid-drain) go back to pending."""
         return await self.execute(
             "UPDATE crawl_queue SET status = 'pending', last_error = 'reset on boot' "
             "WHERE status = 'in_flight'"
         )
 
-    async def queue_claim(self, url: str) -> bool:
+    async def queue_claim(self: Database, url: str) -> bool:
         """Claim a pending queue row for processing (pending → in_flight,
         attempts+1); False if it was not pending."""
         cur_ok = await self.execute(
@@ -555,7 +555,7 @@ class Database:
         return cur_ok > 0
 
     async def queue_done(
-        self,
+        self: Database,
         url: str,
         ok: bool,
         error: str | None = None,
@@ -586,7 +586,7 @@ class Database:
                     (error, url),
                 )
 
-    async def queue_challenge_in_flight(self, url: str) -> bool:
+    async def queue_challenge_in_flight(self: Database, url: str) -> bool:
         """True when a CF challenge solve is already queued or running for `url`."""
         row = await self.fetch_one(
             "SELECT 1 AS in_flight FROM crawl_queue WHERE url = %s AND lane = 'cf' "
@@ -595,7 +595,7 @@ class Database:
         )
         return row is not None
 
-    async def queue_route_to_cf(self, url: str) -> bool:
+    async def queue_route_to_cf(self: Database, url: str) -> bool:
         """Move a fast-lane row (pending or in-flight) onto the CF challenge lane.
 
         Sets lane='cf', status='pending' (so the CF drain can claim it), and

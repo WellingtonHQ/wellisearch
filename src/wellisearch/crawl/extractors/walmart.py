@@ -31,7 +31,7 @@ class WalmartExtractor:
 
     name = "walmart"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: WalmartExtractor, r: Rendered) -> Fitted:
         """Fit a walmart.com/walmart.ca product page into structured markdown."""
         node = _product_node(r.html)
         if node is not None:
@@ -45,7 +45,7 @@ class WalmartExtractor:
             flags={"extractor": "walmart"},
         )
 
-    def _fit_structured(self, node: dict, r: Rendered) -> Fitted:
+    def _fit_structured(self: WalmartExtractor, node: dict, r: Rendered) -> Fitted:
         """Structured markdown from the JSON-LD product node."""
         limit = max(1, get_settings().CRAWL_MAX_REVIEWS)
         variant = _variant(node)
@@ -98,7 +98,7 @@ class WalmartExtractor:
             flags={"extractor": "walmart", "structured": True},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: WalmartExtractor, f: Fitted) -> bool:
         """Gate: structured fit needs title + price; legacy fit needs a price and real content."""
         if f.flags.get("structured"):
             return bool(f.title) and bool(f.signals.get("price"))

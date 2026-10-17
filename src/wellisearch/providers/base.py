@@ -34,7 +34,7 @@ class ProviderError(Exception):
     """A provider call failed (auth, quota, network, 5xx…). Gateway fails over."""
 
     def __init__(
-        self,
+        self: ProviderError,
         provider: str,
         message: str,
         status: int | None = None,
@@ -51,7 +51,7 @@ class Provider:
     name: str = "base"
 
     def __init__(
-        self,
+        self: Provider,
         settings: Settings,
         client: httpx.AsyncClient,
     ) -> None:
@@ -60,12 +60,12 @@ class Provider:
         self.client = client
 
     @property
-    def configured(self) -> bool:
+    def configured(self: Provider) -> bool:
         """Whether the provider is usable (has its key/url); base is always True."""
         return True
 
     async def search(
-        self,
+        self: Provider,
         query: str,
         num: int,
     ) -> list[Result]:

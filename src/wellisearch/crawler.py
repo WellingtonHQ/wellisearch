@@ -55,7 +55,7 @@ class CrawlError(Exception):
     """A failed crawl, carrying the URL, message, and optional HTTP status."""
 
     def __init__(
-        self,
+        self: CrawlError,
         url: str,
         message: str,
         status: int | None = None,
@@ -66,7 +66,7 @@ class CrawlError(Exception):
         self.message = message
         self.status = status
 
-    def status_label(self) -> str:
+    def status_label(self: CrawlError) -> str:
         """Short status for logs: ``http_<status>`` when present, else ``error``."""
         return f"http_{self.status}" if self.status else "error"
 

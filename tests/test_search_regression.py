@@ -272,10 +272,10 @@ DATASET: list[tuple[str, str, str]] = [
 class StubGateway:
     """Stands in for get_gateway(): records calls and returns canned results."""
 
-    def __init__(self) -> None:
+    def __init__(self: StubGateway) -> None:
         self.calls: list[tuple[str, int]] = []
 
-    async def search(self, query: str, num: int):
+    async def search(self: StubGateway, query: str, num: int) -> tuple[list[Result], str, list[dict]]:
         self.calls.append((query, num))
         return (
             [

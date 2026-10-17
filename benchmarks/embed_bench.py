@@ -153,7 +153,7 @@ class TorchRunner:
     backend = "sentence-transformers (PyTorch)"
 
     def __init__(
-        self,
+        self: TorchRunner,
         model_id: str,
         args: argparse.Namespace,
     ) -> None:
@@ -182,23 +182,23 @@ class TorchRunner:
         self.doc_prefix, self.query_prefix = model_prefixes(model_id)
         self.batch = args.batch
 
-    def truncate(self, text: str) -> str:
+    def truncate(self: TorchRunner, text: str) -> str:
         """Truncate text to max_len tokens (via the tokenizer)."""
         ids = self.tok(text, truncation=True, max_length=self.max_len, add_special_tokens=False)["input_ids"]
         return self.tok.decode(ids)
 
-    def tok_count(self, text: str) -> int:
+    def tok_count(self: TorchRunner, text: str) -> int:
         """Token count of text after truncation to max_len."""
         return _tok_len(self.tok, text, self.max_len)
 
-    def encode(self, texts: list[str]) -> np.ndarray:
+    def encode(self: TorchRunner, texts: list[str]) -> np.ndarray:
         """Encode a batch of texts to L2-normalized float32 vectors."""
         X = self.model.encode(
             texts, batch_size=self.batch, normalize_embeddings=True, show_progress_bar=False
         )
         return _l2_normalize(np.asarray(X, dtype=np.float32))
 
-    def encode_one(self, text: str) -> np.ndarray:
+    def encode_one(self: TorchRunner, text: str) -> np.ndarray:
         """Encode one text to an L2-normalized float32 vector."""
         X = self.model.encode([text], normalize_embeddings=True, show_progress_bar=False)
         return _l2_normalize(np.asarray(X, dtype=np.float32))[0]
@@ -209,7 +209,7 @@ class FastEmbedRunner:
     backend = "fastembed (ONNX Runtime)"
 
     def __init__(
-        self,
+        self: FastEmbedRunner,
         model_id: str,
         args: argparse.Namespace,
     ) -> None:
@@ -234,23 +234,23 @@ class FastEmbedRunner:
         self.doc_prefix = self.query_prefix = ""
         self.batch = args.batch
 
-    def truncate(self, text: str) -> str:
+    def truncate(self: FastEmbedRunner, text: str) -> str:
         """Truncate text to max_len tokens (via the tokenizer)."""
         ids = self.tok(text, truncation=True, max_length=self.max_len, add_special_tokens=False)["input_ids"]
         return self.tok.decode(ids)
 
-    def tok_count(self, text: str) -> int:
+    def tok_count(self: FastEmbedRunner, text: str) -> int:
         """Token count of text after truncation to max_len."""
         return _tok_len(self.tok, text, self.max_len)
 
-    def encode(self, texts: list[str]) -> np.ndarray:
+    def encode(self: FastEmbedRunner, texts: list[str]) -> np.ndarray:
         """Encode a batch of texts to L2-normalized float32 vectors."""
         X = np.stack(
             [np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)]
         )
         return _l2_normalize(X)
 
-    def encode_one(self, text: str) -> np.ndarray:
+    def encode_one(self: FastEmbedRunner, text: str) -> np.ndarray:
         """Encode one text to an L2-normalized float32 vector."""
         v = np.asarray(next(iter(self.model.embed([text]))), dtype=np.float32)
         return _l2_normalize(v[None, :])[0]

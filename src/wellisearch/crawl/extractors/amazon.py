@@ -34,7 +34,7 @@ class AmazonExtractor:
 
     name = "amazon"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: AmazonExtractor, r: Rendered) -> Fitted:
         """Fit an Amazon product page into structured markdown."""
         soup = _soup(r.html)
         limit = max(1, get_settings().CRAWL_MAX_REVIEWS)
@@ -98,7 +98,7 @@ class AmazonExtractor:
             flags={"extractor": "amazon"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: AmazonExtractor, f: Fitted) -> bool:
         """Gate: title + price + at least one feature bullet (real product content)."""
         return (
             bool(f.title)

@@ -14,7 +14,7 @@ class APExtractor:
 
     name = "ap"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: APExtractor, r: Rendered) -> Fitted:
         """Hybrid markdown with the head-decoy block dropped when present."""
         return Fitted(
             md=trim_md(_drop_head_decoys(generic_md(r.html))),
@@ -23,7 +23,7 @@ class APExtractor:
             flags={"extractor": "ap"},
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: APExtractor, f: Fitted) -> bool:
         """Gate: a real article body."""
         return len(f.md.strip()) >= MIN_NEWS_ARTICLE_BODY_CHARS
 

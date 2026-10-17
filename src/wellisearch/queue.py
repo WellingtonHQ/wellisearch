@@ -27,31 +27,31 @@ log = logging.getLogger("wellisearch.queue")
 class InFlight:
     """Shared url → future map so the same URL is never crawled twice concurrently."""
 
-    def __init__(self) -> None:
+    def __init__(self: InFlight) -> None:
         """Starts with an empty url → future map."""
         self._m: dict[str, asyncio.Future] = {}
 
-    def get(self, url: str) -> asyncio.Future | None:
+    def get(self: InFlight, url: str) -> asyncio.Future | None:
         """The in-flight future for a URL, or None."""
         return self._m.get(url)
 
     def register(
-        self,
+        self: InFlight,
         url: str,
         fut: asyncio.Future,
     ) -> None:
         """Record the in-flight future for a URL."""
         self._m[url] = fut
 
-    def forget(self, url: str) -> None:
+    def forget(self: InFlight, url: str) -> None:
         """Remove a URL's entry (no-op when absent)."""
         self._m.pop(url, None)
 
-    def urls(self) -> list[str]:
+    def urls(self: InFlight) -> list[str]:
         """The URLs currently in flight."""
         return list(self._m.keys())
 
-    def __len__(self) -> int:
+    def __len__(self: InFlight) -> int:
         """The number of URLs currently in flight."""
         return len(self._m)
 

@@ -9,6 +9,8 @@ which keeps SPA SERPs clearable by the gate without site-specific selectors.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from .base import MIN_MD_CHARS, generic_md, trim_md
 from . import register
 from ..results import Fitted, Rendered
@@ -19,7 +21,7 @@ class BraveExtractor:
 
     name = "brave"
 
-    def fit(self, r: Rendered) -> Fitted:
+    def fit(self: BraveExtractor, r: Rendered) -> Fitted:
         """Hybrid markdown; when trafilatura yields too little (SPA shell), fall back to the body's visible text."""
         md = generic_md(r.html)
         flags: dict[str, bool] = {"extractor": "brave"}
@@ -34,7 +36,7 @@ class BraveExtractor:
             flags=flags,
         )
 
-    def accept(self, f: Fitted) -> bool:
+    def accept(self: BraveExtractor, f: Fitted) -> bool:
         """Gate: markdown must clear the minimum length."""
         return len(f.md.strip()) >= MIN_MD_CHARS
 
@@ -75,7 +77,7 @@ def _collect_visible_lines(root: object) -> str:
     return "\n".join(lines)
 
 
-def _soup(html: str):
+def _soup(html: str) -> Any:
     """BeautifulSoup (lxml) parse; the repo's shared parser choice."""
     from bs4 import BeautifulSoup
 
