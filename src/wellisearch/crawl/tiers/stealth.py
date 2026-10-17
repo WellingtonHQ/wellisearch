@@ -65,6 +65,10 @@ class StealthTier:
         return clamp(get_settings().CRAWL_STEALTH_TIMEOUT_S)
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _response_content_type(page: object) -> str | None:
     """The response's Content-Type header, or None when unavailable."""
     headers = getattr(page, "headers", None)

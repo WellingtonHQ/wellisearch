@@ -34,6 +34,10 @@ class FakePlaywright:
         self.stopped = True
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 async def _transport_failure_resets_pool() -> None:
     """A dead transport clears every cached context and stops its driver."""
     pool = BrowserPool(size=1)

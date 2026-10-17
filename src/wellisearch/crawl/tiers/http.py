@@ -54,6 +54,10 @@ class HttpTier:
         return clamp(get_settings().CRAWL_TIMEOUT_S)
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _extract_title(html: str) -> str | None:
     """Best-effort <title> via a regex; None when absent.
 

@@ -31,6 +31,10 @@ class BestBuyExtractor:
         return bool(f.signals.get("price")) and len(f.md.strip()) >= MIN_PRODUCT_CHARS
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _jsonld_price(html: str) -> str | None:
     """Product offers.price from JSON-LD script blocks, else None."""
     try:

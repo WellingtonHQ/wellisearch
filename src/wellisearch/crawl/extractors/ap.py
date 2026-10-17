@@ -28,6 +28,10 @@ class APExtractor:
         return len(f.md.strip()) >= MIN_NEWS_ARTICLE_BODY_CHARS
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _drop_head_decoys(md: str) -> str:
     """Drop text before the first real paragraph when a head-decoy marker precedes it."""
     low = md.lower()

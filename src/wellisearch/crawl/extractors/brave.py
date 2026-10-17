@@ -39,6 +39,10 @@ class BraveExtractor:
         return len(f.md.strip()) >= MIN_MD_CHARS
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _visible_text_markdown(html: str) -> str:
     """The body's visible text as one line per terminal element; '' on any failure.
 
