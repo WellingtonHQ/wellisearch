@@ -318,13 +318,13 @@ def is_closed_context_error(error: Exception) -> bool:
     return any(
         marker in message
         for marker in (
-            "transport closed",
-            "handler is closed",
-            "target page, context or browser has been closed",
             "browser has been closed",
             "browsercontext has been closed",
             "context has been closed",
+            "handler is closed",
             "target closed",
+            "target page, context or browser has been closed",
+            "transport closed",
         )
     )
 

@@ -121,8 +121,8 @@ class Settings(BaseSettings):
     # cannot serve as a lone strong hit while the penalty is active. A query
     # matching any SEARCH_JOB_INTENT_TERMS skips the penalty entirely.
     SEARCH_JOB_BOARD_PENALTY: float = 0.5
-    SEARCH_JOB_BOARDS: str = "linkedin.com/jobs,indeed.com,glassdoor.com/Job,ziprecruiter.com/Jobs,monster.com,naukri.com,jobs.lever.co,boards.greenhouse.io"
-    SEARCH_JOB_INTENT_TERMS: str = "job, jobs, hiring, open roles, careers"
+    SEARCH_JOB_BOARDS: str = "boards.greenhouse.io,glassdoor.com/Job,indeed.com,jobs.lever.co,linkedin.com/jobs,monster.com,naukri.com,ziprecruiter.com/Jobs"
+    SEARCH_JOB_INTENT_TERMS: str = "careers, hiring, job, jobs, open roles"
     # Vector-leg row cap for fn_search_local (HNSW early-stop keeps it cheap);
     # a wider leg lets semantically close but lexically thin pages enter the
     # fusion at all instead of missing the pool entirely.
@@ -229,9 +229,9 @@ class Settings(BaseSettings):
     def env_quota_limit(self, provider: str) -> int | None:
         """Default monthly quota for a provider (env-backed). None = unknown."""
         raw = {
-            "tavily": self.TAVILY_QUOTA_MONTHLY,
             "brave": self.BRAVE_QUOTA_MONTHLY,
             "exa": self.EXA_QUOTA_MONTHLY,
+            "tavily": self.TAVILY_QUOTA_MONTHLY,
             "youcom": self.YOUCOM_QUOTA_MONTHLY,
         }.get(provider)
         if raw is None or raw <= 0:

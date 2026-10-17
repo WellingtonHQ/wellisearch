@@ -32,9 +32,9 @@ CRASH_ERROR_MAX_LEN = 200  # max chars kept in a crash error (error chain)
 QUERY_LOG_MAX_LEN = 200    # max chars of the query kept in event logs
 
 REGISTRY: dict[str, type[Provider]] = {
-    "tavily": Tavily,
     "brave": Brave,
     "exa": Exa,
+    "tavily": Tavily,
     "youcom": YouCom,
 }
 
