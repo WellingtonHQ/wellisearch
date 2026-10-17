@@ -184,6 +184,8 @@ BOTWALL_HTML = '<html><body>Just a moment...<div class="cf-turnstile"></div></bo
 
 
 class FakeTier:
+    """Fake http tier that always returns a good page."""
+
     name = "http"
 
     async def fetch(
@@ -287,6 +289,8 @@ assert hd_cat_result.flags.get("extractor") == "generic"  # non-product page -> 
 
 
 class BotwallHttpTier:
+    """Fake http tier that returns a botwall page."""
+
     name = "http"
 
     async def fetch(
@@ -299,6 +303,8 @@ class BotwallHttpTier:
 
 
 class FakeBotwallTier:
+    """Fake browser tier that returns a botwall page."""
+
     name = "browser"
 
     async def fetch(
@@ -330,6 +336,7 @@ class FakeShortResponse:
     """Fake curl_cffi response carrying the final (post-redirect) URL."""
 
     def __init__(self: FakeShortResponse, url: str) -> None:
+        """Store the final (post-redirect) URL."""
         self.url = url
 
 
@@ -337,15 +344,19 @@ class FakeShortSession:
     """Fake curl_cffi AsyncSession whose GET lands on a canned final URL."""
 
     def __init__(self: FakeShortSession, final_url: str) -> None:
+        """Store the canned final URL for every GET."""
         self.final_url = final_url
 
     async def __aenter__(self: FakeShortSession) -> FakeShortSession:
+        """Return the session itself."""
         return self
 
     async def __aexit__(self: FakeShortSession, *exc_info: Any) -> bool:
+        """No cleanup; never suppress exceptions."""
         return False
 
     async def get(self: FakeShortSession, url: str, **kwargs: Any) -> FakeShortResponse:
+        """Answer any GET with the canned final-URL response."""
         return FakeShortResponse(self.final_url)
 
 
@@ -364,6 +375,7 @@ with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(FINA
 
 
 def _shorturl_boom(**kwargs: Any) -> None:
+    """Simulate a network failure when the short-URL session is created."""
     raise RuntimeError("network down")
 
 
@@ -462,6 +474,7 @@ try:
 
     # A child task inherits the active budget; siblings never see each other's.
     async def with_budget() -> float:
+        """Run under a nested 7s budget and report its clamped value."""
         t2 = probe.set_probe_budget(7)
         try:
             return await asyncio.sleep(0, result=probe.clamp(90.0))
@@ -469,9 +482,11 @@ try:
             probe.reset_probe_budget(t2)
 
     async def sibling() -> float:
+        """Run under the outer 15s budget and report its clamped value."""
         return await asyncio.sleep(0, result=probe.clamp(90.0))
 
     async def iso() -> list[float]:
+        """Run both concurrently to pin task-context budget isolation."""
         return await asyncio.gather(sibling(), with_budget())
 
     got = asyncio.run(iso())

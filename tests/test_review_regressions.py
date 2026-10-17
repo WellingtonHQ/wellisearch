@@ -377,6 +377,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             max_age_days: float | None,
             widened: bool = False,
         ) -> tuple[list[dict], int, str | None]:
+            """Record the k it was called with; return an empty local result."""
             seen_k.append(k)
             return [], 0, None
 

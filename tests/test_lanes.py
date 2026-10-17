@@ -34,12 +34,16 @@ CLEAN_HTML = (
 # ---------------------------------------------------------------------------
 
 class FakeResp:
+    """Fake response with a status."""
+
     def __init__(self: FakeResp, status: int) -> None:
         """Initialize a fake response with a status."""
         self.status = status
 
 
 class FakeMouse:
+    """Fake mouse that counts clicks."""
+
     def __init__(self: FakeMouse) -> None:
         """Initialize a fake mouse click counter."""
         self.clicks = 0
@@ -117,6 +121,8 @@ class FakePage:
 
 
 class FakeContext:
+    """Fake context wrapping a page."""
+
     def __init__(self: FakeContext, page: FakePage) -> None:
         """Initialize a fake context wrapping a page."""
         self._page = page
@@ -127,6 +133,8 @@ class FakeContext:
 
 
 class FakePool:
+    """Fake pool wrapping a fake context."""
+
     def __init__(self: FakePool, page: FakePage) -> None:
         """Initialize a fake pool wrapping a fake context."""
         self._ctx = FakeContext(page)
@@ -234,6 +242,8 @@ print("OK fast-lane clean page succeeds")
 
 
 class ClosedContext(FakeContext):
+    """Fake context whose new_page simulates a closed transport."""
+
     async def new_page(self: ClosedContext) -> FakePage:
         """Simulate the closed Playwright transport seen in production."""
         raise RuntimeError(
@@ -261,6 +271,8 @@ print("OK browser tier replaces a closed context and retries once")
 
 
 class TimeoutContext(FakeContext):
+    """Fake context whose new_page times out for an unrelated reason."""
+
     async def new_page(self: TimeoutContext) -> FakePage:
         """Simulate a page timeout unrelated to a closed browser context."""
         raise TimeoutError("navigation timed out")
@@ -309,6 +321,8 @@ called = []
 
 
 class FakeSem:
+    """Fake semaphore that records its name on enter."""
+
     def __init__(self: FakeSem, name: str) -> None:
         """Initialize a fake semaphore with a name."""
         self.name = name
@@ -364,6 +378,8 @@ print("OK crawl_deduped picks semaphore by lane")
 # ---------------------------------------------------------------------------
 
 class ChallengeTier:
+    """Fake http tier that raises ChallengeDetected."""
+
     name = "http"
 
     async def fetch(
@@ -398,6 +414,8 @@ print("OK engine propagates ChallengeDetected")
 # ---------------------------------------------------------------------------
 
 class FakeDB:
+    """Fake db for the worker drain path: serves one challenge row, records queue calls."""
+
     def __init__(self: FakeDB) -> None:
         """Initialize a fake db with recorded calls."""
         self.routed = []
@@ -461,6 +479,8 @@ print("OK worker routes ChallengeDetected to CF lane")
 
 
 class BackoffDB:
+    """Fake db that records refresh backoff bumps."""
+
     def __init__(self: BackoffDB) -> None:
         """Initialize a fake db recording streak bumps."""
         self.bumped = []
@@ -522,6 +542,8 @@ WALLED = "https://example.com/walled"
 
 
 class FakeRefreshDB:
+    """Fake db for the watchlist refresh path."""
+
     def __init__(
         self: FakeRefreshDB,
         enqueue_ok: bool = True,
@@ -639,6 +661,8 @@ print("OK failed refresh backs off the selected legacy URL alias")
 
 
 class KickDB:
+    """Fake db that records enqueue/route calls."""
+
     def __init__(self: KickDB, insert_ok: bool) -> None:
         """Initialize a fake db that records enqueue/route calls."""
         self.inserted = []
@@ -743,11 +767,13 @@ async def _orphan_release() -> str:
     started = asyncio.Event()
 
     async def owner_fn() -> None:
+        """Signal start, then hang until its task is cancelled."""
         started.set()
-        await asyncio.sleep(30.0)  # hangs until its task is cancelled
+        await asyncio.sleep(30.0)
 
     async def unused_fn() -> None:
-        return None  # joiners never run fn — they dedup onto the in-flight future
+        """No-op — joiners dedup onto the in-flight future and never run fn."""
+        return None
 
     owner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "fetch", owner_fn))
     await started.wait()
