@@ -106,18 +106,26 @@ print("OK url normalization")
 
 
 class _FakeTitleEl:
+    """Fake title element exposing its text."""
+
     def __init__(self, text: str) -> None:
+        """Initialize a fake title element with its text."""
         self._text = text
 
     def get_all_text(self) -> str:
+        """Return the element's text."""
         return self._text
 
 
 class _FakeStealthPage:
+    """Fake stealth page exposing title elements via css()."""
+
     def __init__(self, texts: list[str]) -> None:
+        """Initialize a fake stealth page with its title texts."""
         self._texts = texts
 
     def css(self, selector: str) -> list[_FakeTitleEl]:
+        """Return fake title elements for the title selector."""
         assert selector == "title"
         return [_FakeTitleEl(t) for t in self._texts]
 
@@ -360,6 +368,7 @@ from wellisearch.crawler import failure_detail  # noqa: E402
 
 
 def _result(attempts: list[dict]) -> CrawlResult:
+    """Build a failed CrawlResult from attempt records."""
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
 
 

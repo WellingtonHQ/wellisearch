@@ -21,6 +21,7 @@ class FakeDB:
     """In-memory stand-in for the db helpers _resolve_page uses."""
 
     def __init__(self, page: dict | None = None) -> None:
+        """Initialize the fake db with a canned page and empty records."""
         self.page = page
         self.bumped: list[str] = []
         self.enqueued: list[tuple] = []
@@ -28,12 +29,15 @@ class FakeDB:
         self.paused = False
 
     async def page_get(self, url: str) -> dict | None:
+        """Return the canned stored page."""
         return self.page
 
     async def worker_paused(self) -> bool:
+        """Report whether the worker is paused."""
         return self.paused
 
     async def queue_challenge_in_flight(self, url: str) -> bool:
+        """Report whether a CF challenge row is in flight."""
         return self.challenge_in_flight
 
     async def queue_enqueue(
@@ -42,10 +46,12 @@ class FakeDB:
         source: str = "fetch",
         lane: str | None = None,
     ) -> bool:
+        """Record the enqueue and report success."""
         self.enqueued.append((url, source, lane))
         return True
 
     async def refresh_fail_bump(self, url: str) -> int | None:
+        """Record a refresh-failure streak bump."""
         self.bumped.append(url)
         return 1
 
@@ -59,11 +65,13 @@ class TwoPhaseDB(FakeDB):
         first: dict | None,
         second: dict | None,
     ) -> None:
+        """Initialize the two-phase db with its first and second page states."""
         super().__init__(first)
         self._second = second
         self._calls = 0
 
     async def page_get(self, url: str) -> dict | None:
+        """Serve the stale row on the first read, then the fresh stored row."""
         self._calls += 1
         return self.page if self._calls == 1 else self._second
 
@@ -106,6 +114,7 @@ kicks: list[bool] = []
 
 
 def _count_kick() -> None:
+    """Record a worker kick instead of scheduling it."""
     kicks.append(True)
 
 
@@ -116,6 +125,7 @@ calls: list[str] = []
 
 
 async def failing_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call and fail with a plain tier error."""
     calls.append(url)
     raise crawler.CrawlError(url, "simulated tier failure on both tiers")
 
@@ -162,6 +172,7 @@ print("OK backoff expired (re-crawl ran, failure bumped)")
 
 
 async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call and report a bot-wall."""
     calls.append(url)
     raise ChallengeDetected(url)
 
@@ -208,6 +219,7 @@ print("OK unindexed (no bump on first-time crawl failure)")
 
 
 async def ok_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call and succeed."""
     calls.append(url)
     return {"url": url}
 

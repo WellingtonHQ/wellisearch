@@ -34,12 +34,16 @@ CLEAN_HTML = (
 # ---------------------------------------------------------------------------
 
 class FakeResp:
+    """Fake response carrying a status code."""
+
     def __init__(self, status: int) -> None:
         """Initialize a fake response with a status."""
         self.status = status
 
 
 class FakeMouse:
+    """Fake mouse counting clicks."""
+
     def __init__(self) -> None:
         """Initialize a fake mouse click counter."""
         self.clicks = 0
@@ -117,6 +121,8 @@ class FakePage:
 
 
 class FakeContext:
+    """Fake browser context wrapping a page."""
+
     def __init__(self, page: FakePage) -> None:
         """Initialize a fake context wrapping a page."""
         self._page = page
@@ -127,6 +133,8 @@ class FakeContext:
 
 
 class FakePool:
+    """Fake browser pool; records acquire/invalidate/release calls."""
+
     def __init__(self, page: FakePage) -> None:
         """Initialize a fake pool wrapping a fake context."""
         self._ctx = FakeContext(page)
@@ -238,6 +246,8 @@ print("OK fast-lane clean page succeeds")
 
 
 class ClosedContext(FakeContext):
+    """Context whose new_page raises the closed-transport error."""
+
     async def new_page(self) -> FakePage:
         """Simulate the closed Playwright transport seen in production."""
         raise RuntimeError(
@@ -265,6 +275,8 @@ print("OK browser tier replaces a closed context and retries once")
 
 
 class TimeoutContext(FakeContext):
+    """Context whose new_page raises an ordinary page timeout."""
+
     async def new_page(self) -> FakePage:
         """Simulate a page timeout unrelated to a closed browser context."""
         raise TimeoutError("navigation timed out")
@@ -313,6 +325,8 @@ called = []
 
 
 class FakeSem:
+    """Fake semaphore recording its name on enter."""
+
     def __init__(self, name: str) -> None:
         """Initialize a fake semaphore with a name."""
         self.name = name
@@ -368,6 +382,8 @@ print("OK crawl_deduped picks semaphore by lane")
 # ---------------------------------------------------------------------------
 
 class ChallengeTier:
+    """Fake http tier that raises ChallengeDetected."""
+
     name = "http"
 
     async def fetch(
@@ -402,6 +418,8 @@ print("OK engine propagates ChallengeDetected")
 # ---------------------------------------------------------------------------
 
 class FakeDB:
+    """In-memory db recording queue claim/done/route calls."""
+
     def __init__(self) -> None:
         """Initialize a fake db with recorded calls."""
         self.routed = []
@@ -465,6 +483,8 @@ print("OK worker routes ChallengeDetected to CF lane")
 
 
 class BackoffDB:
+    """In-memory db recording refresh-failure streak bumps."""
+
     def __init__(self) -> None:
         """Initialize a fake db recording streak bumps."""
         self.bumped = []
@@ -530,6 +550,8 @@ WALLED = "https://example.com/walled"
 
 
 class FakeRefreshDB:
+    """In-memory db for the watchlist refresh path; records enqueue/route/bump."""
+
     def __init__(
         self,
         enqueue_ok: bool = True,
@@ -647,6 +669,8 @@ print("OK failed refresh backs off the selected legacy URL alias")
 
 
 class KickDB:
+    """In-memory db recording enqueue/route calls for the kick tests."""
+
     def __init__(self, insert_ok: bool) -> None:
         """Initialize a fake db that records enqueue/route calls."""
         self.inserted = []
@@ -751,10 +775,12 @@ async def _orphan_release() -> str:
     started = asyncio.Event()
 
     async def owner_fn() -> None:
+        """The deduped owner crawl: signal start, then hang until cancelled."""
         started.set()
         await asyncio.sleep(30.0)  # hangs until its task is cancelled
 
     async def unused_fn() -> None:
+        """Joiner crawl that never runs (it dedups onto the in-flight future)."""
         return None  # joiners never run fn — they dedup onto the in-flight future
 
     owner = asyncio.create_task(queue_mod.crawl_deduped(ORPHAN_URL, "fetch", owner_fn))

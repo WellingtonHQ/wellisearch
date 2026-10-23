@@ -15,6 +15,8 @@ from wellisearch.crawl.pool import (
 
 
 class FakeContext:
+    """Fake Playwright context that records close calls."""
+
     def __init__(self) -> None:
         """Initialize a fake context that records close calls."""
         self.closed = False
@@ -25,6 +27,8 @@ class FakeContext:
 
 
 class FakePlaywright:
+    """Fake Playwright driver that records stop calls."""
+
     def __init__(self) -> None:
         """Initialize a fake Playwright driver that records stop calls."""
         self.stopped = False
