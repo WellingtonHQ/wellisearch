@@ -54,6 +54,27 @@ async def _reembed_page(p: dict[str, Any]) -> str:
     return "unchanged" if status == "unchanged" else "ok"
 
 
+async def _process_batch(
+    batch: list[dict[str, Any]],
+    stats: dict[str, int],
+    done: int,
+    stale_n: int,
+) -> tuple[int, str]:
+    """Re-embed one batch, updating `stats` in place and printing progress at
+    PROGRESS_INTERVAL boundaries (and on the final page).
+    Returns (pages_done, last_url)."""
+    for p in batch:
+        outcome = await _reembed_page(p)
+        stats[outcome] += 1
+        done += 1
+        if done % PROGRESS_INTERVAL == 0 or done == stale_n:
+            print(
+                f"  {done}/{stale_n} (ok={stats['ok']} unchanged={stats['unchanged']} "
+                f"failed={stats['failed']})"
+            )
+    return done, batch[-1]["url"]
+
+
 async def _stale_count(force: bool, model: str) -> int:
     """Number of pages needing (re)embedding (all when force)."""
     row = await db.fetch_one(
@@ -110,16 +131,7 @@ async def _run(force: bool, dry_run: bool) -> None:
             batch = await _stale_batch(force, s.EMBED_MODEL, last_url, s.REINDEX_BATCH_SIZE)
             if not batch:
                 break
-            for p in batch:
-                outcome = await _reembed_page(p)
-                stats[outcome] += 1
-                done += 1
-                if done % PROGRESS_INTERVAL == 0 or done == stale_n:
-                    print(
-                        f"  {done}/{stale_n} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                        f"failed={stats['failed']})"
-                    )
-            last_url = batch[-1]["url"]
+            done, last_url = await _process_batch(batch, stats, done, stale_n)
 
         print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
     finally:

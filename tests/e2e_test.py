@@ -385,6 +385,23 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
 # Worker pause / resume
 # ---------------------------------------------------------------------------
 
+async def _poll_seed_crawled(c: httpx.AsyncClient, seed_probe: str, seeded_at: dt.datetime) -> bool:
+    """Poll /api/pages until the seed probe shows a fresh last_crawled
+    (at/after seed time minus the ~5s kick debounce). True once drained."""
+    for _ in range(30):
+        rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
+        rows = rr.json().get("pages", []) if rr.status_code == 200 else []
+        hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
+        if hit:
+            ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=dt.timezone.utc)
+            if ts >= seeded_at - dt.timedelta(seconds=5):
+                return True
+        await asyncio.sleep(2)
+    return False
+
+
 async def test_worker_pause(c: httpx.AsyncClient) -> None:
     """PATCH /api/worker roundtrip, state on both /api/stats surfaces, and the
     carve-out: while paused, on-demand refresh (inline crawl) and manual seeds
@@ -461,19 +478,7 @@ async def test_worker_pause(c: httpx.AsyncClient) -> None:
 
         # the seeded row was crawled (drained by a paused or resumed tick):
         # poll until its last_crawled is at/after seed time (kick debounce ~5s)
-        drained = False
-        for _ in range(30):
-            rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
-            rows = rr.json().get("pages", []) if rr.status_code == 200 else []
-            hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
-            if hit:
-                ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=dt.timezone.utc)
-                drained = ts >= seeded_at - dt.timedelta(seconds=5)
-                if drained:
-                    break
-            await asyncio.sleep(2)
+        drained = await _poll_seed_crawled(c, seed_probe, seeded_at)
         check(
             "manual seed while paused got crawled (carve-out end-to-end)",
             drained,
