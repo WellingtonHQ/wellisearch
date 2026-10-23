@@ -81,7 +81,8 @@ assert is_botwall("<html><body>JavaScript is disabled. Enable it to continue.</b
 reddit_wall = (
     '<!DOCTYPE html><html lang="en"><head><title>Reddit - Prove your humanity</title>'
     "<script src=\"https://www.google.com/recaptcha/api.js\"></script></head>"
-    "<body><form action=\"/r/programming/\" method=\"post\"><input type=\"submit\" value=\"Continue\"></form></body></html>"
+    "<body><form action=\"/r/programming/\" method=\"post\">"
+    "<input type=\"submit\" value=\"Continue\"></form></body></html>"
 )
 assert is_botwall(reddit_wall, 200) == "prove your humanity"
 # marker phrases in code samples are content, not walls (security articles show
@@ -89,7 +90,8 @@ assert is_botwall(reddit_wall, 200) == "prove your humanity"
 article_code = (
     '<html><head><title>Fix Privilege Escalation Vulnerabilities</title></head>'
     "<body><h1>Privilege escalation</h1>" + "<p>Article text. " * 200 + "</p>"
-    "<pre><code>if (!req.user.isAdmin) { return res.status(403).json({ error: 'Access denied' }); }</code></pre>"
+    "<pre><code>if (!req.user.isAdmin) { return res.status(403)."
+    "json({ error: 'Access denied' }); }</code></pre>"
     "</body></html>"
 )
 assert is_botwall(article_code, 200) is None

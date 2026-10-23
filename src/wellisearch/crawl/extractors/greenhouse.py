@@ -124,8 +124,15 @@ def _location(posting: dict) -> str | None:
         if not isinstance(addr, dict):
             continue
         seen: list[str] = []
-        primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
-        candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
+        primary = (
+            _addr_piece(addr.get("streetAddress"))
+            or _addr_piece(addr.get("addressLocality"))
+        )
+        candidates = (
+            primary,
+            _addr_piece(addr.get("addressRegion")),
+            _addr_piece(addr.get("addressCountry")),
+        )
         for piece in candidates:
             if piece and piece not in seen:
                 seen.append(piece)
