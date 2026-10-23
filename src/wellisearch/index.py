@@ -88,12 +88,7 @@ async def store_page(
         )
         return "unchanged", 0
 
-    # chunk + embed (CPU-bound → both off the event loop; chunking on the
-    # loop stalls every request handler while a page stores)
-    chunks = await asyncio.to_thread(chunk_markdown, chunk_source, s.MAX_CHUNK_TOKENS)
-    vectors = await asyncio.to_thread(embed, chunks) if chunks else []
-    if chunks and len(vectors) != len(chunks):
-        raise RuntimeError(f"embed returned {len(vectors)} vectors for {len(chunks)} chunks")
+    chunks, vectors = await _chunk_and_embed(chunk_source, s.MAX_CHUNK_TOKENS)
 
     domain = domain_of(url)
     if crawled:
@@ -164,3 +159,15 @@ def _with_title(markdown: str, title: str | None) -> str:
     if m and " ".join(m.group(1).split()).casefold() == " ".join(title.split()).casefold():
         return markdown
     return f"# {title}\n\n{markdown}"
+
+
+async def _chunk_and_embed(chunk_source: str, max_chunk_tokens: int) -> tuple[list[str], list[list[float]]]:
+    """Chunk the chunk source and embed every chunk. Both are CPU-bound, so
+    both run off the event loop (chunking on the loop stalls every request
+    handler while a page stores). Raises RuntimeError when the embed count
+    does not match the chunk count."""
+    chunks = await asyncio.to_thread(chunk_markdown, chunk_source, max_chunk_tokens)
+    vectors = await asyncio.to_thread(embed, chunks) if chunks else []
+    if chunks and len(vectors) != len(chunks):
+        raise RuntimeError(f"embed returned {len(vectors)} vectors for {len(chunks)} chunks")
+    return chunks, vectors

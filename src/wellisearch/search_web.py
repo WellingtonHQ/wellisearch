@@ -100,40 +100,9 @@ async def search_web(
     # ---- local index (zero provider cost) — skipped entirely in provider
     # mode (the caller wants a live provider answer, e.g. after being
     # unsatisfied with a prior local result).
-    local_rows: list[dict] = []
-    index_ms = 0
-    index_error: str | None = None
-    if search_mode != "provider":
-        local_rows, index_ms, index_error = await _search_local_index(
-            query, k, max_age_days, widened=(search_mode == "auto")
-        )
-
-    # Auto mode: each row must clear all three per-row gates — coverage, similarity,
-    # and distinctive-term coverage (a page missing every rare / brand query word
-    # cannot serve). A full set of k passing rows serves; an incomplete set can also
-    # serve if several pass or one is strongly similar. This lets indexed provider
-    # hits satisfy repeat queries without trusting a marginal lone match or off-brand
-    # junk. Local mode bypasses the gate; provider mode has no local rows.
-    # Auto-mode serving policies (docs/ranking.md): a union candidate window
-    # (top-N by score ∪ top-M by similarity) so semantically close pages are
-    # always considered, and a job-board de-rank for non-job-intent queries.
-    # Local mode serves the raw index order untouched.
-    candidates = local_rows
-    if search_mode == "auto":
-        candidates = _candidate_rows(local_rows, k)
-        if not _job_intent(query, s.job_intent_terms):
-            candidates = _apply_job_board_penalty(
-                candidates,
-                s.job_boards,
-                s.SEARCH_JOB_BOARD_PENALTY,
-            )
-    passing = [r for r in candidates if _passes_local_gate(r)]
-    # Among gate-passing rows, similarity is the primary topical signal and score
-    # is rank-only (docs/ranking.md) — serve the most topically similar first, with
-    # score as the tie-break. This keeps a semantically strong page ahead of pages
-    # that only accumulate RRF mass from many lexically matching chunks.
-    passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
-    strong = [r for r in passing if _passes_partial_local_gate(r)]
+    local_rows, index_ms, index_error, passing, strong = await _local_leg(
+        query, k, max_age_days, search_mode
+    )
 
     source: str
     results: list[dict]
@@ -351,6 +320,52 @@ def _candidate_rows(local_rows: list[dict], k: int) -> list[dict]:
         if r.get("url") not in seen
     ][: s.SEARCH_TOP_BY_SIM]
     return head + extra
+
+
+async def _local_leg(
+    query: str,
+    k: int,
+    max_age_days: float | None,
+    search_mode: str,
+) -> tuple[list[dict], int, str | None, list[dict], list[dict]]:
+    """The local-index leg: fetch local rows (skipped entirely in provider
+    mode) and apply the auto-mode serving policies (docs/ranking.md) — a
+    union candidate window (top-N by score ∪ top-M by similarity) so
+    semantically close pages are always considered, and a job-board de-rank
+    for non-job-intent queries. Each auto-mode row must clear all three
+    per-row gates — coverage, similarity, and distinctive-term coverage
+    (a page missing every rare / brand query word cannot serve); local mode
+    bypasses the gate and serves the raw index order untouched. A full set
+    of k passing rows serves; an incomplete set can also serve if several
+    pass or one is strongly similar. This lets indexed provider hits satisfy
+    repeat queries without trusting a marginal lone match or off-brand junk.
+    Returns (local_rows, index_ms, index_error, passing, strong), where
+    `passing` clears the full local gate and `strong` the partial gate."""
+    s = get_settings()
+    local_rows: list[dict] = []
+    index_ms = 0
+    index_error: str | None = None
+    if search_mode != "provider":
+        local_rows, index_ms, index_error = await _search_local_index(
+            query, k, max_age_days, widened=(search_mode == "auto")
+        )
+    candidates = local_rows
+    if search_mode == "auto":
+        candidates = _candidate_rows(local_rows, k)
+        if not _job_intent(query, s.job_intent_terms):
+            candidates = _apply_job_board_penalty(
+                candidates,
+                s.job_boards,
+                s.SEARCH_JOB_BOARD_PENALTY,
+            )
+    passing = [r for r in candidates if _passes_local_gate(r)]
+    # Among gate-passing rows, similarity is the primary topical signal and score
+    # is rank-only (docs/ranking.md) — serve the most topically similar first, with
+    # score as the tie-break. This keeps a semantically strong page ahead of pages
+    # that only accumulate RRF mass from many lexically matching chunks.
+    passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
+    strong = [r for r in passing if _passes_partial_local_gate(r)]
+    return local_rows, index_ms, index_error, passing, strong
 
 
 async def _search_local_index(
