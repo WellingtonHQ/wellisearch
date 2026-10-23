@@ -92,9 +92,7 @@ def detect_cpu() -> str:
     """The CPU model name (macOS sysctl, /proc/cpuinfo, or platform.processor)."""
     try:
         if sys.platform == "darwin":
-            return subprocess.check_output(
-                ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
-            ).strip()
+            return subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
         name = _read_proc_cpuinfo()
         if name is not None:
             return name
@@ -245,9 +243,9 @@ class FastEmbedRunner:
 
     def encode(self, texts: list[str]) -> np.ndarray:
         """Encode a batch of texts to L2-normalized float32 vectors."""
-        X = np.stack(
-            [np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)]
-        )
+        X = np.stack([
+            np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)
+        ])
         return _l2_normalize(X)
 
     def encode_one(self, text: str) -> np.ndarray:
