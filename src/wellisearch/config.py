@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     DB_POOL_MAX_SIZE: int = 24
     # Fail checkout with PoolTimeout ("database busy") instead of hanging on the default 30 s.
     DB_POOL_TIMEOUT_S: float = 10.0
+    # Fail fast on an unreachable Postgres (psycopg's default connect timeout is 60 s).
+    DB_CONNECT_TIMEOUT_S: int = 5
 
     # --- search providers (failover pool + default order; the dashboard can
     # override the order at runtime — see provider_state.sort_order) ---
@@ -259,7 +261,7 @@ class Settings(BaseSettings):
             f"host={self.POSTGRES_HOST} port={self.POSTGRES_PORT} "
             f"user={self.POSTGRES_USER} password={self.POSTGRES_PASSWORD} "
             f"dbname={dbname or self.POSTGRES_DB} "
-            "sslmode=disable connect_timeout=5"
+            f"sslmode=disable connect_timeout={self.DB_CONNECT_TIMEOUT_S}"
         )
 
 

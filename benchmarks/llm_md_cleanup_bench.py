@@ -66,6 +66,12 @@ import psycopg
 
 HERE = Path(__file__).resolve().parent
 
+# Client timeouts for the bench's own connections (not the app's Settings).
+PG_CONNECT_TIMEOUT_S = 5          # Postgres connect timeout in the sample DSN
+OLLAMA_CONNECT_TIMEOUT_S = 15.0  # Ollama API connect timeout (tags + pull)
+MODEL_PULL_TIMEOUT_S = 3600.0    # total budget for one model download
+RUN_CONNECT_TIMEOUT_S = 10.0     # run client connect timeout
+
 def log(msg: str) -> None:
     """Emit a status line prefixed with a local timestamp, flushed immediately.
 
@@ -173,7 +179,8 @@ def load_config(args: argparse.Namespace) -> Config:
     pg_db = os.environ.get("POSTGRES_DB", "wellisearch")
     dsn = (
         f"host={pg_host} port={pg_port} user={pg_user} "
-        f"password={pg_pass} dbname={pg_db} sslmode=disable connect_timeout=5"
+        f"password={pg_pass} dbname={pg_db} sslmode=disable "
+        f"connect_timeout={PG_CONNECT_TIMEOUT_S}"
     )
 
     models = DEFAULT_MODELS
@@ -242,6 +249,11 @@ PER_DOMAIN_CAP = 3
 # index.
 SAMPLE_POOL_LIMIT = 200
 
+# Eligible sample documents: fit_markdown length must fall in this range
+# (too short to exercise the cleanup, too large to be fair on CPU).
+SAMPLE_MIN_CHARS = 500
+SAMPLE_MAX_CHARS = 20000
+
 def select_random_pages(
     by_domain: dict[str, list[dict[str, Any]]], target: int
 ) -> list[dict[str, Any]]:
@@ -282,11 +294,11 @@ async def build_sample(cfg: Config) -> list[dict[str, Any]]:
             FROM pages
             WHERE fit_markdown IS NOT NULL
               AND disabled = false
-              AND length(fit_markdown) BETWEEN 500 AND 20000
+              AND length(fit_markdown) BETWEEN %s AND %s
             ORDER BY random()
             LIMIT %s
             """,
-            (SAMPLE_POOL_LIMIT,),
+            (SAMPLE_MIN_CHARS, SAMPLE_MAX_CHARS, SAMPLE_POOL_LIMIT),
         )
         rows = list(await cur.fetchall())
     finally:
@@ -547,7 +559,7 @@ async def ensure_models(
 
     existing: set[str] = set()
     try:
-        r = await client.get(f"{base}/api/tags", timeout=15.0)
+        r = await client.get(f"{base}/api/tags", timeout=OLLAMA_CONNECT_TIMEOUT_S)
         r.raise_for_status()
         existing = {m.get("name", "") for m in r.json().get("models", [])}
     except Exception as e:
@@ -566,7 +578,7 @@ async def ensure_models(
             r = await client.post(
                 f"{base}/api/pull",
                 json={"name": tag},
-                timeout=httpx.Timeout(3600.0, connect=15.0),
+                timeout=httpx.Timeout(MODEL_PULL_TIMEOUT_S, connect=OLLAMA_CONNECT_TIMEOUT_S),
             )
             r.raise_for_status()
         except Exception as e:
@@ -577,7 +589,7 @@ async def run_all(cfg: Config) -> dict[str, Any]:
     """Run all models over the sample and write the full results JSON."""
     pages = load_sample(cfg)
     models = cfg.models[:2] if cfg.smoke else cfg.models
-    timeout = httpx.Timeout(cfg.timeout_s, connect=10.0)
+    timeout = httpx.Timeout(cfg.timeout_s, connect=RUN_CONNECT_TIMEOUT_S)
     async with httpx.AsyncClient(timeout=timeout) as client:
         await ensure_models(client, cfg, [tag for _, tag in models])
         all_results: dict[str, list[dict[str, Any]]] = {}
