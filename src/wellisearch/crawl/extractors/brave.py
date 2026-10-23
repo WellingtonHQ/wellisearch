@@ -67,7 +67,7 @@ def _visible_text_markdown(html: str) -> str:
         return ""
 
 
-def _soup(html: str):
+def _soup(html: str) -> BeautifulSoup:
     """BeautifulSoup (lxml) parse; the repo's shared parser choice."""
     from bs4 import BeautifulSoup
 
