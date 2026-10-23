@@ -37,7 +37,10 @@ class FakeDB:
         return self.challenge_in_flight
 
     async def queue_enqueue(
-        self, url: str, source: str = "fetch", lane: str | None = None
+        self,
+        url: str,
+        source: str = "fetch",
+        lane: str | None = None,
     ) -> bool:
         self.enqueued.append((url, source, lane))
         return True
@@ -51,7 +54,11 @@ class TwoPhaseDB(FakeDB):
     """page_get returns `first` on the first call and `second` afterwards —
     simulates a crawl that stores fresh content between _resolve_page's reads."""
 
-    def __init__(self, first: dict | None, second: dict | None):
+    def __init__(
+        self,
+        first: dict | None,
+        second: dict | None,
+    ):
         super().__init__(first)
         self._second = second
         self._calls = 0
