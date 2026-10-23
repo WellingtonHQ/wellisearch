@@ -42,7 +42,7 @@ from wellisearch.index import store_page  # noqa: E402
 from wellisearch.providers.base import Result  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Dataset (fixed URLs + texts; the expectations below are pinned to them)
+# Dataset (Fixed URLs + Texts; The Expectations Below Are Pinned To Them)
 # ---------------------------------------------------------------------------
 
 CAR_SEAT_A = "https://example.com/car-seat-newborn-head"

@@ -454,7 +454,7 @@ delete.assert_awaited_once_with("DELETE FROM pages WHERE url = %s", (SHORT_URL,)
 print("OK worker short-url guard")
 
 # ---------------------------------------------------------------------------
-# Probe Budget (read-path fast detection)
+# Probe Budget (Read-Path Fast Detection)
 # ---------------------------------------------------------------------------
 
 s = get_settings()

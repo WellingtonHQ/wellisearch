@@ -97,9 +97,12 @@ async def search_web(
 
     t_start = time.monotonic()
 
-    # ---- local index (zero provider cost) — skipped entirely in provider
-    # mode (the caller wants a live provider answer, e.g. after being
-    # unsatisfied with a prior local result).
+    # ---------------------------------------------------------------------------
+    # Local Index (Zero Provider Cost) — Skipped Entirely In Provider Mode (The
+    # Caller Wants A Live Provider Answer, e.g. After Being Unsatisfied With A
+    # Prior Local Result)
+    # ---------------------------------------------------------------------------
+
     local_rows, index_ms, index_error, passing, strong = await _local_leg(
         query, k, max_age_days, search_mode
     )
@@ -136,7 +139,10 @@ async def search_web(
         # One unusually strong page is enough; omit marginal companions.
         source, results = await _serve_local(_cap_per_domain(strong, s.SEARCH_MAX_PER_DOMAIN), k)
     else:
-        # ---- provider gateway (auto: no qualifying local set; provider: always)
+        # ---------------------------------------------------------------------------
+        # Provider Gateway (Auto: No Qualifying Local Set; Provider: Always)
+        # ---------------------------------------------------------------------------
+
         source, results, degraded, errors, provider_ms = await _provider_search(
             query, k, crawl_n, search_mode, local_rows
         )
@@ -199,7 +205,7 @@ def _passes_partial_local_gate(r: dict) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Serving policies (auto mode only; docs/ranking.md)
+# Serving Policies (Auto Mode Only; docs/ranking.md)
 # ---------------------------------------------------------------------------
 
 def _split_url(url: str) -> tuple[str, str] | None:

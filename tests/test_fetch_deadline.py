@@ -51,7 +51,10 @@ _CANCEL_S = type(_REAL_SETTINGS)(FETCH_TIMEOUT_S=5.0, FETCH_PROBE_TIMEOUT_S=0.1)
 
 URL = "https://example.com/slow"
 
-# --- save module globals we monkeypatch -------------------------------------
+# ---------------------------------------------------------------------------
+# Save Module Globals We Monkeypatch
+# ---------------------------------------------------------------------------
+
 _real_db = fetch_mod.db
 _real_crawl_url = fetch_mod.crawl_url
 _real_get_settings = fetch_mod.get_settings
@@ -85,9 +88,8 @@ fetch_log.addHandler(_capture)
 fetch_log.setLevel(logging.INFO)  # capture INFO records too (grace expiry, stored-while-gone)
 
 # ---------------------------------------------------------------------------
-# Deadline path: crawl slower than FETCH_TIMEOUT_S -> timeout hint + re-enqueue
+# Deadline Path: Crawl Slower Than FETCH_TIMEOUT_S -> Timeout Hint + Re-Enqueue
 # ---------------------------------------------------------------------------
-
 
 async def failing_slow_crawl(url: str, trigger: str = "fetch") -> dict:
     """Slow crawl that fails after the client's deadline has passed."""
@@ -127,9 +129,8 @@ assert any(
 print("OK deadline path (hint + re-enqueue + kick + background watch)")
 
 # ---------------------------------------------------------------------------
-# Cancel path: client disconnect must propagate as CancelledError, not replaced
+# Cancel Path: Client Disconnect Must Propagate As CancelledError, Not Replaced
 # ---------------------------------------------------------------------------
-
 
 async def slow_crawl(url: str, trigger: str = "fetch") -> dict:
     """Slow crawl long enough that cancellation lands mid-wait."""
@@ -164,10 +165,9 @@ assert result == "cancelled", f"cancellation was swallowed/replaced: {result!r}"
 print("OK cancel path (CancelledError preserved)")
 
 # ---------------------------------------------------------------------------
-# Grace window: an orphan is stopped after FETCH_ORPHAN_GRACE_S, freeing slot + dedup;
-# a probe that finishes inside its grace window stores normally (no cancel)
+# Grace Window: An Orphan Is Stopped After FETCH_ORPHAN_GRACE_S, Freeing Slot + Dedup;
+# A Probe That Finishes Inside Its Grace Window Stores Normally (No Cancel)
 # ---------------------------------------------------------------------------
-
 
 URL_G1 = "https://example.com/hang"      # never finishes -> the grace timer must stop it
 URL_G2 = "https://example.com/finishes"  # past the deadline but inside grace -> let it store
@@ -235,10 +235,9 @@ assert db3.enqueued == [(URL_G1, "fetch", "fast"), (URL_G2, "fetch", "fast")], (
 print("OK grace window (orphan stopped + dedup freed; in-window finish untouched)")
 
 # ---------------------------------------------------------------------------
-# Paused worker: fetch-sourced queue rows won't run until resume, so error
-# text must not quote a seconds-based retry ETA (callers would tight-loop)
+# Paused Worker: Fetch-Sourced Queue Rows Won't Run Until Resume, So Error
+# Text Must Not Quote A Seconds-Based Retry ETA (Callers Would Tight-Loop)
 # ---------------------------------------------------------------------------
-
 
 URL_P = "https://example.com/paused"
 URL_CF = "https://example.com/challenge-paused"
@@ -273,8 +272,9 @@ assert db4.enqueued == [(URL_P, "fetch", "fast")], f"background retry was not en
 assert len(kicks) == kicks_before + 1, f"re-queue must still kick the worker: {kicks}"
 print("OK paused timeout (no seconds ETA; re-queued until resume)")
 
-# --- fast-fail on a pending CF row while paused -----------------------------
-
+# ---------------------------------------------------------------------------
+# Fast-Fail On A Pending CF Row While Paused
+# ---------------------------------------------------------------------------
 
 called_crawls: list[str] = []
 
@@ -315,8 +315,9 @@ assert "try again in ~" not in msg_p2, f"seconds-based ETA quoted while indexing
 assert called_crawls == [], f"fast-fail must not start a crawl: {called_crawls}"
 print("OK paused fast-fail (pending CF row; no seconds ETA)")
 
-# --- probe hits a bot-wall while paused -------------------------------------
-
+# ---------------------------------------------------------------------------
+# Probe Hits A Bot-Wall While Paused
+# ---------------------------------------------------------------------------
 
 async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
     """Crawl that immediately reports a bot-wall."""

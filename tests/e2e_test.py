@@ -382,7 +382,7 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Worker pause / resume
+# Worker Pause / Resume
 # ---------------------------------------------------------------------------
 
 async def _poll_seed_crawled(c: httpx.AsyncClient, seed_probe: str, seeded_at: dt.datetime) -> bool:
