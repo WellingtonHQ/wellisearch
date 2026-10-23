@@ -504,7 +504,7 @@ async def run_model(
                 )
                 rec.update({
                     k: out[k]
-                    for k in ("completion_tokens", "prompt_tokens", "tok_s", "total_ms", "ttft_ms")
+                    for k in ("completion_tokens", "prompt_tokens", "total_ms", "tok_s", "ttft_ms")
                 })
                 rec["output"] = out["text"]
                 rec["metrics"] = deterministic_metrics(page["fit_markdown"], out["text"])

@@ -121,8 +121,8 @@ def test_base() -> None:
 
 async def test_error_mapping(cls: type[Provider], settings: Settings) -> None:
     """Status-code + network error mapping, shared by every provider."""
-    for status, msg in [(401, "auth rejected"), (403, "auth rejected"),
-                        (402, "quota exhausted"), (429, "quota exhausted"),
+    for status, msg in [(401, "auth rejected"), (402, "quota exhausted"),
+                        (403, "auth rejected"), (429, "quota exhausted"),
                         (500, "http 500")]:
         await expect_provider_error(cls, settings, status, msg)
     await expect_network_error(cls, settings)

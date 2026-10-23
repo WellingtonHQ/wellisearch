@@ -50,7 +50,7 @@ def _visible_text_markdown(html: str) -> str:
     """
     try:
         soup = _soup(html)
-        for tag in soup(["script", "style", "noscript", "template"]):
+        for tag in soup(["noscript", "script", "style", "template"]):
             tag.decompose()
         root = soup.body or soup
         lines: list[str] = []
