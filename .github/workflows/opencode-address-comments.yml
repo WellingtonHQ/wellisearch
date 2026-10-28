@@ -113,6 +113,25 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Configure opencode (single-agent)
+        shell: bash
+        # Deny the subagent permission so the run works as one agent with one
+        # LLM request in flight at a time; the local server has a single
+        # inference slot, so parallel sub-agents only queue behind it.
+        run: |
+          cat > opencode.json <<'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "agents": {
+              "build": {
+                "permissions": [
+                  { "action": "subagent", "resource": "*", "effect": "deny" }
+                ]
+              }
+            }
+          }
+          EOF
+
       - name: Write triggering comment(s)
         shell: bash
         env:
@@ -144,6 +163,9 @@ jobs:
           PROMPT: |
             You are responding to review comment(s) on a GitHub pull request. The PR/issue number is in the PR_NUMBER environment variable.
             You have the `gh` CLI and GITHUB_TOKEN available.
+
+            Working rules:
+            - Do not launch sub-agents (explore, general, or any other). Do all the work yourself in this session, one step at a time.
 
             Read the triggering comment(s) from the file `triggering_comment.txt` in the current directory.
             If the file contains multiple comments (labeled "### Comment N"), you MUST address EVERY one of them before finishing — do not stop after the first.

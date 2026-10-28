@@ -36,6 +36,25 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Configure opencode (single-agent review)
+        shell: bash
+        # Deny the subagent permission so the review runs as one agent with one
+        # LLM request in flight at a time; the local server has a single
+        # inference slot, so parallel sub-agents only queue behind it.
+        run: |
+          cat > opencode.json <<'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "agents": {
+              "build": {
+                "permissions": [
+                  { "action": "subagent", "resource": "*", "effect": "deny" }
+                ]
+              }
+            }
+          }
+          EOF
+
       - name: Run opencode (local) and post review
         shell: bash
         env:
@@ -45,6 +64,9 @@ jobs:
           PROMPT: |
             You are reviewing a GitHub pull request. The PR number is in the PR_NUMBER environment variable.
             You have the `gh` CLI and GITHUB_TOKEN available for gathering context.
+
+            Working rules:
+            - Do not launch sub-agents (explore, general, or any other). Do all the work yourself in this session, one step at a time.
 
             First, gather the PR context:
             - Run `gh pr diff "$PR_NUMBER"` to see the code changes.
