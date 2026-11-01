@@ -330,6 +330,7 @@ class FakeShortResponse:
     """Fake curl_cffi response carrying the final (post-redirect) URL."""
 
     def __init__(self, url: str) -> None:
+        """Store the final (post-redirect) URL."""
         self.url = url
 
 
@@ -337,15 +338,19 @@ class FakeShortSession:
     """Fake curl_cffi AsyncSession whose GET lands on a canned final URL."""
 
     def __init__(self, final_url: str) -> None:
+        """Store the canned final URL that GET returns."""
         self.final_url = final_url
 
     async def __aenter__(self) -> FakeShortSession:
+        """Enter the context, returning the session itself."""
         return self
 
     async def __aexit__(self, *exc_info: object) -> bool:
+        """Exit the context; never suppress exceptions."""
         return False
 
     async def get(self, url: str, **kwargs: Any) -> FakeShortResponse:
+        """Ignore the request and return the canned final URL."""
         return FakeShortResponse(self.final_url)
 
 
@@ -382,6 +387,7 @@ with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(FINA
 
 
 def _shorturl_boom(**kwargs: Any) -> Never:
+    """Raise RuntimeError, standing in for a network failure."""
     raise RuntimeError("network down")
 
 
@@ -462,6 +468,7 @@ try:
 
     # A child task inherits the active budget; siblings never see each other's.
     async def with_budget() -> float:
+        """Run under a nested 7 s budget and return the clamped cap."""
         t2 = probe.set_probe_budget(7)
         try:
             return await asyncio.sleep(0, result=probe.clamp(90.0))
@@ -469,9 +476,11 @@ try:
             probe.reset_probe_budget(t2)
 
     async def sibling() -> float:
+        """Run without a nested budget and return the clamped cap."""
         return await asyncio.sleep(0, result=probe.clamp(90.0))
 
     async def iso() -> list[float]:
+        """Run sibling and with_budget concurrently and return both clamped values."""
         return await asyncio.gather(sibling(), with_budget())
 
     got = asyncio.run(iso())
