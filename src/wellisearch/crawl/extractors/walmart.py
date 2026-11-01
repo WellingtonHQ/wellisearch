@@ -121,7 +121,7 @@ def is_product_url(url: str) -> bool:
     """True for a walmart.com/walmart.ca product detail page (/ip/... or /en/ip/...)."""
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
-    if host not in ("walmart.com", "www.walmart.com", "walmart.ca", "www.walmart.ca"):
+    if host not in ("walmart.ca", "walmart.com", "www.walmart.ca", "www.walmart.com"):
         return False
     return _PRODUCT_PATH_RE.search(parsed.path) is not None
 

@@ -408,7 +408,7 @@ assert _registrable_domain("not a url") == ""
 assert _registrable_domain("") == ""
 
 # _is_job_board: host[/path] prefix matching, subdomains, path boundaries
-boards = ("linkedin.com/jobs", "indeed.com")
+boards = ("indeed.com", "linkedin.com/jobs")
 assert _is_job_board("https://www.linkedin.com/jobs/view/123?refId=x", boards)
 assert _is_job_board("https://uk.linkedin.com/jobs/search?keywords=a", boards), \
     "subdomain of listed host matches"
@@ -422,7 +422,7 @@ assert _is_job_board("https://www.glassdoor.com/job/listings", ("glassdoor.com/J
     "paths match case-insensitively"
 
 # _job_intent: word-boundary match on the configured terms
-terms = ("job", "jobs", "hiring", "open roles", "careers")
+terms = ("careers", "hiring", "job", "jobs", "open roles")
 assert _job_intent("principal software engineer jobs", terms)
 assert not _job_intent("Transitioning from Staff to Principal Software Engineer", terms), \
     "career-advice query is not job intent"
@@ -451,7 +451,7 @@ assert not _passes_local_gate(pen_board[0]), \
 
 # _cap_per_domain: first N per registrable domain kept in order
 rows = [{"url": f"https://www.linkedin.com/jobs/view/{i}"} for i in range(5)] + [
-    {"url": f"https://{d}/a"} for d in ("graphapp.dev", "byjlw.com", "reddit.com")
+    {"url": f"https://{d}/a"} for d in ("byjlw.com", "graphapp.dev", "reddit.com")
 ]
 capped = _cap_per_domain(rows, 2)
 assert len(capped) == 5, [r["url"] for r in capped]

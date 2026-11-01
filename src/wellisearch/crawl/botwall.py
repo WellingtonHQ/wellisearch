@@ -20,18 +20,18 @@ import re
 
 # Human-readable wall copy: must appear as visible page text to count.
 PHRASE_MARKERS: tuple[str, ...] = (
-    "just a moment",
-    "pardon our interruption",
     "access denied",
     "are you a robot",
-    "robot or human",
     "attention required",
-    "unusual traffic",
-    "request blocked",
-    "you've been blocked by network security",
     "javascript is disabled",
+    "just a moment",
+    "pardon our interruption",
     "prove your humanity",  # reddit's reCAPTCHA interstitial (title + body text)
+    "request blocked",
+    "robot or human",
+    "unusual traffic",
     "verify that you're not a robot",
+    "you've been blocked by network security",
 )
 
 # CF internal asset names: live in scripts/attributes, so they only count on
