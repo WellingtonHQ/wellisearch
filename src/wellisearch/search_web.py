@@ -464,11 +464,9 @@ async def _serve_local_chosen(
 ) -> tuple[str, list[dict], bool, list[dict], int | None]:
     """Local mode: serve the raw index rows uncapped (no gate, no provider
     fallback); an empty index is an explicit error result."""
-    if local_rows:
-        source, results = await _serve_local(local_rows, k)
-    else:
-        source = "error"
-        results = []
+    if not local_rows:
+        return "error", [], False, [], None
+    source, results = await _serve_local(local_rows, k)
     return source, results, False, [], None
 
 
