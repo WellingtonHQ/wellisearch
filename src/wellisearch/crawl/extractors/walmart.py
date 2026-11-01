@@ -45,6 +45,12 @@ class WalmartExtractor:
             flags={"extractor": "walmart"},
         )
 
+    def accept(self, f: Fitted) -> bool:
+        """Gate: structured fit needs title + price; legacy fit needs a price and real content."""
+        if f.flags.get("structured"):
+            return bool(f.title) and bool(f.signals.get("price"))
+        return bool(f.signals.get("price")) and len(f.md.strip()) >= MIN_PRODUCT_CHARS
+
     def _fit_structured(self, node: dict, r: Rendered) -> Fitted:
         """Structured markdown from the JSON-LD product node."""
         limit = max(1, get_settings().CRAWL_MAX_REVIEWS)
@@ -97,13 +103,6 @@ class WalmartExtractor:
             },
             flags={"extractor": "walmart", "structured": True},
         )
-
-    def accept(self, f: Fitted) -> bool:
-        """Gate: structured fit needs title + price; legacy fit needs a price and real content."""
-        if f.flags.get("structured"):
-            return bool(f.title) and bool(f.signals.get("price"))
-        return bool(f.signals.get("price")) and len(f.md.strip()) >= MIN_PRODUCT_CHARS
-
 
 def needs_refresh(url: str, md: str) -> bool:
     """Recrawl walmart.ca product pages stored before reviews were extracted (or at an older limit)."""

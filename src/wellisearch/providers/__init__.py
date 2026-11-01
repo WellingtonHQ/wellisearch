@@ -97,17 +97,6 @@ class Gateway:
             return list(self._env_order), "env"
         return [n for n in order if n in self._by_name] or list(self._env_order), "runtime"
 
-    async def _ev(
-        self,
-        message: str,
-        info: dict | None = None,
-    ) -> None:
-        """Best-effort event logging (dashboard log view)."""
-        try:
-            await db.log_event(message, info)
-        except Exception as e:
-            log.warning("event logging failed: %s", e)
-
     # ---------------------------------------------------------------------------
     # Queries
     # ---------------------------------------------------------------------------
@@ -173,6 +162,25 @@ class Gateway:
         )
         raise GatewayExhausted(errors)
 
+    async def close(self) -> None:
+        """Close the shared HTTP client."""
+        await self._client.aclose()
+
+    # ---------------------------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------------------------
+
+    async def _ev(
+        self,
+        message: str,
+        info: dict | None = None,
+    ) -> None:
+        """Best-effort event logging (dashboard log view)."""
+        try:
+            await db.log_event(message, info)
+        except Exception as e:
+            log.warning("event logging failed: %s", e)
+
     async def _provider_available(
         self,
         p: Provider,
@@ -194,10 +202,6 @@ class Gateway:
             await self._ev(f"provider {p.name} quota exhausted", {"used": used, "limit": limit})
             return False
         return True
-
-    async def close(self) -> None:
-        """Close the shared HTTP client."""
-        await self._client.aclose()
 
 
 _gateway: Gateway | None = None

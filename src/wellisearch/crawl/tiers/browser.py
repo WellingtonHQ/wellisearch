@@ -86,6 +86,26 @@ class BrowserTier:
                 await pool.release(ctx, key)
         raise RuntimeError("browser recovery loop ended without a result")
 
+    def worst_case_s(self, p: Policy) -> float:
+        """Worst-case budget for the engine's wait_for backstop.
+
+        Covers the full work the tier may do: goto + settle (+ network_idle),
+        the CF challenge loop (CF lane only), and the walmart soft-404 search
+        recovery (search goto + settle + item goto + settle).
+        """
+        s = get_settings()
+        is_cf = get_lane() == CF
+        timeout_s = clamp(s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S)
+        budget = timeout_s + s.CRAWL_SETTLE_S
+        if "network_idle" in p.waits:
+            budget += clamp(NETWORK_IDLE_TIMEOUT_S)
+        if is_cf:
+            budget += timeout_s  # full challenge loop budget
+        # Walmart soft-404 search recovery (worst case): search goto + settle +
+        # item goto + settle.
+        budget += timeout_s + WALMART_SEARCH_SETTLE_MS / 1000 + timeout_s + s.CRAWL_SETTLE_S
+        return budget * (BROWSER_CLOSED_RETRIES + 1)
+
     async def _crawl(
         self,
         page: Page,
@@ -170,26 +190,6 @@ class BrowserTier:
         if is_botwall(html, status, content_type) is not None:
             log.warning("challenge still present after %ds budget for %s", budget, url)
         return html
-
-    def worst_case_s(self, p: Policy) -> float:
-        """Worst-case budget for the engine's wait_for backstop.
-
-        Covers the full work the tier may do: goto + settle (+ network_idle),
-        the CF challenge loop (CF lane only), and the walmart soft-404 search
-        recovery (search goto + settle + item goto + settle).
-        """
-        s = get_settings()
-        is_cf = get_lane() == CF
-        timeout_s = clamp(s.CRAWL_CF_TIMEOUT_S if is_cf else s.CRAWL_TIMEOUT_S)
-        budget = timeout_s + s.CRAWL_SETTLE_S
-        if "network_idle" in p.waits:
-            budget += clamp(NETWORK_IDLE_TIMEOUT_S)
-        if is_cf:
-            budget += timeout_s  # full challenge loop budget
-        # Walmart soft-404 search recovery (worst case): search goto + settle +
-        # item goto + settle.
-        budget += timeout_s + WALMART_SEARCH_SETTLE_MS / 1000 + timeout_s + s.CRAWL_SETTLE_S
-        return budget * (BROWSER_CLOSED_RETRIES + 1)
 
 
 # ---------------------------------------------------------------------------
