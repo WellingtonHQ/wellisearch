@@ -161,11 +161,7 @@ def _product_node(html: str) -> dict | None:
 def _find_product(node: object) -> dict | None:
     """A product node, searching plain lists and @graph arrays."""
     if isinstance(node, list):
-        for item in node:
-            found = _find_product(item)
-            if found is not None:
-                return found
-        return None
+        return _find_product_in_list(node)
     if not isinstance(node, dict):
         return None
     t = node.get("@type")
@@ -173,6 +169,15 @@ def _find_product(node: object) -> dict | None:
     if any(x in ("Product", "ProductGroup") for x in types) and _name_of(node):
         return node
     for item in node.get("@graph") or []:
+        found = _find_product(item)
+        if found is not None:
+            return found
+    return None
+
+
+def _find_product_in_list(node: list[object]) -> dict | None:
+    """First product node found among a plain list, else None."""
+    for item in node:
         found = _find_product(item)
         if found is not None:
             return found
@@ -324,20 +329,26 @@ def _reviews(node: dict, limit: int) -> list[str]:
         if stars:
             label += f" ({stars})"
         block: list[str] = [label]
-        headline = review.get("name")
-        date = review.get("datePublished")
-        if isinstance(headline, str) and headline.strip():
-            line = f"**{headline.strip()}**"
-            if isinstance(date, str) and date.strip():
-                line += f" — {date.strip()}"
-            block.append(line)
-        elif isinstance(date, str) and date.strip():
-            block.append(date.strip())
+        head = _review_headline(review.get("name"), review.get("datePublished"))
+        if head is not None:
+            block.append(head)
         block.append(body)
         out.append("\n\n".join(block))
         if len(out) >= limit:
             break
     return out
+
+
+def _review_headline(headline: object, date: object) -> str | None:
+    """The review's headline line: bold name (date suffixed) else the bare date."""
+    if isinstance(headline, str) and headline.strip():
+        line = f"**{headline.strip()}**"
+        if isinstance(date, str) and date.strip():
+            line += f" — {date.strip()}"
+        return line
+    if isinstance(date, str) and date.strip():
+        return date.strip()
+    return None
 
 
 def _review_author(review: dict) -> str | None:

@@ -17,7 +17,7 @@ from ...config import get_settings
 from ..botwall import is_botwall
 from ..lane import CF, get_lane
 from ..policy import Policy
-from ..pool import get_cf_pool, get_pool, is_closed_context_error
+from ..pool import BrowserPool, get_cf_pool, get_pool, is_closed_context_error
 from ..probe import clamp
 from ..results import ChallengeDetected, Rendered
 from ..wait import NETWORK_IDLE_TIMEOUT_S, network_idle, settle
@@ -68,23 +68,38 @@ class BrowserTier:
         key = _profile_key(url, p)
         pool = get_cf_pool() if get_lane() == CF else get_pool()
         for attempt in range(BROWSER_CLOSED_RETRIES + 1):
-            ctx = await pool.acquire(key)
-            page = None
-            try:
-                page = await ctx.new_page()
-                return await self._crawl(page, url, p)
-            except Exception as e:
-                if not is_closed_context_error(e):
-                    raise
-                await pool.invalidate(key, ctx, e)
-                if attempt >= BROWSER_CLOSED_RETRIES:
-                    raise
-                log.warning("browser context %s closed; retrying once with a fresh context", key)
-            finally:
-                if page is not None:
-                    await _safe_close(page)
-                await pool.release(ctx, key)
+            result = await self._attempt_fetch(pool, key, url, p, attempt)
+            if result is not None:
+                return result
         raise RuntimeError("browser recovery loop ended without a result")
+
+    async def _attempt_fetch(
+        self,
+        pool: BrowserPool,
+        key: str,
+        url: str,
+        p: Policy,
+        attempt: int,
+    ) -> Rendered | None:
+        """One acquire→crawl→release attempt. Returns the result, or None to
+        signal a closed-context retry (the original error re-raises when the
+        last attempt is used up)."""
+        ctx = await pool.acquire(key)
+        page = None
+        try:
+            page = await ctx.new_page()
+            return await self._crawl(page, url, p)
+        except Exception as e:
+            if not is_closed_context_error(e):
+                raise
+            await pool.invalidate(key, ctx, e)
+            if attempt >= BROWSER_CLOSED_RETRIES:
+                raise
+            log.warning("browser context %s closed; retrying once with a fresh context", key)
+        finally:
+            if page is not None:
+                await _safe_close(page)
+            await pool.release(ctx, key)
 
     def worst_case_s(self, p: Policy) -> float:
         """Worst-case budget for the engine's wait_for backstop.

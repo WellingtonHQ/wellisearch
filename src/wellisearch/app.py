@@ -709,18 +709,24 @@ async def _auth(request: Request, call_next: Callable[[Request], Awaitable[Respo
     key = s.WELLISEARCH_API_KEY
     path = request.url.path
     if key and (path.startswith("/api") or path.startswith("/mcp")):
-        token: str | None = None
-        authz = request.headers.get("authorization", "")
-        if authz.lower().startswith("bearer "):
-            token = authz[len("bearer "):].strip()
-        elif request.headers.get("x-api-key"):
-            token = request.headers["x-api-key"].strip()
+        token = _request_token(request)
         if token is None or not hmac.compare_digest(token, key):
             return JSONResponse(
                 {"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"},
                 status_code=401,
             )
     return await call_next(request)
+
+
+def _request_token(request: Request) -> str | None:
+    """Bearer / x-api-key token from the request headers, if present."""
+    authz = request.headers.get("authorization", "")
+    if authz.lower().startswith("bearer "):
+        return authz[len("bearer "):].strip()
+    api_key = request.headers.get("x-api-key")
+    if api_key:
+        return api_key.strip()
+    return None
 
 
 def _negotiate(format_param: str | None, request: Request) -> str:

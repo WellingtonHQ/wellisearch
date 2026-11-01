@@ -80,12 +80,18 @@ def _extract_title(page: object) -> str | None:
     matching how browsers resolve document.title.
     """
     try:
-        for el in reversed(page.css("title")):
-            t = el.get_all_text()
-            if t and t.strip():
-                return t.strip()
+        return _last_nonempty_title(page)
     except Exception:
         pass
+    return None
+
+
+def _last_nonempty_title(page: object) -> str | None:
+    """The last non-empty <title> text, else None."""
+    for el in reversed(page.css("title")):
+        t = el.get_all_text()
+        if t and t.strip():
+            return t.strip()
     return None
 
 

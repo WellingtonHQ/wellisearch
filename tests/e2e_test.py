@@ -22,6 +22,7 @@ from urllib.parse import quote
 import httpx
 
 if TYPE_CHECKING:
+    import httpx2
     from mcp import ClientSession
 
 BASE = os.environ.get("WELLISEARCH_TEST_BASE_URL", "http://127.0.0.1:8780")
@@ -385,6 +386,36 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
 # Worker pause / resume
 # ---------------------------------------------------------------------------
 
+def _seed_drained(hit: dict | None, seeded_at: dt.datetime) -> bool:
+    """True when the seeded row's last_crawled is at/after the seed time
+    (with a 5s kick-debounce tolerance)."""
+    if hit is None:
+        return False
+    ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=dt.timezone.utc)
+    return ts >= seeded_at - dt.timedelta(seconds=5)
+
+
+async def _wait_for_seed_drain(
+    c: httpx.AsyncClient,
+    seed_probe: str,
+    seeded_at: dt.datetime,
+) -> bool:
+    """Poll /api/pages until the seeded row is freshly crawled (up to 30
+    polls × 2s), reporting whether it drained."""
+    drained = False
+    for _ in range(30):
+        rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
+        rows = rr.json().get("pages", []) if rr.status_code == 200 else []
+        hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
+        drained = _seed_drained(hit, seeded_at)
+        if drained:
+            break
+        await asyncio.sleep(2)
+    return drained
+
+
 async def test_worker_pause(c: httpx.AsyncClient) -> None:
     """PATCH /api/worker roundtrip, state on both /api/stats surfaces, and the
     carve-out: while paused, on-demand refresh (inline crawl) and manual seeds
@@ -461,19 +492,7 @@ async def test_worker_pause(c: httpx.AsyncClient) -> None:
 
         # the seeded row was crawled (drained by a paused or resumed tick):
         # poll until its last_crawled is at/after seed time (kick debounce ~5s)
-        drained = False
-        for _ in range(30):
-            rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
-            rows = rr.json().get("pages", []) if rr.status_code == 200 else []
-            hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
-            if hit:
-                ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=dt.timezone.utc)
-                drained = ts >= seeded_at - dt.timedelta(seconds=5)
-                if drained:
-                    break
-            await asyncio.sleep(2)
+        drained = await _wait_for_seed_drain(c, seed_probe, seeded_at)
         check(
             "manual seed while paused got crawled (carve-out end-to-end)",
             drained,
@@ -770,17 +789,22 @@ async def _mcp_http_auth_checks() -> None:
 
 async def _mcp_http_session_checks() -> None:
     """Open one Streamable-HTTP session; drive the handshake + tool checks."""
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamable_http_client
-
     # the SDK's streamable client takes its own httpx2 client (for headers)
     import httpx2
 
     async with httpx2.AsyncClient(headers={"X-API-Key": KEY}) as http:
-        async with streamable_http_client(f"{BASE}/mcp/http", http_client=http) as (read, write):
-            async with ClientSession(read, write) as session:
-                await _mcp_http_handshake_checks(session)
-                await _mcp_http_tool_call_checks(session)
+        await _mcp_http_run_session(http)
+
+
+async def _mcp_http_run_session(http: httpx2.AsyncClient) -> None:
+    """Open a Streamable-HTTP session on the client and run the checks."""
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    async with streamable_http_client(f"{BASE}/mcp/http", http_client=http) as (read, write):
+        async with ClientSession(read, write) as session:
+            await _mcp_http_handshake_checks(session)
+            await _mcp_http_tool_call_checks(session)
 
 
 async def _mcp_http_handshake_checks(session: ClientSession) -> None:

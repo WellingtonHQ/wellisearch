@@ -167,10 +167,18 @@ def _title(soup: BeautifulSoup) -> str | None:
 def _price(soup: BeautifulSoup) -> str | None:
     """First real price found by the buy-box selectors."""
     for sel in _PRICE_SELECTORS:
-        for e in soup.select(sel):
-            t = e.get_text(strip=True)
-            if t and t.lower() != "null":
-                return t
+        t = _price_for_selector(soup, sel)
+        if t is not None:
+            return t
+    return None
+
+
+def _price_for_selector(soup: BeautifulSoup, sel: str) -> str | None:
+    """First non-null offscreen price text under one selector, else None."""
+    for e in soup.select(sel):
+        t = e.get_text(strip=True)
+        if t and t.lower() != "null":
+            return t
     return None
 
 
@@ -213,10 +221,11 @@ def _product_details(soup: BeautifulSoup) -> str | None:
     """First product-details section text from the known section IDs."""
     for tid in _DETAILS_IDS:
         el = soup.find(id=tid)
-        if el:
-            t = el.get_text(" ", strip=True)
-            if t:
-                return t
+        if el is None:
+            continue
+        t = el.get_text(" ", strip=True)
+        if t:
+            return t
     return None
 
 
@@ -283,12 +292,9 @@ def _reviews(soup: BeautifulSoup, limit: int) -> list[str]:
         if details:
             label += f" ({', '.join(details)})"
         block: list[str] = [label]
-        title = _review_title(card)
-        date = _review_date(card)
-        if title:
-            block.append(f"**{title}**" + (f" — {date}" if date else ""))
-        elif date:
-            block.append(date)
+        head = _review_headline(_review_title(card), _review_date(card))
+        if head is not None:
+            block.append(head)
         block.append(body)
         out.append("\n\n".join(block))
         if len(out) >= limit:
@@ -358,6 +364,15 @@ def _review_body(card: Tag) -> str | None:
         t = el.get_text(" ", strip=True)
         return t or None
     return "\n\n".join(p for p in paras if p)
+
+
+def _review_headline(title: str | None, date: str | None) -> str | None:
+    """The review's headline line: bold title (date suffixed) else the bare date."""
+    if title:
+        return f"**{title}**" + (f" — {date}" if date else "")
+    if date:
+        return date
+    return None
 
 
 register(AmazonExtractor(), "amazon.com")

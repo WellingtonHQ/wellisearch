@@ -83,6 +83,40 @@ async def _stale_batch(
     )
 
 
+async def _reindex_stale(force: bool, model: str, stale_n: int) -> dict[str, int]:
+    """Re-embed every stale page in url-keyset batches of REINDEX_BATCH_SIZE,
+    printing progress; return the ok/unchanged/failed tally."""
+    stats = {"failed": 0, "ok": 0, "unchanged": 0}
+    done = 0
+    last_url = ""
+    while True:
+        batch = await _stale_batch(force, model, last_url, get_settings().REINDEX_BATCH_SIZE)
+        if not batch:
+            break
+        done, last_url = await _reembed_batch(batch, stats, done, stale_n)
+    return stats
+
+
+async def _reembed_batch(
+    batch: list[dict[str, Any]],
+    stats: dict[str, int],
+    done: int,
+    stale_n: int,
+) -> tuple[int, str]:
+    """Re-embed one batch, updating stats and printing progress; return
+    (new done count, last url)."""
+    for p in batch:
+        outcome = await _reembed_page(p)
+        stats[outcome] += 1
+        done += 1
+        if done % PROGRESS_INTERVAL == 0 or done == stale_n:
+            print(
+                f"  {done}/{stale_n} (ok={stats['ok']} unchanged={stats['unchanged']} "
+                f"failed={stats['failed']})"
+            )
+    return done, batch[-1]["url"]
+
+
 async def _run(force: bool, dry_run: bool) -> None:
     """Re-chunk + re-embed every page needing it (all when --force).
 
@@ -103,24 +137,7 @@ async def _run(force: bool, dry_run: bool) -> None:
         if dry_run or stale_n == 0:
             return
 
-        stats = {"failed": 0, "ok": 0, "unchanged": 0}
-        done = 0
-        last_url = ""
-        while True:
-            batch = await _stale_batch(force, s.EMBED_MODEL, last_url, s.REINDEX_BATCH_SIZE)
-            if not batch:
-                break
-            for p in batch:
-                outcome = await _reembed_page(p)
-                stats[outcome] += 1
-                done += 1
-                if done % PROGRESS_INTERVAL == 0 or done == stale_n:
-                    print(
-                        f"  {done}/{stale_n} (ok={stats['ok']} unchanged={stats['unchanged']} "
-                        f"failed={stats['failed']})"
-                    )
-            last_url = batch[-1]["url"]
-
+        stats = await _reindex_stale(force, s.EMBED_MODEL, stale_n)
         print(f"done: ok={stats['ok']} unchanged={stats['unchanged']} failed={stats['failed']}")
     finally:
         await db.close()

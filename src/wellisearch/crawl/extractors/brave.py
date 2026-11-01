@@ -9,9 +9,14 @@ which keeps SPA SERPs clearable by the gate without site-specific selectors.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ..results import Fitted, Rendered
 from . import register
 from .base import MIN_MD_CHARS, generic_md, trim_md
+
+if TYPE_CHECKING:
+    from bs4 import BeautifulSoup, Tag
 
 
 class BraveExtractor:
@@ -53,18 +58,27 @@ def _visible_text_markdown(html: str) -> str:
         for tag in soup(["noscript", "script", "style", "template"]):
             tag.decompose()
         root = soup.body or soup
-        lines: list[str] = []
-        seen: set[str] = set()
-        for el in root.find_all(True):
-            if el.find(True) is not None:
-                continue  # has a nested element — its text is emitted deeper down
-            text = " ".join(el.get_text().split())
-            if text and text not in seen:
-                seen.add(text)
-                lines.append(text)
-        return "\n".join(lines)
+        return _visible_lines(root)
     except Exception:
         return ""
+
+
+def _visible_lines(root: BeautifulSoup | Tag) -> str:
+    """One line per terminal element's text, deduped, in document order.
+
+    A terminal element has no nested elements, so its text is emitted exactly
+    once (container text is never counted twice).
+    """
+    lines: list[str] = []
+    seen: set[str] = set()
+    for el in root.find_all(True):
+        if el.find(True) is not None:
+            continue  # has a nested element — its text is emitted deeper down
+        text = " ".join(el.get_text().split())
+        if text and text not in seen:
+            seen.add(text)
+            lines.append(text)
+    return "\n".join(lines)
 
 
 def _soup(html: str):

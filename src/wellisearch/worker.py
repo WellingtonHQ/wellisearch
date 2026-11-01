@@ -230,6 +230,28 @@ async def _crawl_and_store(url: str, trigger: str) -> dict:
     return {"url": url, "status": status, "ms": ms, "chunks": chunks_written}
 
 
+async def _crawl_and_track(
+    url: str,
+    sem: asyncio.Semaphore,
+    bump: Callable[[], None],
+) -> None:
+    """Crawl one claimed fast-lane row under the parallelism cap: mark it
+    done, route challenges to the CF lane, mark failures — then bump the
+    processed count (in a finally, so a cancellation still counts)."""
+    async with sem:
+        try:
+            await crawl_url(url, "search")
+            await db.queue_done(url, ok=True)
+        except ChallengeDetected:
+            log.info("challenge detected — routing %s to the CF lane", url)
+            await db.queue_route_to_cf(url)
+        except Exception as e:
+            log.warning("queue crawl failed for %s: %s", url, e)
+            await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
+        finally:
+            bump()
+
+
 async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
     """Claim and crawl pending FAST-lane queue rows, up to the per-tick budget.
 
@@ -260,24 +282,19 @@ async def _drain_queue(deadline: float, manual_only: bool = False) -> dict:
     async def process(url: str) -> None:
         """Claim one fast-lane row and crawl it (bounded by the parallelism cap)."""
         nonlocal processed
+
+        def bump() -> None:
+            """Count one processed row."""
+            nonlocal processed
+            processed += 1
+
         if time.monotonic() > deadline:
             return
         if not await db.queue_claim(url):
             return
         token = set_lane(FAST)
         try:
-            async with sem:
-                try:
-                    await crawl_url(url, "search")
-                    await db.queue_done(url, ok=True)
-                except ChallengeDetected:
-                    log.info("challenge detected — routing %s to the CF lane", url)
-                    await db.queue_route_to_cf(url)
-                except Exception as e:
-                    log.warning("queue crawl failed for %s: %s", url, e)
-                    await db.queue_done(url, ok=False, error=str(e)[:ERROR_DETAIL_MAX_LEN])
-                finally:
-                    processed += 1
+            await _crawl_and_track(url, sem, bump)
         finally:
             reset_lane(token)
 

@@ -46,13 +46,18 @@ def boundary_cut_tail(text: str, n: int) -> str:
     start = len(text) - n
     i = start
     while i < len(text):
-        ch = text[i]
-        if ch in " \n\t":
-            seg = text[i:]
-            if seg.count("<") <= seg.count(">"):
-                return seg.lstrip()
+        cut = _safe_tail_segment(text[i:]) if text[i] in " \n\t" else None
+        if cut is not None:
+            return cut
         i += 1
     return text
+
+
+def _safe_tail_segment(seg: str) -> str | None:
+    """The segment as a tail cut when it doesn't start mid-tag, else None."""
+    if seg.count("<") <= seg.count(">"):
+        return seg.lstrip()
+    return None
 
 
 def allocate_budgets(
@@ -79,19 +84,24 @@ def allocate_budgets(
     elif strategy in ("head", "tail"):
         weights = [l / total_len for l in lens]
     else:  # smart | priority → prominence-based
-        w = [max(1, 1 + int(w)) for w in page_weights]
-        if max(int(wi) for wi in page_weights) <= 0:
-            # no prominence signal (all fetch_count=0) → §15: fall back to even
-            weights = [1.0 / n] * n
-        else:
-            sw = sum(w)
-            weights = [x / sw for x in w]
+        weights = _prominence_weights(page_weights, n)
 
     shares = [budget * w for w in weights]
     if per_page is not None:
         shares = [min(sh, per_page) for sh in shares]
     # never allocate more than the page actually has
     return [max(0, min(int(sh), lens[i])) for i, sh in enumerate(shares)]
+
+
+def _prominence_weights(page_weights: list[int], n: int) -> list[float]:
+    """Prominence-based weights (fetch_count+1), falling back to even when no
+    page carries a prominence signal (all fetch_count=0 — §15)."""
+    w = [max(1, 1 + int(w)) for w in page_weights]
+    if max(int(wi) for wi in page_weights) <= 0:
+        # no prominence signal (all fetch_count=0) → §15: fall back to even
+        return [1.0 / n] * n
+    sw = sum(w)
+    return [x / sw for x in w]
 
 
 def truncate_page(

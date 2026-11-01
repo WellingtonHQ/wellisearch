@@ -70,10 +70,8 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
             continue
 
         if in_fence:
-            current.append(line)
-            current_tokens += _tokens(line)
-            if fence_match and fence_match.group(1) == fence_marker:
-                in_fence = False
+            tokens, in_fence = _append_fence_line(current, line, fence_match, fence_marker)
+            current_tokens += tokens
             i += 1
             continue
 
@@ -114,3 +112,15 @@ def chunk_markdown(markdown: str, max_tokens: int = get_settings().MAX_CHUNK_TOK
 def _tokens(text: str) -> int:
     """Rough token estimate: ~4 chars per token, minimum 1."""
     return max(1, len(text) // CHARS_PER_TOKEN)
+
+
+def _append_fence_line(
+    current: list[str],
+    line: str,
+    fence_match: re.Match[str] | None,
+    fence_marker: str,
+) -> tuple[int, bool]:
+    """Append a line inside an open fence; returns (tokens added, fence closed)."""
+    current.append(line)
+    closed = fence_match is not None and fence_match.group(1) == fence_marker
+    return _tokens(line), not closed

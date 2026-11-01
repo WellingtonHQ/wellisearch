@@ -82,16 +82,23 @@ def is_botwall(
         if re.search(r"\b" + re.escape(marker) + r"\b", visible):
             return marker
     if len(visible) <= _STRUCTURAL_MAX_VISIBLE_CHARS:
-        low = html.lower()
-        for marker in STRUCTURAL_MARKERS:
-            if re.search(r"\b" + re.escape(marker) + r"\b", low):
-                return marker
+        marker = _find_structural_marker(html.lower())
+        if marker is not None:
+            return marker
     return None
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _find_structural_marker(low_html: str) -> str | None:
+    """First structural marker in the lowercased html, or None."""
+    for marker in STRUCTURAL_MARKERS:
+        if re.search(r"\b" + re.escape(marker) + r"\b", low_html):
+            return marker
+    return None
+
 
 def _visible_text(html: str) -> str:
     """Reduce html to its visible text: drop script/style/noscript/code

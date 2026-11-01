@@ -164,6 +164,27 @@ class Config:
         self.results_file = self.out_dir / "llm-cleanup.results.json"
         self.report_file = self.out_dir / "llm-cleanup.report.md"
 
+def _model_spec(part: str) -> tuple[str, str] | None:
+    """One 'label=tag' (or bare 'tag') model spec, or None for a blank part."""
+    part = part.strip()
+    if not part:
+        return None
+    if "=" in part:
+        label, tag = [p.strip() for p in part.split("=", 1)]
+    else:
+        label = tag = part
+    return (label, tag)
+
+
+def _parse_models(raw: str) -> list[tuple[str, str]]:
+    """Comma-separated model specs as (label, tag) pairs (blank parts skipped)."""
+    models: list[tuple[str, str]] = []
+    for part in raw.split(","):
+        spec = _model_spec(part)
+        if spec is not None:
+            models.append(spec)
+    return models
+
 def load_config(args: argparse.Namespace) -> Config:
     """Build a Config from CLI args + env, validating the judge is configured when needed."""
     pg_host = os.environ.get("POSTGRES_HOST", "127.0.0.1")
@@ -178,16 +199,7 @@ def load_config(args: argparse.Namespace) -> Config:
 
     models = DEFAULT_MODELS
     if args.models:
-        models = []
-        for part in args.models.split(","):
-            part = part.strip()
-            if not part:
-                continue
-            if "=" in part:
-                label, tag = [p.strip() for p in part.split("=", 1)]
-            else:
-                label = tag = part
-            models.append((label, tag))
+        models = _parse_models(args.models)
 
     out_dir = Path(args.out_dir or os.environ.get("BENCH_OUT_DIR") or (HERE / "results"))
 
@@ -259,16 +271,29 @@ def select_random_pages(
     seen: set[str] = set()
     round_idx = 0
     while len(picked) < target:
-        progressed = False
-        for d in domains:
-            if len(picked) >= target:
-                break
-            if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
-                progressed = True
-        if not progressed:
+        if not _round_pick(domains, by_domain, round_idx, cap, seen, picked, target):
             break
         round_idx += 1
     return picked
+
+
+def _round_pick(
+    domains: list[str],
+    by_domain: dict[str, list[dict[str, Any]]],
+    round_idx: int,
+    cap: int,
+    seen: set[str],
+    picked: list[dict[str, Any]],
+    target: int,
+) -> bool:
+    """One round-robin pass over domains; True when at least one page was picked."""
+    progressed = False
+    for d in domains:
+        if len(picked) >= target:
+            break
+        if _pick_from_domain(d, by_domain[d], round_idx, cap, seen, picked):
+            progressed = True
+    return progressed
 
 async def build_sample(cfg: Config) -> list[dict[str, Any]]:
     """Pull a random set of real pages (spread across domains) from the index."""
@@ -511,24 +536,36 @@ async def run_model(
                 stats = (f"model done in {out['total_ms'] / 1000:.0f}s "
                          f"(ttft {out['ttft_ms'] or 0:.0f}ms, "
                          f"{out['completion_tokens'] or 0} tok @ {out['tok_s']} tok/s)")
-                if cfg.use_judge and out["text"].strip():
-                    log(f"{who} — {stats} → awaiting judge …")
-                    rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
-                    sc = rec["judge"].get("scores") or {}
-                    log(
-                        f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
-                        f"(faith={sc.get('faithfulness')} "
-                        f"noise={sc.get('noise_removal')} "
-                        f"presv={sc.get('preservation')})"
-                    )
-                else:
-                    log(f"{who} — {stats}")
+                await _finish_record(rec, who, stats, out, page, client, cfg)
             except Exception as e:
                 rec["error"] = f"{type(e).__name__}: {e}"
                 log(f"{who} — ERROR: {rec['error']}")
             return rec
 
     return list(await asyncio.gather(*(one(p, i) for i, p in enumerate(pages))))
+
+async def _finish_record(
+    rec: dict[str, Any],
+    who: str,
+    stats: str,
+    out: dict[str, Any],
+    page: dict[str, Any],
+    client: httpx.AsyncClient,
+    cfg: Config,
+) -> None:
+    """Log the completion stats and (when configured) run the judge on the output."""
+    if cfg.use_judge and out["text"].strip():
+        log(f"{who} — {stats} → awaiting judge …")
+        rec["judge"] = await judge_call(client, cfg, page["fit_markdown"], out["text"])
+        sc = rec["judge"].get("scores") or {}
+        log(
+            f"{who} — judge done in {rec['judge'].get('ms', 0) / 1000:.0f}s "
+            f"(faith={sc.get('faithfulness')} "
+            f"noise={sc.get('noise_removal')} "
+            f"presv={sc.get('preservation')})"
+        )
+    else:
+        log(f"{who} — {stats}")
 
 async def ensure_models(
     client: httpx.AsyncClient,
@@ -854,18 +891,23 @@ def _process_stream_line(
 def _parse_judge_scores(text: str) -> dict[str, Any]:
     """Extract the judge's 1-5 scores (and note) from a free-text reply."""
     m = re.search(r"\{.*\}", text, re.DOTALL)
-    scores: dict[str, Any] = {}
     if not m:
-        return scores
+        return {}
     try:
-        obj = json.loads(m.group(0))
-        for k in ("faithfulness", "noise_removal", "preservation"):
-            if isinstance(obj.get(k), (int, float)):
-                scores[k] = int(obj[k])
-        if isinstance(obj.get("note"), str):
-            scores["note"] = obj["note"]
+        return _judge_scores_obj(json.loads(m.group(0)))
     except json.JSONDecodeError:
-        return scores
+        return {}
+
+
+def _judge_scores_obj(obj: dict[str, Any]) -> dict[str, Any]:
+    """The 1-5 scores (and note) from a parsed judge reply object."""
+    scores: dict[str, Any] = {}
+    for k in ("faithfulness", "noise_removal", "preservation"):
+        v = obj.get(k)
+        if isinstance(v, (int, float)):
+            scores[k] = int(v)
+    if isinstance(obj.get("note"), str):
+        scores["note"] = obj["note"]
     return scores
 
 # ---------------------------------------------------------------------------
@@ -999,23 +1041,27 @@ def _report_detail_lines(payload: dict[str, Any], labels: list[str]) -> list[str
         )
         lines.append("|---|---|---|---|---|---|---|---|---|")
         for r in payload["results"][label]:
-            if "error" in r:
-                lines.append(f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |")
-                continue
-            mt = r.get("metrics", {})
-            js = r.get("judge", {}).get("scores", {})
-            judge_cell = (
-                f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
-                f"{js.get('preservation','–')}"
-                if js else "—"
-            )
-            lines.append(
-                f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
-                f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
-                f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
-            )
+            lines.append(_detail_row(r))
         lines.append("")
     return lines
+
+
+def _detail_row(r: dict[str, Any]) -> str:
+    """One markdown table row for a per-page result (error rows short-circuit)."""
+    if "error" in r:
+        return f"| {r['url']} | ERROR: {r['error'][:60]} | | | | | | | |"
+    mt = r.get("metrics", {})
+    js = r.get("judge", {}).get("scores", {})
+    judge_cell = (
+        f"{js.get('faithfulness','–')}/{js.get('noise_removal','–')}/"
+        f"{js.get('preservation','–')}"
+        if js else "—"
+    )
+    return (
+        f"| {r['url']} | {mt.get('no_addition','–')} | {mt.get('preservation','–')} | "
+        f"{mt.get('boilerplate_removed','–')} | {mt.get('length_ratio','–')} | "
+        f"{r.get('ttft_ms','–')} | {r.get('total_ms','–')} | {r.get('tok_s','–')} | {judge_cell} |"
+    )
 
 if __name__ == "__main__":
     main()

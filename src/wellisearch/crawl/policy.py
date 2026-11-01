@@ -66,11 +66,13 @@ def match(url: str) -> Policy:
     host = urlparse(url).netloc.lower()
     if host.startswith("www."):
         host = host[4:]
-    best_key: str | None = None
-    for key in POLICY:
-        if host == key or host.endswith("." + key):
-            if best_key is None or len(key) > len(best_key):
-                best_key = key
+    best_key = _matching_key(host)
     if best_key is not None:
         return POLICY[best_key]
     return DEFAULT_POLICY
+
+
+def _matching_key(host: str) -> str | None:
+    """Longest POLICY key that is a host suffix, else None."""
+    matches = [k for k in POLICY if host == k or host.endswith("." + k)]
+    return max(matches, key=len) if matches else None

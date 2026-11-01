@@ -136,10 +136,21 @@ class Database:
             if timeout_ms is not None:
                 # SET does not accept parameter placeholders — inline the
                 # (int-coerced) value instead.
-                async with conn.transaction():
-                    await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
-                    cur = await conn.execute(sql, params or ())
-                    return list(await cur.fetchall())
+                return await self._fetch_all_with_timeout(conn, sql, params, timeout_ms)
+            cur = await conn.execute(sql, params or ())
+            return list(await cur.fetchall())
+
+    async def _fetch_all_with_timeout(
+        self,
+        conn: psycopg.AsyncConnection,
+        sql: str,
+        params: tuple | list | None,
+        timeout_ms: int,
+    ) -> list[dict[str, Any]]:
+        """Run a SELECT under a SET LOCAL statement timeout (one explicit
+        transaction, so the timeout never leaks into the pool)."""
+        async with conn.transaction():
+            await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
             cur = await conn.execute(sql, params or ())
             return list(await cur.fetchall())
 
@@ -574,16 +585,7 @@ class Database:
         )
         try:
             async with admin.cursor() as cur:
-                await cur.execute(
-                    "SELECT 1 FROM pg_database WHERE datname = %s",
-                    (s.POSTGRES_DB,),
-                )
-                exists = await cur.fetchone()
-                if not exists:
-                    # identifier must be safe: it comes from our own config
-                    safe = s.POSTGRES_DB.replace('"', '""')
-                    await cur.execute(f'CREATE DATABASE "{safe}"')
-                    log.info("created database %s", s.POSTGRES_DB)
+                await self._ensure_app_db_exists(cur, s)
         finally:
             await admin.close()
 
@@ -599,6 +601,23 @@ class Database:
         finally:
             await app.close()
         log.info("ensured extensions (vector, pg_trgm) in %s", s.POSTGRES_DB)
+
+    async def _ensure_app_db_exists(
+        self,
+        cur: psycopg.AsyncCursor,
+        s: Settings,
+    ) -> None:
+        """Create the app database if it does not exist yet."""
+        await cur.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s",
+            (s.POSTGRES_DB,),
+        )
+        exists = await cur.fetchone()
+        if not exists:
+            # identifier must be safe: it comes from our own config
+            safe = s.POSTGRES_DB.replace('"', '""')
+            await cur.execute(f'CREATE DATABASE "{safe}"')
+            log.info("created database %s", s.POSTGRES_DB)
 
 
 # module-level singleton

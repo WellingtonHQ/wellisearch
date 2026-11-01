@@ -26,6 +26,11 @@ STORED = {"title": "Article", "fit_markdown": "Stored article.", "fetch_count": 
 class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
     """Exercise variant URLs through the public paths and their shared state."""
 
+    async def _assert_crawl_error(self, fn: Callable[[], Awaitable[object]]) -> None:
+        """Run fn and assert it raises CrawlError."""
+        with self.assertRaises(crawler.CrawlError):
+            await fn()
+
     async def test_fetch_counts_and_response_urls(self) -> None:
         """Single and bulk reads bump the stored key while preserving requested URLs."""
         fake_db = Mock(
@@ -103,8 +108,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             fake_db.refresh_success_reset.assert_awaited_once_with(CANONICAL)
             error = crawler.CrawlError(CANONICAL, "failed")
             with patch.object(worker.crawler, "fit_markdown", AsyncMock(side_effect=error)):
-                with self.assertRaises(crawler.CrawlError):
-                    await worker._crawl_and_store(VARIANT, "refresh")
+                await self._assert_crawl_error(lambda: worker._crawl_and_store(VARIANT, "refresh"))
         self.assertEqual(fake_db.execute.await_args.args[1], (error.status_label(), CANONICAL))
         fake_db.refresh_fail_bump.assert_not_awaited()
 
@@ -124,8 +128,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             fake_db.queue_challenge_in_flight.assert_awaited_once_with(CANONICAL)
             crawl.side_effect = ChallengeDetected(VARIANT)
             with patch.object(fetch.queue, "enqueue", AsyncMock(return_value=False)):
-                with self.assertRaises(crawler.CrawlError):
-                    await fetch._probe_crawl(VARIANT)
+                await self._assert_crawl_error(lambda: fetch._probe_crawl(VARIANT))
             await fetch._record_failed_refresh(VARIANT, True)
         fake_db.queue_route_to_cf.assert_awaited_once_with(CANONICAL)
         fake_db.refresh_fail_bump.assert_awaited_once_with(CANONICAL)

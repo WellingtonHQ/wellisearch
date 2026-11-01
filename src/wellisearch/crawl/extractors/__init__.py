@@ -39,14 +39,16 @@ def for_url(url: str) -> Extractor:
     host = urlparse(url).netloc.lower()
     if host.startswith("www."):
         host = host[4:]
-    best: str | None = None
-    for domain in _REGISTRY:
-        if host == domain or host.endswith("." + domain):
-            if best is None or len(domain) > len(best):
-                best = domain
+    best = _matching_domain(host)
     if best is not None:
         return _REGISTRY[best]
     return GenericExtractor()
+
+
+def _matching_domain(host: str) -> str | None:
+    """Longest-suffix registry domain matching the host, or None."""
+    matches = [d for d in _REGISTRY if host == d or host.endswith("." + d)]
+    return max(matches, key=len) if matches else None
 
 
 # Side-effect imports: each site module registers itself on import.

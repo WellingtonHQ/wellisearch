@@ -267,12 +267,16 @@ def _is_job_board(url: str, boards: tuple[str, ...]) -> bool:
             continue
         if host != spec_host and not host.endswith("." + spec_host):
             continue
-        if sep:
-            spec_path = "/" + spec_tail.lower()
-            if lp != spec_path and not lp.startswith(spec_path + "/"):
-                continue
+        if sep and not _path_matches(lp, spec_tail):
+            continue
         return True
     return False
+
+
+def _path_matches(lp: str, spec_tail: str) -> bool:
+    """True when the lowercased path equals the spec's path or is under it."""
+    spec_path = "/" + spec_tail.lower()
+    return lp == spec_path or lp.startswith(spec_path + "/")
 
 
 def _job_intent(query: str, terms: tuple[str, ...]) -> bool:
@@ -428,43 +432,44 @@ async def _serve_chosen(
     qualifying local set; provider: always). Returns (source, results,
     degraded, errors, provider_ms)."""
     s = get_settings()
-    source: str
-    results: list[dict]
-    degraded = False
-    errors: list[dict] = []
-    provider_ms: int | None = None
-
     if search_mode == "local":
         # local only: serve what the index has — the caller explicitly chose
         # local, so the gate does not apply. No provider fallback.
-        if local_rows:
-            source, results = await _serve_local(local_rows, k)
-        else:
-            source = "error"
-            results = []
-    elif len(passing) >= k:
+        return await _serve_local_chosen(local_rows, k)
+    if len(passing) >= k:
         # local hit — zero provider credits (the quota-preservation layer);
         # the per-domain cap keeps one site's near-duplicates from flooding
         # the answer set (auto mode only — local mode served above, uncapped).
         capped = _cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN)
         source, results = await _serve_local(capped, k)
-        if len(capped) < k:
-            # The cap shrank a would-be full set below the requested count —
-            # flag it so callers can tell "the index only has N matching pages"
-            # from "the per-domain cap dropped the rest".
-            degraded = True
-    elif passing and len(passing) >= s.LOCAL_PARTIAL_MIN_PASSING:
+        # The cap may have shrunk a would-be full set below the requested
+        # count — flag it so callers can tell "the index only has N matching
+        # pages" from "the per-domain cap dropped the rest".
+        return source, results, len(capped) < k, [], None
+    if passing and len(passing) >= s.LOCAL_PARTIAL_MIN_PASSING:
         # Several qualifying pages are evidence of a useful partial answer.
         source, results = await _serve_local(_cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN), k)
-    elif strong:
+        return source, results, False, [], None
+    if strong:
         # One unusually strong page is enough; omit marginal companions.
         source, results = await _serve_local(_cap_per_domain(strong, s.SEARCH_MAX_PER_DOMAIN), k)
+        return source, results, False, [], None
+    # ---- provider gateway (auto: no qualifying local set; provider: always)
+    return await _provider_search(query, k, crawl_n, search_mode, local_rows)
+
+
+async def _serve_local_chosen(
+    local_rows: list[dict],
+    k: int,
+) -> tuple[str, list[dict], bool, list[dict], int | None]:
+    """Local mode: serve the raw index rows uncapped (no gate, no provider
+    fallback); an empty index is an explicit error result."""
+    if local_rows:
+        source, results = await _serve_local(local_rows, k)
     else:
-        # ---- provider gateway (auto: no qualifying local set; provider: always)
-        source, results, degraded, errors, provider_ms = await _provider_search(
-            query, k, crawl_n, search_mode, local_rows
-        )
-    return source, results, degraded, errors, provider_ms
+        source = "error"
+        results = []
+    return source, results, False, [], None
 
 
 async def _serve_local(local_rows: list[dict], k: int) -> tuple[str, list[dict]]:
