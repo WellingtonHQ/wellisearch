@@ -66,6 +66,11 @@ import psycopg
 
 HERE = Path(__file__).resolve().parent
 
+OLLAMA_SHORT_TIMEOUT_S = 15.0   # short Ollama calls: model check, connect phase
+MODEL_PULL_TIMEOUT_S = 3600.0   # a model download can take a long time
+RUN_CONNECT_TIMEOUT_S = 10.0    # connect phase of the per-run chat client
+
+
 def log(msg: str) -> None:
     """Emit a status line prefixed with a local timestamp, flushed immediately.
 
@@ -584,7 +589,7 @@ async def ensure_models(
 
     existing: set[str] = set()
     try:
-        r = await client.get(f"{base}/api/tags", timeout=15.0)
+        r = await client.get(f"{base}/api/tags", timeout=OLLAMA_SHORT_TIMEOUT_S)
         r.raise_for_status()
         existing = {m.get("name", "") for m in r.json().get("models", [])}
     except Exception as e:
@@ -603,7 +608,7 @@ async def ensure_models(
             r = await client.post(
                 f"{base}/api/pull",
                 json={"name": tag},
-                timeout=httpx.Timeout(3600.0, connect=15.0),
+                timeout=httpx.Timeout(MODEL_PULL_TIMEOUT_S, connect=OLLAMA_SHORT_TIMEOUT_S),
             )
             r.raise_for_status()
         except Exception as e:
@@ -614,7 +619,7 @@ async def run_all(cfg: Config) -> dict[str, Any]:
     """Run all models over the sample and write the full results JSON."""
     pages = load_sample(cfg)
     models = cfg.models[:2] if cfg.smoke else cfg.models
-    timeout = httpx.Timeout(cfg.timeout_s, connect=10.0)
+    timeout = httpx.Timeout(cfg.timeout_s, connect=RUN_CONNECT_TIMEOUT_S)
     async with httpx.AsyncClient(timeout=timeout) as client:
         await ensure_models(client, cfg, [tag for _, tag in models])
         all_results: dict[str, list[dict[str, Any]]] = {}
