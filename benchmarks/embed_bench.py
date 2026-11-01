@@ -246,9 +246,9 @@ class FastEmbedRunner:
 
     def encode(self, texts: list[str]) -> np.ndarray:
         """Encode a batch of texts to L2-normalized float32 vectors."""
-        X = np.stack(
-            [np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)]
-        )
+        X = np.stack([
+            np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)
+        ])
         return _l2_normalize(X)
 
     def encode_one(self, text: str) -> np.ndarray:
