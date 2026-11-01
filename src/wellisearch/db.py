@@ -373,7 +373,7 @@ class Database:
             )
 
     # ---------------------------------------------------------------------------
-    # App State (runtime flags)
+    # App State (Runtime Flags)
     # ---------------------------------------------------------------------------
 
     async def get_app_value(self, key: str) -> Any | None:

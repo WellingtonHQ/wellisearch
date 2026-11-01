@@ -383,7 +383,7 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Worker pause / resume
+# Worker Pause / Resume
 # ---------------------------------------------------------------------------
 
 def _seed_drained(hit: dict | None, seeded_at: dt.datetime) -> bool:

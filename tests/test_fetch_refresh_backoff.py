@@ -99,7 +99,10 @@ def stale_row(backoff_until: dt.datetime | None) -> dict:
     }
 
 
-# --- save module globals we monkeypatch -------------------------------------
+# ---------------------------------------------------------------------------
+# Save Module Globals We Monkeypatch
+# ---------------------------------------------------------------------------
+
 _real_db = fetch_mod.db
 _real_crawl_url = fetch_mod.crawl_url
 _real_get_settings = fetch_mod.get_settings
@@ -127,7 +130,7 @@ async def failing_crawl(url: str, trigger: str = "fetch") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Backoff active + stale markdown -> serve the stored copy, no crawl at all
+# Backoff Active + Stale Markdown -> Serve the Stored Copy, No Crawl at All
 # ---------------------------------------------------------------------------
 
 db1 = FakeDB(stale_row(dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=6)))
@@ -143,7 +146,7 @@ assert db1.bumped == [], "a served-from-index fetch has nothing to bump"
 print("OK backoff active (stale served, no crawl)")
 
 # ---------------------------------------------------------------------------
-# Backoff expired + stale markdown -> re-crawl runs; failure bumps the streak
+# Backoff Expired + Stale Markdown -> Re-crawl Runs; Failure Bumps the Streak
 # ---------------------------------------------------------------------------
 
 db2 = FakeDB(stale_row(dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)))
@@ -163,9 +166,8 @@ assert db2.enqueued == [], "a plain tier failure is not CF-routed from the fetch
 print("OK backoff expired (re-crawl ran, failure bumped)")
 
 # ---------------------------------------------------------------------------
-# Bot-wall on the re-crawl -> CF lane + bump (same pattern as worker refresh)
+# Bot-wall on the Re-crawl -> CF Lane + Bump (Same Pattern as Worker Refresh)
 # ---------------------------------------------------------------------------
-
 
 async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
     """Record the call and raise a bot-wall challenge."""
@@ -191,7 +193,7 @@ assert db3.bumped == [URL_POST], f"walled re-crawl must bump the streak: {db3.bu
 print("OK bot-wall (CF-routed + bumped)")
 
 # ---------------------------------------------------------------------------
-# Unindexed URL failure -> no bump (first-time indexing is not a refresh)
+# Unindexed URL Failure -> No Bump (first-time Indexing Is Not a Refresh)
 # ---------------------------------------------------------------------------
 
 db4 = FakeDB(None)
@@ -210,9 +212,8 @@ assert db4.bumped == [], "a first-time indexing failure must not touch refresh b
 print("OK unindexed (no bump on first-time crawl failure)")
 
 # ---------------------------------------------------------------------------
-# Success after expiry -> fresh content served, nothing bumped
+# Success After Expiry -> Fresh Content Served, Nothing Bumped
 # ---------------------------------------------------------------------------
-
 
 async def ok_crawl(url: str, trigger: str = "fetch") -> dict:
     """Record the call and succeed."""
@@ -236,7 +237,6 @@ assert calls == [URL_POST], f"the re-crawl must have run once: {calls}"
 assert db5.bumped == [], "a successful crawl never bumps (worker resets on store)"
 print("OK success path (fresh stored content served, no bump)")
 
-# ---------------------------------------------------------------------------
 fetch_mod.db = _real_db
 queue_mod.db = _real_queue_db
 queue_mod.kick_worker = _real_kick_worker

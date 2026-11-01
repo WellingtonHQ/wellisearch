@@ -922,7 +922,7 @@ assert ex.accept(fitted)
 print("OK ap")
 
 # ---------------------------------------------------------------------------
-# Generic (loading-stub escalation)
+# Generic (loading-stub Escalation)
 # ---------------------------------------------------------------------------
 
 from wellisearch.crawl.extractors.base import (
