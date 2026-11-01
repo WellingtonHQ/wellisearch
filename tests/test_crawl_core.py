@@ -12,9 +12,9 @@ from wellisearch.crawl.policy import Policy, match
 from wellisearch.crawl.results import Rendered
 from wellisearch.crawl.shorturl import is_short_url, resolve_short_url
 from wellisearch.crawl.signals import find_price, find_stock
-from wellisearch.crawler import CrawlError
 import wellisearch.crawl.tiers.http as http_tier
 import wellisearch.crawl.tiers.stealth as stealth_tier
+from wellisearch.crawler import CrawlError
 import wellisearch.worker as worker_mod
 
 # ---------------------------------------------------------------------------
