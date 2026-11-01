@@ -83,17 +83,7 @@ async def search_web(
     """The search pipeline: local index first (auto), provider gateway on a
     miss, then log the search, enqueue top results for background indexing,
     and return the envelope. `search_mode` selects the source (auto/local/provider)."""
-    s = get_settings()
-    # Clamp both ends: a zero/negative num_results falls back to SEARCH_K (a
-    # negative k would slice rows off the end), and an oversized one is capped
-    # at SEARCH_MAX_K so it cannot stall fn_search_local for the full statement
-    # timeout.
-    k = min(max(1, num_results or s.SEARCH_K), s.SEARCH_MAX_K)
-    crawl_n = s.SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)
-    if search_mode not in SEARCH_MODES:
-        raise ValueError(
-            f"invalid search_mode {search_mode!r} (choose from {list(SEARCH_MODES)})"
-        )
+    k, crawl_n = _resolve_search_limits(num_results, max_crawl, search_mode)
 
     t_start = time.monotonic()
 
@@ -108,69 +98,14 @@ async def search_web(
             query, k, max_age_days, widened=(search_mode == "auto")
         )
 
-    # Auto mode: each row must clear all three per-row gates — coverage, similarity,
-    # and distinctive-term coverage (a page missing every rare / brand query word
-    # cannot serve). A full set of k passing rows serves; an incomplete set can also
-    # serve if several pass or one is strongly similar. This lets indexed provider
-    # hits satisfy repeat queries without trusting a marginal lone match or off-brand
-    # junk. Local mode bypasses the gate; provider mode has no local rows.
-    # Auto-mode serving policies (docs/ranking.md): a union candidate window
-    # (top-N by score ∪ top-M by similarity) so semantically close pages are
-    # always considered, and a job-board de-rank for non-job-intent queries.
-    # Local mode serves the raw index order untouched.
-    candidates = local_rows
-    if search_mode == "auto":
-        candidates = _candidate_rows(local_rows, k)
-        if not _job_intent(query, s.job_intent_terms):
-            candidates = _apply_job_board_penalty(
-                candidates,
-                s.job_boards,
-                s.SEARCH_JOB_BOARD_PENALTY,
-            )
-    passing = [r for r in candidates if _passes_local_gate(r)]
-    # Among gate-passing rows, similarity is the primary topical signal and score
-    # is rank-only (docs/ranking.md) — serve the most topically similar first, with
-    # score as the tie-break. This keeps a semantically strong page ahead of pages
-    # that only accumulate RRF mass from many lexically matching chunks.
-    passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
-    strong = [r for r in passing if _passes_partial_local_gate(r)]
+    # Auto mode gates each local row (coverage, similarity, distinctive-term
+    # coverage) before it can serve; local mode bypasses the gate, provider
+    # mode has no local rows.
+    passing, strong = _gate_local_rows(local_rows, k, query, search_mode)
 
-    source: str
-    results: list[dict]
-    degraded = False
-    errors: list[dict] = []
-    provider_ms: int | None = None
-
-    if search_mode == "local":
-        # local only: serve what the index has — the caller explicitly chose
-        # local, so the gate does not apply. No provider fallback.
-        if local_rows:
-            source, results = await _serve_local(local_rows, k)
-        else:
-            source = "error"
-            results = []
-    elif len(passing) >= k:
-        # local hit — zero provider credits (the quota-preservation layer);
-        # the per-domain cap keeps one site's near-duplicates from flooding
-        # the answer set (auto mode only — local mode served above, uncapped).
-        capped = _cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN)
-        source, results = await _serve_local(capped, k)
-        if len(capped) < k:
-            # The cap shrank a would-be full set below the requested count —
-            # flag it so callers can tell "the index only has N matching pages"
-            # from "the per-domain cap dropped the rest".
-            degraded = True
-    elif passing and len(passing) >= s.LOCAL_PARTIAL_MIN_PASSING:
-        # Several qualifying pages are evidence of a useful partial answer.
-        source, results = await _serve_local(_cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN), k)
-    elif strong:
-        # One unusually strong page is enough; omit marginal companions.
-        source, results = await _serve_local(_cap_per_domain(strong, s.SEARCH_MAX_PER_DOMAIN), k)
-    else:
-        # ---- provider gateway (auto: no qualifying local set; provider: always)
-        source, results, degraded, errors, provider_ms = await _provider_search(
-            query, k, crawl_n, search_mode, local_rows
-        )
+    source, results, degraded, errors, provider_ms = await _serve_chosen(
+        search_mode, local_rows, passing, strong, k, query, crawl_n
+    )
 
     await db.log_search(query, source, len(results), results)
 
@@ -205,6 +140,26 @@ async def search_web(
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _resolve_search_limits(
+    num_results: int | None,
+    max_crawl: int | None,
+    search_mode: str,
+) -> tuple[int, int]:
+    """Clamp the request: k to [1, SEARCH_MAX_K] (a zero/negative num_results
+    falls back to SEARCH_K — a negative k would slice rows off the end — and
+    an oversized one is capped so it cannot stall fn_search_local for the
+    full statement timeout) and max_crawl to >= 0. Raises ValueError on an
+    unknown search_mode."""
+    s = get_settings()
+    k = min(max(1, num_results or s.SEARCH_K), s.SEARCH_MAX_K)
+    crawl_n = s.SEARCH_MAX_CRAWL if max_crawl is None else max(0, max_crawl)
+    if search_mode not in SEARCH_MODES:
+        raise ValueError(
+            f"invalid search_mode {search_mode!r} (choose from {list(SEARCH_MODES)})"
+        )
+    return k, crawl_n
+
+
 def _passes_local_gate(r: dict) -> bool:
     """Whether one local row clears all three gate conditions: coverage, similarity,
     and distinctive-term coverage. A page that misses every rare / brand query word
@@ -227,6 +182,42 @@ def _passes_partial_local_gate(r: dict) -> bool:
     """Whether a passing row is strong enough to serve without a full set."""
     sim = r.get("similarity")
     return sim is not None and sim >= get_settings().LOCAL_PARTIAL_MIN_SIMILARITY
+
+
+def _gate_local_rows(
+    local_rows: list[dict],
+    k: int,
+    query: str,
+    search_mode: str,
+) -> tuple[list[dict], list[dict]]:
+    """Apply the auto-mode serving policies, then the per-row gate.
+
+    Auto mode widens to a union candidate window (top-N by score ∪ top-M by
+    similarity) so semantically close pages are always considered, and
+    de-ranks job boards for non-job-intent queries; local mode serves the raw
+    index order untouched, and provider mode has no local rows. Returns
+    (passing, strong) — rows clearing all three gates (coverage, similarity,
+    distinctive-term coverage; a page missing every rare / brand query word
+    cannot serve) and the subset strong enough to serve without a full set —
+    both sorted by similarity then score (docs/ranking.md)."""
+    s = get_settings()
+    candidates = local_rows
+    if search_mode == "auto":
+        candidates = _candidate_rows(local_rows, k)
+        if not _job_intent(query, s.job_intent_terms):
+            candidates = _apply_job_board_penalty(
+                candidates,
+                s.job_boards,
+                s.SEARCH_JOB_BOARD_PENALTY,
+            )
+    passing = [r for r in candidates if _passes_local_gate(r)]
+    # Among gate-passing rows, similarity is the primary topical signal and score
+    # is rank-only (docs/ranking.md) — serve the most topically similar first, with
+    # score as the tie-break. This keeps a semantically strong page ahead of pages
+    # that only accumulate RRF mass from many lexically matching chunks.
+    passing.sort(key=lambda r: (-(r.get("similarity") or 0.0), -(r.get("score") or 0.0)))
+    strong = [r for r in passing if _passes_partial_local_gate(r)]
+    return passing, strong
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +411,60 @@ def _local_result(r: dict) -> dict:
         "last_crawled": r.get("last_crawled"),
         "fetch_count": r.get("fetch_count"),
     }
+
+
+async def _serve_chosen(
+    search_mode: str,
+    local_rows: list[dict],
+    passing: list[dict],
+    strong: list[dict],
+    k: int,
+    query: str,
+    crawl_n: int,
+) -> tuple[str, list[dict], bool, list[dict], int | None]:
+    """Pick the serving source: local mode serves the raw index rows (no
+    provider fallback); auto mode serves a full, partial, or strongly-similar
+    local set, per-domain capped; else the provider gateway (auto: no
+    qualifying local set; provider: always). Returns (source, results,
+    degraded, errors, provider_ms)."""
+    s = get_settings()
+    source: str
+    results: list[dict]
+    degraded = False
+    errors: list[dict] = []
+    provider_ms: int | None = None
+
+    if search_mode == "local":
+        # local only: serve what the index has — the caller explicitly chose
+        # local, so the gate does not apply. No provider fallback.
+        if local_rows:
+            source, results = await _serve_local(local_rows, k)
+        else:
+            source = "error"
+            results = []
+    elif len(passing) >= k:
+        # local hit — zero provider credits (the quota-preservation layer);
+        # the per-domain cap keeps one site's near-duplicates from flooding
+        # the answer set (auto mode only — local mode served above, uncapped).
+        capped = _cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN)
+        source, results = await _serve_local(capped, k)
+        if len(capped) < k:
+            # The cap shrank a would-be full set below the requested count —
+            # flag it so callers can tell "the index only has N matching pages"
+            # from "the per-domain cap dropped the rest".
+            degraded = True
+    elif passing and len(passing) >= s.LOCAL_PARTIAL_MIN_PASSING:
+        # Several qualifying pages are evidence of a useful partial answer.
+        source, results = await _serve_local(_cap_per_domain(passing, s.SEARCH_MAX_PER_DOMAIN), k)
+    elif strong:
+        # One unusually strong page is enough; omit marginal companions.
+        source, results = await _serve_local(_cap_per_domain(strong, s.SEARCH_MAX_PER_DOMAIN), k)
+    else:
+        # ---- provider gateway (auto: no qualifying local set; provider: always)
+        source, results, degraded, errors, provider_ms = await _provider_search(
+            query, k, crawl_n, search_mode, local_rows
+        )
+    return source, results, degraded, errors, provider_ms
 
 
 async def _serve_local(local_rows: list[dict], k: int) -> tuple[str, list[dict]]:

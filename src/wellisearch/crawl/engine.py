@@ -27,35 +27,8 @@ async def crawl(url: str) -> CrawlResult:
     moves to the next tier (an Escalate jumps to the named tier). Returns
     ok=True on the first accepted fit, else the best partial (or empty).
     """
-    original = url
-    # Shorteners (e.g. a.co) resolve to their final URL so policy/extractor
-    # selection sees the real site; short URLs are never crawled as-is.
-    url = await resolve_short_url(url)
-    if url is None:
-        raise RuntimeError(f"could not resolve short url {original} to its final destination")
-    p = match(url)
-    ex = extractors.for_url(url)
-    request_url = url
-    if p.name == "reddit":
-        # Only single-post pages need browser-first comment hydration; other
-        # reddit pages (listings, profiles, search) keep the standard ladder.
-        if extractors.reddit.is_post_url(url):
-            request_url = extractors.reddit.comment_request_url(url)
-        else:
-            p = DEFAULT_POLICY
-            ex = extractors.GenericExtractor()
-    if p.name == "homedepot":
-        # Only product detail pages carry the JSON-LD Product node; category and
-        # review pages keep the standard generic path.
-        if not extractors.homedepot.is_product_url(url):
-            p = DEFAULT_POLICY
-            ex = extractors.GenericExtractor()
-    if p.name == "walmart":
-        # Only product detail pages carry the JSON-LD ProductGroup node; search and
-        # category pages keep the standard generic path.
-        if not extractors.walmart.is_product_url(url):
-            p = DEFAULT_POLICY
-            ex = extractors.GenericExtractor()
+    url = await _resolve_crawl_url(url)
+    p, ex, request_url = _select_policy_and_extractor(url)
     attempts: list[dict] = []
     best: Fitted | None = None
     start = time.monotonic()
@@ -127,6 +100,49 @@ async def crawl(url: str) -> CrawlResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _resolve_crawl_url(url: str) -> str:
+    """Resolve shorteners (e.g. a.co) to their final URL so policy/extractor
+    selection sees the real site; short URLs are never crawled as-is.
+    Raises RuntimeError when the final destination cannot be resolved."""
+    original = url
+    resolved = await resolve_short_url(url)
+    if resolved is None:
+        raise RuntimeError(f"could not resolve short url {original} to its final destination")
+    return resolved
+
+
+def _select_policy_and_extractor(url: str) -> tuple[Policy, "extractors.Extractor", str]:
+    """Pick the policy + extractor for a URL, with per-site special cases:
+    only reddit single-post pages hydrate comments browser-first, and only
+    homedepot/walmart product detail pages carry the JSON-LD product node —
+    everything else keeps the standard generic path. Returns
+    (policy, extractor, request_url)."""
+    p = match(url)
+    ex = extractors.for_url(url)
+    request_url = url
+    if p.name == "reddit":
+        # Only single-post pages need browser-first comment hydration; other
+        # reddit pages (listings, profiles, search) keep the standard ladder.
+        if extractors.reddit.is_post_url(url):
+            request_url = extractors.reddit.comment_request_url(url)
+        else:
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
+    if p.name == "homedepot":
+        # Only product detail pages carry the JSON-LD Product node; category and
+        # review pages keep the standard generic path.
+        if not extractors.homedepot.is_product_url(url):
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
+    if p.name == "walmart":
+        # Only product detail pages carry the JSON-LD ProductGroup node; search and
+        # category pages keep the standard generic path.
+        if not extractors.walmart.is_product_url(url):
+            p = DEFAULT_POLICY
+            ex = extractors.GenericExtractor()
+    return p, ex, request_url
+
 
 def _next_index_after_escalation(
     p: Policy,
