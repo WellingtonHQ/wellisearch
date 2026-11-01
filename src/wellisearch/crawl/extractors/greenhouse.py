@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify as mdify
@@ -86,7 +87,7 @@ def _job_posting(soup: BeautifulSoup) -> dict | None:
     return None
 
 
-def _jobposting_item(items: list[object]) -> dict | None:
+def _jobposting_item(items: list[Any]) -> dict | None:
     """First dict item of @type JobPosting in the list, else None."""
     for item in items:
         if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
@@ -160,7 +161,7 @@ def _employment_type(posting: dict) -> str | None:
     return et.replace("_", " ").title()
 
 
-def _addr_piece(value: object) -> str | None:
+def _addr_piece(value: Any) -> str | None:
     """A trimmed address field; None when absent or blank."""
     if not isinstance(value, str):
         return None

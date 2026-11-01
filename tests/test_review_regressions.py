@@ -63,8 +63,8 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         async def deduped(
             url: str,
             trigger: str,
-            fn: Callable[[], Awaitable[object]],
-        ) -> object:
+            fn: Callable[[], Awaitable[dict]],
+        ) -> dict:
             """Signal the second caller before it awaits the owner's future."""
             if queue.INFLIGHT.get(url) is not None:
                 joined.set()
@@ -366,11 +366,11 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         seen_k = []
 
         async def fake_index(
-            query,
-            k,
-            max_age_days,
-            widened=False,
-        ):
+            query: str,
+            k: int,
+            max_age_days: float | None,
+            widened: bool = False,
+        ) -> tuple[list[dict], int, str | None]:
             seen_k.append(k)
             return [], 0, None
 

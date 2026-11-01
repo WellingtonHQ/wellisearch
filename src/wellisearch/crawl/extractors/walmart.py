@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 from urllib.parse import urlparse
 
 from ...config import get_settings
@@ -158,7 +159,7 @@ def _product_node(html: str) -> dict | None:
     return None
 
 
-def _find_product(node: object) -> dict | None:
+def _find_product(node: Any) -> dict | None:
     """A product node, searching plain lists and @graph arrays."""
     if isinstance(node, list):
         return _find_product_in_list(node)
@@ -175,7 +176,7 @@ def _find_product(node: object) -> dict | None:
     return None
 
 
-def _find_product_in_list(node: list[object]) -> dict | None:
+def _find_product_in_list(node: list[Any]) -> dict | None:
     """First product node found among a plain list, else None."""
     for item in node:
         found = _find_product(item)
@@ -220,7 +221,7 @@ def _price(variant: dict) -> str | None:
     return None
 
 
-def _format_price(price: object, currency: str) -> str | None:
+def _format_price(price: Any, currency: str) -> str | None:
     """A display price (e.g. $88.00), else None for a missing or non-positive price."""
     try:
         value = float(price)
@@ -240,7 +241,7 @@ def _rating(node: dict) -> tuple[str | None, str | None]:
     return _star_text(agg.get("ratingValue")), _count_text(agg.get("reviewCount") or agg.get("ratingCount"))
 
 
-def _star_text(value: object) -> str | None:
+def _star_text(value: Any) -> str | None:
     """'4.1 out of 5 stars' for a valid rating value, else None."""
     try:
         v = float(value)
@@ -251,7 +252,7 @@ def _star_text(value: object) -> str | None:
     return f"{v:g} out of 5 stars"
 
 
-def _count_text(value: object) -> str | None:
+def _count_text(value: Any) -> str | None:
     """'2,704 ratings' for a valid count, else None."""
     try:
         n = int(value)
@@ -339,7 +340,7 @@ def _reviews(node: dict, limit: int) -> list[str]:
     return out
 
 
-def _review_headline(headline: object, date: object) -> str | None:
+def _review_headline(headline: Any, date: Any) -> str | None:
     """The review's headline line: bold name (date suffixed) else the bare date."""
     if isinstance(headline, str) and headline.strip():
         line = f"**{headline.strip()}**"

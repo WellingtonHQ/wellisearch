@@ -275,7 +275,7 @@ class StubGateway:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int]] = []
 
-    async def search(self, query: str, num: int):
+    async def search(self, query: str, num: int) -> tuple[list[Result], str, list[dict]]:
         self.calls.append((query, num))
         return (
             [

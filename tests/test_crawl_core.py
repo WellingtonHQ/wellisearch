@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, Never
 from unittest.mock import AsyncMock, Mock, patch
 
 from wellisearch.config import get_settings
@@ -338,13 +339,13 @@ class FakeShortSession:
     def __init__(self, final_url: str) -> None:
         self.final_url = final_url
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> FakeShortSession:
         return self
 
-    async def __aexit__(self, *exc_info):
+    async def __aexit__(self, *exc_info: object) -> bool:
         return False
 
-    async def get(self, url: str, **kwargs):
+    async def get(self, url: str, **kwargs: Any) -> FakeShortResponse:
         return FakeShortResponse(self.final_url)
 
 
@@ -380,7 +381,7 @@ with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(FINA
     assert asyncio.run(resolve_short_url(SHORT_URL)) == FINAL_URL
 
 
-def _shorturl_boom(**kwargs):
+def _shorturl_boom(**kwargs: Any) -> Never:
     raise RuntimeError("network down")
 
 

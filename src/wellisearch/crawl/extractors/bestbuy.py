@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from ..results import Fitted, Rendered
 from ..signals import find_price, find_stock
@@ -52,7 +53,7 @@ def _jsonld_price(html: str) -> str | None:
     return None
 
 
-def _product_price(data: object) -> str | None:
+def _product_price(data: Any) -> str | None:
     """offers.price for a @type Product node (lists, @graph, offer lists)."""
     if isinstance(data, list):
         return _price_from_items(data)
@@ -69,7 +70,7 @@ def _product_price(data: object) -> str | None:
     return None
 
 
-def _price_from_items(data: list[object]) -> str | None:
+def _price_from_items(data: list[Any]) -> str | None:
     """First real price found among nested JSON-LD items, else None."""
     for item in data:
         price = _product_price(item)
@@ -78,7 +79,7 @@ def _price_from_items(data: list[object]) -> str | None:
     return None
 
 
-def _offers_price(offers: object) -> str | None:
+def _offers_price(offers: Any) -> str | None:
     """price from a single offer dict or a list of offers, else None."""
     if isinstance(offers, dict):
         price = offers.get("price")
@@ -88,7 +89,7 @@ def _offers_price(offers: object) -> str | None:
     return None
 
 
-def _first_offer_price(offers: list[object]) -> str | None:
+def _first_offer_price(offers: list[Any]) -> str | None:
     """First price among a list of offers, else None."""
     for offer in offers:
         if isinstance(offer, dict) and offer.get("price") is not None:

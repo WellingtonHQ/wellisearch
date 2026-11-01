@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 from urllib.parse import urlparse
 
 from ...config import get_settings
@@ -136,7 +137,7 @@ def _product_node(html: str) -> dict | None:
     return None
 
 
-def _parse_json(raw: str) -> object:
+def _parse_json(raw: str) -> Any:
     """Parsed JSON-LD block; None on invalid JSON."""
     try:
         return json.loads(raw)
@@ -144,7 +145,7 @@ def _parse_json(raw: str) -> object:
         return None
 
 
-def _find_product(node: object) -> dict | None:
+def _find_product(node: Any) -> dict | None:
     """A Product node, searching plain lists and @graph arrays."""
     if isinstance(node, list):
         return _find_product_in_list(node)
@@ -161,7 +162,7 @@ def _find_product(node: object) -> dict | None:
     return None
 
 
-def _find_product_in_list(node: list[object]) -> dict | None:
+def _find_product_in_list(node: list[Any]) -> dict | None:
     """First Product node found among a plain list, else None."""
     for item in node:
         found = _find_product(item)
@@ -195,7 +196,7 @@ def _price(product: dict | None) -> str | None:
     return None
 
 
-def _offers(product: dict) -> list[tuple[object, str]]:
+def _offers(product: dict) -> list[tuple[Any, str]]:
     """(price, currency) pairs from the offers dict or a list of offers."""
     offers = product.get("offers")
     items = offers if isinstance(offers, list) else [offers]
@@ -206,7 +207,7 @@ def _offers(product: dict) -> list[tuple[object, str]]:
     ]
 
 
-def _format_price(price: object, currency: str) -> str | None:
+def _format_price(price: Any, currency: str) -> str | None:
     """A display price (e.g. $375.00), else None for a missing or non-positive price."""
     try:
         value = float(price)
@@ -228,7 +229,7 @@ def _rating(product: dict | None) -> tuple[str | None, str | None]:
     return _star_text(agg.get("ratingValue")), _count_text(agg.get("reviewCount") or agg.get("ratingCount"))
 
 
-def _star_text(value: object) -> str | None:
+def _star_text(value: Any) -> str | None:
     """'4.6 out of 5 stars' for a valid rating value, else None."""
     try:
         v = float(value)
@@ -239,7 +240,7 @@ def _star_text(value: object) -> str | None:
     return f"{v:g} out of 5 stars"
 
 
-def _count_text(value: object) -> str | None:
+def _count_text(value: Any) -> str | None:
     """'2,645 ratings' for a valid count, else None."""
     try:
         n = int(value)

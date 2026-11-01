@@ -24,7 +24,7 @@ from ..wait import NETWORK_IDLE_TIMEOUT_S, network_idle, settle
 from . import register
 
 if TYPE_CHECKING:
-    from patchright.async_api import Page
+    from patchright.async_api import Page, Response
 
 log = logging.getLogger("wellisearch.crawl.tiers.browser")
 
@@ -219,7 +219,7 @@ async def _safe_close(page: Page) -> None:
         pass
 
 
-def _response_content_type(resp: object) -> str | None:
+def _response_content_type(resp: Response) -> str | None:
     """The goto response's Content-Type header, or None when unavailable."""
     headers = getattr(resp, "headers", None)
     if isinstance(headers, dict):

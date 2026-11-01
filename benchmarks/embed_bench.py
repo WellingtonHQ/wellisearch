@@ -66,6 +66,7 @@ import platform
 import subprocess
 import sys
 import time
+from typing import Any
 
 import numpy as np
 
@@ -531,7 +532,7 @@ def main(argv: list[str] | None = None) -> int:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _effective_max_len(tok: object, args_max: int) -> int:
+def _effective_max_len(tok: Any, args_max: int) -> int:
     """Cap the requested max length at the model's true limit (if known)."""
     native = getattr(tok, "model_max_length", None)
     try:
@@ -549,7 +550,7 @@ def _l2_normalize(X: np.ndarray) -> np.ndarray:
     return (X / n).astype(np.float32)
 
 def _tok_len(
-    tok: object,
+    tok: Any,
     text: str,
     max_len: int,
 ) -> int:

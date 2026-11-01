@@ -20,7 +20,7 @@ import wellisearch.queue as queue_mod
 class FakeDB:
     """In-memory stand-in for the db helpers _resolve_page uses."""
 
-    def __init__(self, page: dict | None = None):
+    def __init__(self, page: dict | None = None) -> None:
         self.page = page
         self.bumped: list[str] = []
         self.enqueued: list[tuple] = []
@@ -54,7 +54,7 @@ class TwoPhaseDB(FakeDB):
     """page_get returns `first` on the first call and `second` afterwards —
     simulates a crawl that stores fresh content between _resolve_page's reads."""
 
-    def __init__(self, first: dict | None, second: dict | None):
+    def __init__(self, first: dict | None, second: dict | None) -> None:
         super().__init__(first)
         self._second = second
         self._calls = 0

@@ -62,8 +62,8 @@ INFLIGHT = InFlight()
 async def crawl_deduped(
     url: str,
     trigger: str,
-    fn: Callable[[], Awaitable[object]],
-) -> object:
+    fn: Callable[[], Awaitable[dict]],
+) -> dict:
     """Run `fn()` for url unless another crawl of the same URL is in flight;
     then await that crawl's result instead (no double-crawl).
 

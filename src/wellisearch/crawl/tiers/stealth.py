@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Any
 
 from ...config import get_settings
 from ..policy import Policy
@@ -65,7 +66,7 @@ class StealthTier:
         )
 
 
-def _response_content_type(page: object) -> str | None:
+def _response_content_type(page: Any) -> str | None:
     """The response's Content-Type header, or None when unavailable."""
     headers = getattr(page, "headers", None)
     if isinstance(headers, dict):
@@ -73,7 +74,7 @@ def _response_content_type(page: object) -> str | None:
     return None
 
 
-def _extract_title(page: object) -> str | None:
+def _extract_title(page: Any) -> str | None:
     """Best-effort <title> from the Scrapling Response; None on any failure.
 
     When the page carries multiple <title> tags, the last non-empty one wins —
@@ -86,7 +87,7 @@ def _extract_title(page: object) -> str | None:
     return None
 
 
-def _last_nonempty_title(page: object) -> str | None:
+def _last_nonempty_title(page: Any) -> str | None:
     """The last non-empty <title> text, else None."""
     for el in reversed(page.css("title")):
         t = el.get_all_text()
