@@ -1,0 +1,10 @@
+.env
+.git
+.qwen
+.venv
+**/__pycache__
+**/*.pyc
+benchmarks
+docs
+pr-reviews
+tests

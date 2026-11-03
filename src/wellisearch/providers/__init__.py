@@ -169,7 +169,8 @@ class Gateway:
             return results, p.name, errors
 
         await self._ev(
-            "search failed — all providers exhausted", {"query": query[:QUERY_LOG_MAX_LEN], "errors": errors}
+            "search failed — all providers exhausted",
+            {"query": query[:QUERY_LOG_MAX_LEN], "errors": errors}
         )
         raise GatewayExhausted(errors)
 

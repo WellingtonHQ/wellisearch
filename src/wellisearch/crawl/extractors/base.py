@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from ...config import get_settings
+from ..botwall import strip_html_blocks
 from ..results import Escalate, Fitted, Rendered
 
 MIN_MD_CHARS = 100
@@ -22,7 +23,6 @@ MIN_NEWS_ARTICLE_BODY_CHARS = 800
 # merely mention loading are far longer than this.
 LOADING_STUB_MAX_CHARS = 1500
 _LOADING_STUB_RE = re.compile(r"\bloading\s*(?:\.{2,}|…)", re.IGNORECASE)
-_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
 # Retail product pages (buy-box + "About this item" + specs) are 5k+ chars once
 # extracted; a thin/degraded render (e.g. the HTTP tier's lazy buy-box) is well
 # under this. The gate uses it to reject thin renders so the engine escalates
@@ -47,7 +47,7 @@ class GenericExtractor:
         title = r.title
         if title is None:
             title = _trafilatura_title(r.html)
-        return Fitted(md=md, title=title, flags={"extractor": "generic"})
+        return Fitted(md=trim_md(md), title=title, flags={"extractor": "generic"})
 
     def accept(self, f: Fitted) -> bool:
         """Gate: markdown must clear the minimum length."""
@@ -117,7 +117,7 @@ def _is_loading_stub(md: str, html: str) -> bool:
     marker can be absent from md even though it drove the render."""
     if len(md.strip()) > LOADING_STUB_MAX_CHARS:
         return False
-    visible = _SCRIPT_STYLE_RE.sub("", html)
+    visible = strip_html_blocks(html, ("script", "style"))
     return _LOADING_STUB_RE.search(visible) is not None
 
 
