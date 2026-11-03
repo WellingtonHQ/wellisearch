@@ -8,6 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -54,6 +55,9 @@ class Settings(BaseSettings):
     # cores) × 3-4 concurrent sessions oversubscribes the host and starves
     # Postgres. MiniLM is small — a couple of threads per session is plenty.
     EMBED_THREADS: int = 2
+    # ONNX attention buffers grow with batch size and sequence length. Avoid
+    # fastembed's 256-document default when embedding long page chunks.
+    EMBED_BATCH_SIZE: int = 16
     # Reindex batch size (url-keyset pages): only one batch of fit_markdown is
     # resident at a time, so peak RSS stays flat regardless of index size
     # (loading the whole stale set up front OOM-killed long reindexes).
@@ -121,7 +125,10 @@ class Settings(BaseSettings):
     # cannot serve as a lone strong hit while the penalty is active. A query
     # matching any SEARCH_JOB_INTENT_TERMS skips the penalty entirely.
     SEARCH_JOB_BOARD_PENALTY: float = 0.5
-    SEARCH_JOB_BOARDS: str = "linkedin.com/jobs,indeed.com,glassdoor.com/Job,ziprecruiter.com/Jobs,monster.com,naukri.com,jobs.lever.co,boards.greenhouse.io"
+    SEARCH_JOB_BOARDS: str = (
+        "linkedin.com/jobs,indeed.com,glassdoor.com/Job,ziprecruiter.com/Jobs,"
+        "monster.com,naukri.com,jobs.lever.co,boards.greenhouse.io"
+    )
     SEARCH_JOB_INTENT_TERMS: str = "job, jobs, hiring, open roles, careers"
     # Vector-leg row cap for fn_search_local (HNSW early-stop keeps it cheap);
     # a wider leg lets semantically close but lexically thin pages enter the
@@ -143,6 +150,8 @@ class Settings(BaseSettings):
     FETCH_DEFAULT_STRATEGY: str = "smart"  # even | head | priority | smart | tail
     FETCH_MAX_CHARS: int = 40000  # default total budget when max_chars omitted
     FETCH_PER_PAGE_CHARS: int = 12000  # default per-page cap
+    FETCH_MAX_URLS: int = 50  # bound full stored page bodies held by one bulk request
+    FETCH_MAX_PARALLEL: int = 4  # bulk page resolutions, including DB and short-link lookups
     FETCH_PROBE_TIMEOUT_S: float = 15.0  # per-tier timeout cap while a fetch crawls on demand
     FETCH_TIMEOUT_S: float = 45.0  # hard deadline for one on-demand crawl; past it the URL is re-queued
     # Grace after an on-demand probe's client leaves (cancel / deadline): its in-flight tier
@@ -179,6 +188,10 @@ class Settings(BaseSettings):
     CRAWL_CHALLENGE_PARALLEL: int = 2
     CRAWL_HEADLESS: bool = False
     CRAWL_HTTP_TIER: bool = True
+    CRAWL_HTML_MAX_BYTES: int = Field(default=5242880, ge=1)
+    CRAWL_HTTP_MAX_REDIRECTS: int = Field(default=10, ge=0)
+    CRAWL_EXTRACT_MAX_PARALLEL: int = Field(default=2, ge=1)
+    CRAWL_EXTRACT_TIMEOUT_S: float = Field(default=30.0, gt=0)
     # Launch backoff after a failed browser launch (see native-crawler-design.md §3.4).
     CRAWL_LAUNCH_RETRY_AFTER_S: float = 30.0
     CRAWL_MD_MAX_CHARS: int = 150000
@@ -192,10 +205,16 @@ class Settings(BaseSettings):
     # URL before crawling, so policy/extractor selection sees the real site. Comma list.
     CRAWL_SHORT_URL_HOSTS: str = "a.co"
     CRAWL_STEALTH_TIER: bool = True
+    # Sync Scrapling sessions run in killable child process groups, not threads
+    # which keep running (and keep their browsers) after an asyncio timeout.
+    CRAWL_STEALTH_MAX_PARALLEL: int = 1
     CRAWL_STEALTH_TIMEOUT_S: int = 120
     # Crawl tiers only fetch read-only pages, so untrusted TLS certs are accepted by default.
     CRAWL_IGNORE_SSL_ERRORS: bool = True
     CRAWL_BROWSER_CLEANUP_TIMEOUT_S: float = 5.0
+    CRAWL_BROWSER_LAUNCH_TIMEOUT_S: float = 30.0
+    CRAWL_BROWSER_MAX_AGE_S: float = 900.0
+    CRAWL_BROWSER_MAX_USES: int = 50
 
     # --- server ---
     BIND_PORT: int = 8780

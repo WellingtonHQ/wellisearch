@@ -80,9 +80,17 @@ def _job_posting(soup: BeautifulSoup) -> dict | None:
         except (TypeError, ValueError):
             continue
         items = data if isinstance(data, list) else [data]
-        for item in items:
-            if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
-                return item
+        posting = _first_job_posting(items)
+        if posting is not None:
+            return posting
+    return None
+
+
+def _first_job_posting(items: object) -> dict | None:
+    """First JobPosting dict among parsed JSON-LD items, else None."""
+    for item in items:
+        if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
+            return item
     return None
 
 
@@ -123,15 +131,21 @@ def _location(posting: dict) -> str | None:
         addr = (loc or {}).get("address")
         if not isinstance(addr, dict):
             continue
-        seen: list[str] = []
-        primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
-        candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
-        for piece in candidates:
-            if piece and piece not in seen:
-                seen.append(piece)
-        if seen:
-            return ", ".join(seen)
+        text = _location_text(addr)
+        if text is not None:
+            return text
     return None
+
+
+def _location_text(addr: dict) -> str | None:
+    """'Remote, Nationwide, US' style text from an address dict; None when empty."""
+    seen: list[str] = []
+    primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
+    candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
+    for piece in candidates:
+        if piece and piece not in seen:
+            seen.append(piece)
+    return ", ".join(seen) if seen else None
 
 
 def _employment_type(posting: dict) -> str | None:

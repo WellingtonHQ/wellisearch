@@ -36,7 +36,7 @@ async def main() -> None:
         )
         top = [(r["url"].split("/")[-1][:34], round(float(r["score"]), 3)) for r in rows[:3]]
         gate = "PASS" if rows and float(rows[0]["score"]) >= s.SEARCH_MIN_SCORE else "miss"
-        print("%-9s %-42s %-8s %s" % (kind, q, gate, top))
+        print(f"{kind:<9} {q:<42} {gate:<8} {top}")
     await db.close()
 
 asyncio.run(main())

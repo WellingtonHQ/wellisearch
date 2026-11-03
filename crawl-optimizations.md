@@ -132,6 +132,16 @@ endpoint `/hz/reviews-render/ajax/medley-reviews/get/` (token lives in the
 was measured and does **not** reliably help (~50% of headful loads also miss
 the cards).
 
+### Document links stripped from stored markdown (found 2026-10-18)
+
+`fetch_page` on https://armypubs.army.mil/ProductMaps/PubForm/Details.aspx?PUB_ID=1022038 returns the full record table cleanly (`ok`, ~606 chars, served from index), but the page's only download anchor — `<a>PDF</a>` pointing at the actual form file (`https://armypubs.army.mil/pub/eforms/DR_a/ARN32379-DA_FORM_1559-101-EFILE-2.pdf`) — comes back as bare text in both `format="markdown"` and `format="json"`: the anchor label survives, its href does not. The raw server HTML carries the link (verified against a live browser render of the page), so this is an extraction loss, not a wall or crawl failure.
+
+Root cause: `generic_md` calls trafilatura with `include_links=False` (`crawl/extractors/base.py:62`), so every generic-extracted page stores label-only anchor text; site extractors built on `generic_md` inherit the gap and none re-add file links. No served format exposes link URLs at all — a `format="html"` request is rejected (only `json`/`markdown` exist, and json serves the same markdown).
+
+Impact: any flow that needs a direct file URL from the index alone — e.g. an agent policy that script-downloads PDFs/attachments hosted on form portals — cannot discover it and must detour through a browser snapshot just to read an href off the page (observed cost 2026-10-18: one full browser round-trip for this page).
+
+Fix direction (recommended): keep prose markdown link-free but give `GenericExtractor` a document-links collector — walk anchors in `r.html`, resolve relative URLs against the page, and keep those whose href ends in a known file extension (.pdf/.doc(x)/.xls(x)/.pptx/.zip) or whose text matches /pdf|download/i; store them as a compact structured field (mirroring the existing signals pattern) and surface a `links: [{text, href}]` array on `fetch_page`'s JSON response so clients can script downloads without an html format. Simpler alternative: flip to `include_links=True` in `generic_md` — rejected for now because it inflates every stored chunk with nav/related-link noise (the title-candidate logic already has to reject link-embedded lines).
+
 ---
 
 ## Resolved

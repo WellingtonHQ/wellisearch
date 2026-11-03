@@ -149,3 +149,12 @@ def kick_worker() -> None:
     except RuntimeError:
         # no running loop (e.g. unit test) — schedule a direct one
         asyncio.ensure_future(_debounced())
+
+
+async def shutdown_kick() -> None:
+    """Cancel and join a kick-driven tick before its database is closed."""
+    global _kick_task
+    task, _kick_task = _kick_task, None
+    if task is not None:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

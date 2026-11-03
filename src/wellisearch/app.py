@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import __version__, crawler, queue
+from .activity_log import window_logs
 from .config import get_settings
 from .db import db
 from .fetch import (
@@ -32,6 +33,7 @@ from .fetch import (
     fetch_pages,
     render_fetch_page_markdown,
     render_fetch_pages_markdown,
+    shutdown_probes,
 )
 from .mcp import mcp_asgi, mcp_http_lifespan
 from .providers import get_gateway
@@ -522,69 +524,7 @@ async def api_logs(
     """
     secs = _clamp_window(secs)
     limit = max(1, min(int(limit), API_LOGS_MAX_LIMIT))
-    cutoff = "ts >= now() - make_interval(secs => %s)"
-    crawls = await db.fetch_all(
-        "SELECT ts, url, trigger, status, ms, chunks_written, detail FROM crawl_log "
-        f"WHERE {cutoff} ORDER BY id DESC",
-        (secs,),
-    )
-    searches = await db.fetch_all(
-        "SELECT ts, query, source, local_hits, results FROM search_log "
-        f"WHERE {cutoff} ORDER BY id DESC",
-        (secs,),
-    )
-    events = await db.fetch_all(
-        f"SELECT ts, message, info FROM event_log WHERE {cutoff} ORDER BY id DESC",
-        (secs,),
-    )
-    logs: list[dict] = []
-    for c in crawls:
-        logs.append({
-            "ts": c["ts"],
-            "kind": "crawl",
-            "message": f"crawl {c['status']} — {_short_url(c['url'])}",
-            "info": {
-                "url": c["url"],
-                "trigger": c["trigger"],
-                "ms": c["ms"],
-                "chunks": c["chunks_written"],
-                "detail": c["detail"],
-            },
-        })
-    for srow in searches:
-        n_results = len(srow["results"] or [])
-        if srow["source"] == "local":
-            msg = f"search '{(srow['query'] or '')[:100]}' → local ({srow['local_hits'] or 0} hits)"
-        else:
-            msg = f"search '{(srow['query'] or '')[:100]}' → {srow['source']} ({n_results} results)"
-        logs.append({
-            "ts": srow["ts"],
-            "kind": "search",
-            "message": msg,
-            "info": {
-                "query": srow["query"],
-                "source": srow["source"],
-                "local_hits": srow["local_hits"],
-                "results": n_results,
-            },
-        })
-    for e in events:
-        logs.append({
-            "ts": e["ts"],
-            "kind": "event",
-            "message": e["message"],
-            "info": e["info"] or {},
-        })
-    logs.sort(key=lambda r: r["ts"], reverse=True)
-    q = (q or "").strip().lower()
-    if q:
-        logs = [
-            r for r in logs
-            if q in (r["message"] or "").lower()
-            or q in json.dumps(r["info"] or {}, default=str).lower()
-        ]
-    total = len(logs)
-    return {"logs": logs[:limit], "total": total, "secs": secs}
+    return await window_logs(secs, limit, q)
 
 
 # ---------------------------------------------------------------------------
@@ -685,6 +625,8 @@ async def _shutdown() -> None:
     """Tear the service down: cancel the worker, close provider clients and the
     DB pool."""
     global _worker_task
+    await shutdown_probes()
+    await queue.shutdown_kick()
     if _worker_task is not None:
         _worker_task.cancel()
         try:
@@ -692,8 +634,10 @@ async def _shutdown() -> None:
         except (asyncio.CancelledError, Exception):
             pass
         _worker_task = None
+    from .crawl.pool import close_pools
     from .providers import shutdown_gateway
 
+    await close_pools()
     await shutdown_gateway()
     await db.close()
 
@@ -747,15 +691,6 @@ def _respond(
 def _clamp_window(secs: int) -> int:
     """Clamp a window (seconds) to the 10-minute..24-hour bounds."""
     return max(WINDOW_MIN_SECS, min(int(secs), WINDOW_MAX_SECS))
-
-
-def _short_url(url: str) -> str:
-    """Trim a URL to host + first path segment for log display."""
-    from urllib.parse import urlparse
-
-    p = urlparse(url)
-    first = p.path.strip("/").split("/", 1)[0]
-    return f"{p.netloc}/{first}" if first else p.netloc
 
 
 _OWUI_SPEC_PATH = pathlib.Path(__file__).resolve().parent / "owui" / "openapi.json"

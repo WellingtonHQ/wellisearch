@@ -106,8 +106,11 @@ class FakePage:
         """No-op wait."""
         pass
 
-    async def evaluate(self, code: str) -> str:
-        """Return a fake turnstile widget box."""
+    async def evaluate(self, code: str, *args: object) -> str:
+        """Return a bounded HTML snapshot or fake turnstile widget box."""
+        if args:
+            self._last = self._contents.pop(0) if self._contents else self._last
+            return self._last
         # A valid turnstile widget box so _click_turnstile_checkbox actually clicks.
         return json.dumps([100, 200, 800, 70])
 

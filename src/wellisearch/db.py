@@ -78,7 +78,9 @@ class Database:
                 last_err = e
                 log.warning(
                     "waiting for postgres… (%d/%d) %s",
-                    attempt, STARTUP_RETRIES, e,
+                    attempt,
+                    STARTUP_RETRIES,
+                    e,
                 )
                 await asyncio.sleep(STARTUP_RETRY_S)
         if last_err is not None:
@@ -111,27 +113,20 @@ class Database:
         to open before ``schema.sql`` gets a chance to create it.
         """
         admin = await psycopg.AsyncConnection.connect(
-            s.conninfo(s.POSTGRES_ADMIN_DB), autocommit=True
+            s.conninfo(s.POSTGRES_ADMIN_DB),
+            autocommit=True
         )
         try:
             async with admin.cursor() as cur:
-                await cur.execute(
-                    "SELECT 1 FROM pg_database WHERE datname = %s",
-                    (s.POSTGRES_DB,),
-                )
-                exists = await cur.fetchone()
-                if not exists:
-                    # identifier must be safe: it comes from our own config
-                    safe = s.POSTGRES_DB.replace('"', '""')
-                    await cur.execute(f'CREATE DATABASE "{safe}"')
-                    log.info("created database %s", s.POSTGRES_DB)
+                await _ensure_database_exists(cur, s.POSTGRES_DB)
         finally:
             await admin.close()
 
         # Ensure the extensions the pool needs are present in the app DB, so a
         # fresh database boots without the "vector type not found" pool error.
         app = await psycopg.AsyncConnection.connect(
-            s.conninfo(s.POSTGRES_DB), autocommit=True
+            s.conninfo(s.POSTGRES_DB),
+            autocommit=True
         )
         try:
             async with app.cursor() as cur:
@@ -172,15 +167,15 @@ class Database:
         slow query can't hold a pooled connection for minutes. Raises
         psycopg.errors.QueryCanceled on expiry."""
         async with self.pool.connection() as conn:
-            if timeout_ms is not None:
-                # SET does not accept parameter placeholders — inline the
-                # (int-coerced) value instead.
-                async with conn.transaction():
-                    await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
-                    cur = await conn.execute(sql, params or ())
-                    return list(await cur.fetchall())
-            cur = await conn.execute(sql, params or ())
-            return list(await cur.fetchall())
+            if timeout_ms is None:
+                cur = await conn.execute(sql, params or ())
+                return list(await cur.fetchall())
+            # SET does not accept parameter placeholders — inline the
+            # (int-coerced) value instead.
+            async with conn.transaction():
+                await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
+                cur = await conn.execute(sql, params or ())
+                return list(await cur.fetchall())
 
     async def fetch_one(
         self,
@@ -284,7 +279,8 @@ class Database:
         )
         used = row["used"] if row else 0
         state = await self.fetch_one(
-            "SELECT limit_override FROM provider_state WHERE provider = %s", (provider,)
+            "SELECT limit_override FROM provider_state WHERE provider = %s",
+            (provider,)
         )
         limit = (
             state["limit_override"]
@@ -538,6 +534,14 @@ class Database:
         )
         return cur_ok > 0
 
+    async def queue_release(self, url: str) -> None:
+        """Return a cancelled claim without consuming a crawl retry attempt."""
+        await self.execute(
+            "UPDATE crawl_queue SET status = 'pending', attempts = greatest(0, attempts - 1) "
+            "WHERE url = %s AND status = 'in_flight'",
+            (url,),
+        )
+
     async def queue_done(
         self,
         url: str,
@@ -546,12 +550,7 @@ class Database:
     ) -> None:
         """Finish a claimed row: done on success, else back to pending (attempts
         left) or failed (attempts exhausted)."""
-        if ok:
-            await self.execute(
-                "UPDATE crawl_queue SET status = 'done' WHERE url = %s AND status = 'in_flight'",
-                (url,),
-            )
-        else:
+        if not ok:
             row = await self.fetch_one(
                 "SELECT attempts FROM crawl_queue WHERE url = %s AND status = 'in_flight'",
                 (url,),
@@ -569,6 +568,11 @@ class Database:
                     "WHERE url = %s AND status = 'in_flight'",
                     (error, url),
                 )
+            return
+        await self.execute(
+            "UPDATE crawl_queue SET status = 'done' WHERE url = %s AND status = 'in_flight'",
+            (url,),
+        )
 
     async def queue_challenge_in_flight(self, url: str) -> bool:
         """True when a CF challenge solve is already queued or running for `url`."""
@@ -615,3 +619,20 @@ async def _register_vector(conn: psycopg.AsyncConnection) -> None:
     from pgvector.psycopg import register_vector_async
 
     await register_vector_async(conn)
+
+
+async def _ensure_database_exists(
+    cur: psycopg.AsyncCursor,
+    db_name: str,
+) -> None:
+    """Create the app DB (via an admin-DB cursor) if it does not exist yet."""
+    await cur.execute(
+        "SELECT 1 FROM pg_database WHERE datname = %s",
+        (db_name,),
+    )
+    exists = await cur.fetchone()
+    if not exists:
+        # identifier must be safe: it comes from our own config
+        safe = db_name.replace('"', '""')
+        await cur.execute(f'CREATE DATABASE "{safe}"')
+        log.info("created database %s", db_name)
