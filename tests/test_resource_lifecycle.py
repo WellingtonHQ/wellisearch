@@ -641,7 +641,10 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         ):
             await worker._drain_queue(time.monotonic() + 0.2)
         self.assertTrue(started.is_set())
-        self.assertEqual(fake_db.fetch_all.await_args.args[1], (2,))
+        self.assertEqual(
+            fake_db.fetch_all.await_args.args[1],
+            (settings.WORKER_BUDGET_PER_RUN * worker.DRAIN_OVERFETCH,),
+        )
         fake_db.queue_release.assert_awaited_once_with("https://example.com")
         fake_db.queue_done.assert_not_awaited()
 
