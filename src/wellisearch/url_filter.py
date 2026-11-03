@@ -17,20 +17,11 @@ from urllib.parse import urlparse
 # Observed in the 953-row pending backlog (2026-09-01): exe, jpg, m3u8, m4s,
 # mp4, pdf, png, svg, xz, zip, and similar.
 GARBAGE_EXTENSIONS: frozenset[str] = frozenset({
-    # video
-    "3gp", "avi", "flv", "m4s", "m4v", "mkv", "mov", "mp4", "webm", "wmv",
-    # hls playlist
-    "m3u8",
-    # audio
-    "aac", "flac", "m4a", "mp3", "ogg", "wav",
-    # images
-    "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "tiff", "webp",
-    # archives
-    "7z", "bz2", "gz", "rar", "tar", "tgz", "xz", "zip",
-    # documents
-    "doc", "docx", "ods", "odt", "pdf", "ppt", "pptx", "xls", "xlsx",
-    # executables / installers
-    "apk", "deb", "dmg", "exe", "msi", "rpm",
+    "3gp", "7z", "aac", "apk", "avi", "bmp", "bz2", "deb", "dmg", "doc",
+    "docx", "exe", "flac", "flv", "gif", "gz", "ico", "jpeg", "jpg", "m3u8",
+    "m4a", "m4s", "m4v", "mkv", "mov", "mp3", "mp4", "msi", "ods", "odt",
+    "ogg", "pdf", "png", "ppt", "pptx", "rar", "rpm", "svg", "tar", "tgz",
+    "tiff", "wav", "webm", "webp", "wmv", "xls", "xlsx", "xz", "zip",
 })
 
 # HLS video segments: .ts files sitting under a path component named "hls" or
