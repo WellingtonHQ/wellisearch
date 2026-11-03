@@ -72,17 +72,23 @@ docs/               reference docs (architecture, search-pipeline, ranking, …)
 
 ## Tests & verification
 
-Run from the repo root. CI (`.github/workflows/build.yml`) runs the first two.
+Run from the repo root. CI (`.github/workflows/build.yml`) runs the suites
+marked (CI).
 
 ```bash
-python tests/test_units.py       # chunker/truncation/renderers — pure logic (CI)
-python tests/test_providers.py   # provider adapters, mocked httpx — pure logic (CI)
-python tests/test_crawl_core.py  # crawl core (policy/botwall/signals/engine)
-python tests/test_lanes.py       # two-lane crawl routing
-python tests/test_extractors.py  # per-site extractors (fixture HTML)
-python tests/test_db.py          # schema + fn_search_local + quota (needs Postgres)
-python tests/e2e_test.py         # live end-to-end (needs a running container)
-python tests/test_tiers_smoke.py # transport tiers (needs the Docker image)
+python tests/test_units.py              # chunker/truncation/renderers — pure logic (CI)
+node tests/test_dashboard_polling.mjs   # dashboard polling (CI)
+python tests/test_browser_pool.py       # browser-pool recovery after closed sessions (CI)
+python tests/test_resource_lifecycle.py # bounded ownership, cancellation, worker load (CI)
+python tests/test_crawl_memory.py       # bounded HTTP bodies, redirects, processing (CI)
+python tests/test_lanes.py              # two-lane crawl routing (CI)
+python tests/test_providers.py          # provider adapters, mocked httpx — pure logic (CI)
+python tests/test_review_regressions.py # PR #15 regressions: URL state, merges, trimming (CI)
+python tests/test_crawl_core.py         # crawl core (policy/botwall/signals/engine)
+python tests/test_extractors.py         # per-site extractors (fixture HTML)
+python tests/test_db.py                 # schema + fn_search_local + quota (needs Postgres)
+python tests/e2e_test.py                # live end-to-end (needs a running container)
+python tests/test_tiers_smoke.py        # transport tiers (needs the Docker image)
 ```
 
 The "pure logic" tests need no network, keys, or DB. Verify your change with
