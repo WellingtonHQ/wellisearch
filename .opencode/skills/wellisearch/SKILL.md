@@ -39,6 +39,7 @@ with the `wellisearch_` prefix.
 - Fetches are stored-first. If an indexed page is stale, call `wellisearch_refresh_page(url="...")`, inspect its status, then fetch it again. Use `wellisearch_index_stats()` when broader freshness or availability is relevant, not before every request.
 - Check each fetch for `Status: failed` or `ok: false`, including individual failures inside a bulk response. A successful tool call does not necessarily mean the page loaded.
 - Inspect `Truncated` and omitted-character markers. If essential content was cut off, fetch that page separately with a larger `max_chars` budget rather than assuming the missing text.
+- If you need actual link URLs from a page (e.g. a direct .pdf download), note that stored markdown drops anchor hrefs entirely (`include_links=False` in the extractor — see "Document links stripped" in this server's repo crawl-optimizations). Identify the file URL via `@browseros-neo` snapshot refs or search results, then script the download per AGENTS.md.
 - Search queues discovered URLs for background indexing; do not wait for that queue before reading results. Use `wellisearch_seed_url` only when explicitly saving a URL for later indexing is useful.
 
 ## Browser fallback
@@ -46,8 +47,11 @@ with the `wellisearch_` prefix.
 When wellisearch fails to load a page, returns a bot wall or sign-in page, or
 extracts incomplete or unusable content, load `@browseros-neo` and open the
 original URL using its browser tools. Follow that skill's session, observation,
-and human-help instructions. Use BrowserOS neo directly for interactions such as
-sign-in, forms, clicking, and downloads that plain page reading cannot perform.
+and human-help instructions. Use BrowserOS neo directly for interactions such as sign-in, forms, and
+clicking that plain page reading cannot perform. Never use the browser to
+download files (its save-location flow hangs on confirmation prompts); instead
+extract the direct file URL from the page (snapshot refs) and hand it to a
+scripted download per AGENTS.md.
 
 Report which URL could not be read through wellisearch. If browser access is
 unavailable or the page remains blocked, search for an authoritative alternative

@@ -1,0 +1,33 @@
+# Disposable stress-test instance of wellisearch (driven by tests/test_mass_crawl.py).
+#
+# Runs the freshly built image against a throwaway database (wellisearch_test)
+# on the shared Postgres server. Loopback-only port, production-identical
+# resource caps so results compare directly with the live container. The app
+# self-creates its database at startup; no profile volume is mounted, so warm
+# browser profiles die with the container. Tear down after the run:
+#   docker compose -f compose.test.yml down --remove-orphans
+name: wellisearch-test
+
+services:
+  wellisearch-test:
+    image: wellisearch-wellisearch:latest
+    container_name: wellisearch-test
+    restart: "no"
+    cpus: 4.0
+    mem_limit: 16G
+    # Fail over-budget crawls instead of spending minutes thrashing in swap.
+    memswap_limit: 16G
+    pids_limit: 1024
+    env_file: .env
+    environment:
+      POSTGRES_DB: wellisearch_test
+      WELLISEARCH_API_KEY: ""   # loopback-only test instance; open on 127.0.0.1
+      MALLOC_ARENA_MAX: "2"
+    ports:
+      - "127.0.0.1:8781:8780"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8780/health', timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
