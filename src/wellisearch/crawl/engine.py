@@ -245,8 +245,9 @@ class _ProcessingPool:
 
 def _consume_processing_error(future: asyncio.Future) -> None:
     """Retrieve detached worker errors so a cancelled caller leaves no warning."""
-    if not future.cancelled():
-        future.exception()
+    if future.cancelled():
+        return
+    future.exception()
 
 
 def _finish_processing_result(waiter: asyncio.Future, future: Future) -> None:
@@ -261,8 +262,9 @@ def _finish_processing_result(waiter: asyncio.Future, future: Future) -> None:
 
 def _wake_processing_waiter(waiter: asyncio.Future) -> None:
     """Notify one admission waiter unless it has already been cancelled/notified."""
-    if not waiter.done():
-        waiter.set_result(None)
+    if waiter.done():
+        return
+    waiter.set_result(None)
 
 
 def _process_rendered(

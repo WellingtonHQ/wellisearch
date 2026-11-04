@@ -579,9 +579,10 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         def reap(profile: str) -> None:
             """Hold the first profile scan while a caller cancellation arrives."""
-            if not started.is_set():
-                started.set()
-                finish.wait()
+            if started.is_set():
+                return
+            started.set()
+            finish.wait()
 
         async def launch(key: str, playwright: object) -> Context:
             """Record replacement launch only after orphan cleanup has completed."""
