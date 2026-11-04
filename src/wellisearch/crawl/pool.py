@@ -465,15 +465,6 @@ async def close_pools() -> None:
     _pool = _cf_pool = None
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _sanitize_key(key: str) -> str:
-    """Filesystem-safe profile dir name from a profile key."""
-    return re.sub(r"[^A-Za-z0-9._-]", "_", key)
-
-
 def is_closed_context_error(error: Exception) -> bool:
     """True when Playwright reports that a page, context, browser, or transport closed."""
     message = str(error).lower()
@@ -496,6 +487,15 @@ def is_transport_closed_error(error: Exception) -> bool:
     """True for errors showing that the shared Playwright command transport died."""
     message = str(error).lower()
     return "transport closed" in message or "handler is closed" in message
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _sanitize_key(key: str) -> str:
+    """Filesystem-safe profile dir name from a profile key."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", key)
 
 
 def _profile_dir(key: str, prefix: str = "") -> str:

@@ -297,6 +297,14 @@ async def fetch_pages(
     }
 
 
+async def shutdown_probes() -> None:
+    """Stop and join adopted fetch probes before closing browser pools or the DB."""
+    tasks = list(_probe_tasks)
+    for task in tasks:
+        task.cancel()
+    await complete_cleanup(_join_probes(tasks))
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -475,14 +483,6 @@ def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
             )
 
     task.add_done_callback(_watched)
-
-
-async def shutdown_probes() -> None:
-    """Stop and join adopted fetch probes before closing browser pools or the DB."""
-    tasks = list(_probe_tasks)
-    for task in tasks:
-        task.cancel()
-    await complete_cleanup(_join_probes(tasks))
 
 
 async def _join_probes(tasks: list[asyncio.Task]) -> None:
