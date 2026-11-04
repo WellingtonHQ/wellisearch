@@ -120,7 +120,7 @@ jobs:
             - Define any domain term on first use ("dedup owner = ..."); prefer active voice and concrete verbs over jargon.
         run: |
           set -euo pipefail
-          opencode run --title "$GITHUB_REPOSITORY #$PR_NUMBER" "$PROMPT"
+          opencode run --title "PR review $GITHUB_REPOSITORY #$PR_NUMBER" "$PROMPT"
           if [ ! -f review.md ]; then
             echo "::error::opencode did not produce review.md"
             exit 1

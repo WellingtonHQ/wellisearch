@@ -178,7 +178,7 @@ jobs:
             If no changes are currently pending and there is nothing to reply, do not create reply.md.
         run: |
           set -euo pipefail
-          opencode run "$PROMPT"
+          opencode run --title "address comments $GITHUB_REPOSITORY #$PR_NUMBER" "$PROMPT"
           if [ -f reply.md ]; then
             gh pr comment "$PR_NUMBER" --body-file reply.md
           else
