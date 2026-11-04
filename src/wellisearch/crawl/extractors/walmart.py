@@ -126,7 +126,7 @@ def is_product_url(url: str) -> bool:
     """True for a walmart.com/walmart.ca product detail page (/ip/... or /en/ip/...)."""
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
-    if host not in ("walmart.com", "www.walmart.com", "walmart.ca", "www.walmart.ca"):
+    if host not in ("walmart.ca", "walmart.com", "www.walmart.ca", "www.walmart.com"):
         return False
     return _PRODUCT_PATH_RE.search(parsed.path) is not None
 
@@ -228,7 +228,7 @@ def _format_price(price: object, currency: str) -> str | None:
         return None
     if value <= 0:
         return None
-    symbol = "$" if currency in ("USD", "CAD") else f"{currency} "
+    symbol = "$" if currency in ("CAD", "USD") else f"{currency} "
     return f"{symbol}{value:,.2f}"
 
 
