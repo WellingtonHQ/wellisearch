@@ -331,6 +331,7 @@ class FakeShortResponse:
     """Fake curl_cffi response carrying the final (post-redirect) URL."""
 
     def __init__(self, url: str) -> None:
+        """Store the final (post-redirect) URL."""
         self.url = url
 
 
@@ -338,12 +339,15 @@ class FakeShortSession:
     """Fake curl_cffi AsyncSession whose GET lands on a canned final URL."""
 
     def __init__(self, final_url: str) -> None:
+        """Store the final URL this session's GET will return."""
         self.final_url = final_url
 
     async def __aenter__(self) -> FakeShortSession:
+        """Enter the context, returning the session itself."""
         return self
 
     async def __aexit__(self, *exc_info) -> bool:
+        """Exit the context, suppressing nothing."""
         return False
 
     async def get(
@@ -351,6 +355,7 @@ class FakeShortSession:
         url: str,
         **kwargs,
     ) -> FakeShortResponse:
+        """Return the canned final-URL response for any GET."""
         return FakeShortResponse(self.final_url)
 
 
@@ -369,6 +374,7 @@ with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(FINA
 
 
 def _shorturl_boom(**kwargs) -> NoReturn:
+    """Simulate a network failure on the short-URL request."""
     raise RuntimeError("network down")
 
 
@@ -467,6 +473,7 @@ try:
 
     # A child task inherits the active budget; siblings never see each other's.
     async def with_budget() -> float:
+        """Set a child probe budget of 7 s, report what clamp(90) sees under it, then reset."""
         t2 = probe.set_probe_budget(7)
         try:
             return await asyncio.sleep(0, result=probe.clamp(90.0))
@@ -474,9 +481,11 @@ try:
             probe.reset_probe_budget(t2)
 
     async def sibling() -> float:
+        """Report what clamp(90) sees under the parent's active budget."""
         return await asyncio.sleep(0, result=probe.clamp(90.0))
 
     async def iso() -> list[float]:
+        """Run sibling and with_budget concurrently to prove task-context isolation."""
         return await asyncio.gather(sibling(), with_budget())
 
     got = asyncio.run(iso())

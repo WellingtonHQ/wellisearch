@@ -275,6 +275,7 @@ class StubGateway:
     """Stands in for get_gateway(): records calls and returns canned results."""
 
     def __init__(self) -> None:
+        """Start with an empty call log."""
         self.calls: list[tuple[str, int]] = []
 
     async def search(
@@ -282,6 +283,7 @@ class StubGateway:
         query: str,
         num: int,
     ) -> tuple[list[Result], str, list[dict]]:
+        """Record the call and return canned results, one stub per requested slot."""
         self.calls.append((query, num))
         return (
             [
