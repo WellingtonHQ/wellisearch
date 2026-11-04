@@ -9,7 +9,8 @@ on:
   # pull_request_review run above (see the "Determine" step).
   pull_request_review_comment:
     types: [created]
-  # Issue-conversation comments.
+  # Issue-conversation comments. PR conversation comments arrive here too,
+  # with a pull_request link on the issue object (see the "Determine" step).
   issue_comment:
     types: [created]
 
@@ -27,6 +28,7 @@ jobs:
       issues: write
     steps:
       - name: Determine whether this event should be acted on
+        id: determine
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -35,7 +37,10 @@ jobs:
           REVIEW_ID: ${{ github.event.comment.pull_request_review_id }}
           REVIEW_NUMBER: ${{ github.event.review.id }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
+          IS_PR="false"
+          PR_NUMBER_OUT=""
           case "$EVENT_NAME" in
             pull_request_review)
               # Act only if at least one inline comment in this review is an /oc command.
@@ -46,6 +51,8 @@ jobs:
                 echo "::notice::No /oc comment found in this review. Exiting."
                 exit 0
               fi
+              IS_PR="true"
+              PR_NUMBER_OUT="$PR_NUMBER"
               ;;
             pull_request_review_comment)
               # Comments that belong to a review are owned by the pull_request_review run.
@@ -57,18 +64,34 @@ jobs:
                 /oc*|/opencode*) : ;;
                 *) echo "::notice::Comment does not start with /oc. Exiting."; exit 0 ;;
               esac
+              IS_PR="true"
+              PR_NUMBER_OUT="$PR_NUMBER"
               ;;
             issue_comment)
               case "$COMMENT_BODY" in
                 /oc*|/opencode*) : ;;
                 *) echo "::notice::Comment does not start with /oc. Exiting."; exit 0 ;;
               esac
+              # PR conversation comments arrive as issue_comment with a
+              # pull_request link on the issue; plain issues have none. The
+              # event payload has no pull_request object here, so look it up.
+              IS_LINK=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.pull_request != null' 2>/dev/null) || IS_LINK="false"
+              if [ "$IS_LINK" = "true" ]; then
+                IS_PR="true"
+                PR_NUMBER_OUT="$ISSUE_NUMBER"
+              else
+                echo "::notice::Comment is on a plain issue (no associated PR)."
+              fi
               ;;
             *)
               echo "::notice::Unhandled event type '$EVENT_NAME'. Exiting."
               exit 0
               ;;
           esac
+          {
+            echo "is_pr=$IS_PR"
+            echo "pr_number=$PR_NUMBER_OUT"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Verify comment author is authorized
         env:
@@ -108,29 +131,21 @@ jobs:
         with:
           persist-credentials: true
 
+      - name: Check out PR head
+        if: steps.determine.outputs.is_pr == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.determine.outputs.pr_number }}
+        run: |
+          # Review and issue_comment events check out the default branch by
+          # default; switch to the PR head so changes land on the PR branch,
+          # never the base branch. gh pr checkout is fork-safe.
+          gh pr checkout "$PR_NUMBER"
+
       - name: Configure Git user
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Configure opencode (single-agent)
-        shell: bash
-        # Deny the subagent permission so the run works as one agent with one
-        # LLM request in flight at a time; the local server has a single
-        # inference slot, so parallel sub-agents only queue behind it.
-        run: |
-          cat > opencode.json <<'EOF'
-          {
-            "$schema": "https://opencode.ai/config.json",
-            "agents": {
-              "build": {
-                "permissions": [
-                  { "action": "subagent", "resource": "*", "effect": "deny" }
-                ]
-              }
-            }
-          }
-          EOF
 
       - name: Write triggering comment(s)
         shell: bash
@@ -158,29 +173,53 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          IS_PR: ${{ steps.determine.outputs.is_pr }}
+          PR_NUMBER: ${{ steps.determine.outputs.pr_number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
           OPENCODE_AUTO_SHARE: "false"
-          PROMPT: |
-            You are responding to review comment(s) on a GitHub pull request. The PR/issue number is in the PR_NUMBER environment variable.
-            You have the `gh` CLI and GITHUB_TOKEN available.
-
-            Working rules:
-            - Do not launch sub-agents (explore, general, or any other). Do all the work yourself in this session, one step at a time.
-
-            Read the triggering comment(s) from the file `triggering_comment.txt` in the current directory.
-            If the file contains multiple comments (labeled "### Comment N"), you MUST address EVERY one of them before finishing — do not stop after the first.
-
-            Before pushing any changes, fetch and rebase from origin just before pushing to avoid diverged history conflicts.
-            Read each comment and implement the suggestion in the codebase.
-            Test and verify changes to make sure they compile and work as expected.
-            If you make code changes, commit and push them to the current branch.
-            If a comment is not a suggestion or is a question, write your response or explanation to a file named `reply.md` in the current directory (it will be posted to the PR). Do not make code changes unless told to do so.
-            If no changes are currently pending and there is nothing to reply, do not create reply.md.
         run: |
           set -euo pipefail
-          opencode run --title "address comments $GITHUB_REPOSITORY #$PR_NUMBER" "$PROMPT"
+          if [ "$IS_PR" = "true" ]; then
+            NUM="$PR_NUMBER"
+            PROMPT=$(cat <<'EOF'
+          You are responding to review comment(s) on a GitHub pull request. The PR number is in the PR_NUMBER environment variable.
+          You have the `gh` CLI and GITHUB_TOKEN available.
+
+          Read the triggering comment(s) from the file `triggering_comment.txt` in the current directory.
+          If the file contains multiple comments (labeled "### Comment N"), you MUST address EVERY one of them before finishing — do not stop after the first.
+
+          Before pushing any changes, fetch and rebase from origin just before pushing to avoid diverged history conflicts.
+          Read each comment and implement the suggestion in the codebase.
+          Test and verify changes to make sure they compile and work as expected.
+          If you make code changes, commit and push them to the current branch (the PR head branch). Never push to the base branch.
+          If a comment is not a suggestion or is a question, write your response or explanation to a file named `reply.md` in the current directory (it will be posted to the PR). Do not make code changes unless told to do so.
+          If no changes are currently pending and there is nothing to reply, do not create reply.md.
+          EOF
+            )
+          else
+            NUM="$ISSUE_NUMBER"
+            PROMPT=$(cat <<'EOF'
+          You are responding to a comment on a GitHub issue. The issue number is in the ISSUE_NUMBER environment variable.
+          You have the `gh` CLI and GITHUB_TOKEN available.
+
+          Read the triggering comment(s) from the file `triggering_comment.txt` in the current directory.
+          If the file contains multiple comments (labeled "### Comment N"), you MUST address EVERY one of them before finishing — do not stop after the first.
+
+          Read each comment and implement the suggestion in the codebase, or answer it.
+          Test and verify changes to make sure they compile and work as expected.
+          If you make code changes, do NOT push to the default branch: create a new branch named oc/issue-<ISSUE_NUMBER>-<short-slug> (using the ISSUE_NUMBER environment variable), commit there, push the new branch, and include the branch name in your reply.
+          If a comment is not a suggestion, write your response or explanation to a file named `reply.md` in the current directory (it will be posted to the issue). Do not make code changes unless told to do so.
+          If no changes are currently pending and there is nothing to reply, do not create reply.md.
+          EOF
+            )
+          fi
+          opencode run --title "address comments $GITHUB_REPOSITORY #$NUM" "$PROMPT"
           if [ -f reply.md ]; then
-            gh pr comment "$PR_NUMBER" --body-file reply.md
+            if [ "$IS_PR" = "true" ]; then
+              gh pr comment "$PR_NUMBER" --body-file reply.md
+            else
+              gh issue comment "$ISSUE_NUMBER" --body-file reply.md
+            fi
           else
             echo "No reply to post."
           fi
