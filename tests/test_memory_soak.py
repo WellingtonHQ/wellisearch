@@ -100,11 +100,12 @@ class Handler(BaseHTTPRequestHandler):
 def sample() -> dict:
     """Read cgroup memory and process/thread counts without external commands."""
     group = Path("/sys/fs/cgroup")
+    events = dict(line.split() for line in (group / "memory.events").read_text().splitlines())
     return {
         "memory_mib": round(int((group / "memory.current").read_text()) / 1024 ** 2, 1),
         "swap_mib": round(int((group / "memory.swap.current").read_text()) / 1024 ** 2, 1),
         "pids": int((group / "pids.current").read_text()),
-        "oom_kill": dict(line.split() for line in (group / "memory.events").read_text().splitlines())["oom_kill"],
+        "oom_kill": events["oom_kill"],
     }
 
 

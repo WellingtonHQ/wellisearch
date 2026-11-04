@@ -768,10 +768,14 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             patch.object(stealth.os, "killpg", create=True),
             patch.object(stealth.subprocess, "run"),
         ):
-            first = asyncio.create_task(stealth.StealthTier().fetch("https://example.com/one", DEFAULT_POLICY))
+            first = asyncio.create_task(
+                stealth.StealthTier().fetch("https://example.com/one", DEFAULT_POLICY)
+            )
             await asyncio.sleep(0)
             await asyncio.to_thread(receivers[0].started.wait)
-            second = asyncio.create_task(stealth.StealthTier().fetch("https://example.com/two", DEFAULT_POLICY))
+            second = asyncio.create_task(
+                stealth.StealthTier().fetch("https://example.com/two", DEFAULT_POLICY)
+            )
             await asyncio.sleep(0)
             self.assertEqual(len(processes), 1)
             first.cancel()

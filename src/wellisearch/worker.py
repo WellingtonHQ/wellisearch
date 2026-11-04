@@ -53,7 +53,8 @@ ERROR_DETAIL_MAX_LEN = 1000    # max chars kept in a crawl error detail (crawl_l
 ERROR_REPR_MAX_LEN = 500       # max chars kept in a crash repr (crawl_log)
 REFRESH_ERROR_MAX_LEN = 200    # max chars kept in a refresh-stats error entry
 TRIM_THRESHOLD = 0             # malloc_trim threshold: 0 releases all returnable memory
-DRAIN_OVERFETCH = 2            # claim window per drain: up to Nx the effective cap, so failures/routing don't starve a tick
+DRAIN_OVERFETCH = 2            # claim window per drain: up to Nx the effective cap, so failures/routing
+                               # don't starve a tick
 
 # runtime state for the dashboard "Now" panel
 STATE: dict = {

@@ -20,7 +20,9 @@ log = logging.getLogger("wellisearch.crawl.tiers.http")
 # libcurl's explicit write-abort sentinel; a short/zero return is ignored by
 # older curl_cffi write-callback wrappers.
 _WRITE_ERROR = 0xFFFFFFFF
-_TEXT_APPLICATION_TYPES = ("application/json", "application/ld+json", "application/xhtml+xml", "application/xml")
+_TEXT_APPLICATION_TYPES = (
+    "application/json", "application/ld+json", "application/xhtml+xml", "application/xml",
+)
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 _CHARSET_RE = re.compile(r"\bcharset\s*=\s*[\"']?([\w.-]+)", re.IGNORECASE)
 _TITLE_OPEN_RE = re.compile(r"<title\b[^<>]*>", re.IGNORECASE)

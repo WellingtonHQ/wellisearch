@@ -47,7 +47,9 @@ class StealthTier:
             _semaphore = asyncio.Semaphore(max(1, get_settings().CRAWL_STEALTH_MAX_PARALLEL))
         timeout_s = clamp(get_settings().CRAWL_STEALTH_TIMEOUT_S)
         async with _semaphore:
-            with tempfile.TemporaryDirectory(prefix="wellisearch-stealth-", ignore_cleanup_errors=True) as profile:
+            with tempfile.TemporaryDirectory(
+                prefix="wellisearch-stealth-", ignore_cleanup_errors=True,
+            ) as profile:
                 return await _run_worker_process(url, timeout_s, profile)
 
     def _fetch_sync(

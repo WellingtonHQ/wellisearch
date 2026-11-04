@@ -73,7 +73,9 @@ class HttpMemoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_libcurl_size_backstop_is_a_terminal_payload_rejection(self) -> None:
         """libcurl may reject inflated data before invoking the body callback."""
-        session = _Session({"get": [_Hop(error=RequestException("max file size", CurlECode.FILESIZE_EXCEEDED))]})
+        session = _Session({
+            "get": [_Hop(error=RequestException("max file size", CurlECode.FILESIZE_EXCEEDED))],
+        })
         with _settings_patch(http), _session_patch(session):
             with self.assertRaisesRegex(ValueError, "CRAWL_HTML_MAX_BYTES"):
                 await http.HttpTier().fetch(FINAL_URL, DEFAULT_POLICY)
