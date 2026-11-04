@@ -277,7 +277,11 @@ def _take_sample(
     return sample, ok, health_latency, pending, in_flight, cg
 
 
-def _oom_gate(cg: dict | None, prev_oom_kill: int, elapsed: float) -> str | None:
+def _oom_gate(
+    cg: dict | None,
+    prev_oom_kill: int,
+    elapsed: float,
+) -> str | None:
     """Hard gate 1: any NEW OOM kill stops the run for inspection.
     Pauses the worker and returns the FAIL reason, else None."""
     if not (cg and cg["oom_kill"] > prev_oom_kill):

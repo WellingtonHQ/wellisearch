@@ -304,7 +304,11 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             status = 200
             headers: dict[str, str] = {}
 
-            def evaluate(self, script: str, limit: int) -> int | None:
+            def evaluate(
+                self,
+                script: str,
+                limit: int,
+            ) -> int | None:
                 """Report an oversized DOM without serializing it."""
                 return None
 
@@ -350,7 +354,11 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             status = 200
             headers: dict[str, str] = {"Content-Type": "text/html"}
 
-            def evaluate(self, script: str, limit: int) -> str:
+            def evaluate(
+                self,
+                script: str,
+                limit: int,
+            ) -> str:
                 """Return the bounded capture from the same operation as its size check."""
                 return "<html><title>Saved</title><body>Article</body></html>"
 

@@ -101,7 +101,11 @@ class MetricsMonitor:
     skips the auto-resume of indexing at teardown.
     """
 
-    def __init__(self: MetricsMonitor, base_url: str, container_name: str) -> None:
+    def __init__(
+        self: MetricsMonitor,
+        base_url: str,
+        container_name: str,
+    ) -> None:
         """Initialize the sampler state and the gate events."""
         self._base_url = base_url
         self._container = container_name
@@ -452,7 +456,11 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         print(f"[fixture] {kind} {n} ({len(body)} bytes)", flush=True)
         self._respond(200, body)
 
-    def _respond(self: _FixtureHandler, status: int, body: bytes) -> None:
+    def _respond(
+        self: _FixtureHandler,
+        status: int,
+        body: bytes,
+    ) -> None:
         """Send one response with an explicit Content-Length."""
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -543,7 +551,11 @@ def _delete_pages(
     return deleted
 
 
-def _phase_failures(phase: str, attempted: list[dict], failed: list[dict]) -> str | None:
+def _phase_failures(
+    phase: str,
+    attempted: list[dict],
+    failed: list[dict],
+) -> str | None:
     """The FAIL reason for a phase's results, or None when the phase is clean."""
     if phase == "oversized":
         # Every attempted oversized page must be rejected, never stored.

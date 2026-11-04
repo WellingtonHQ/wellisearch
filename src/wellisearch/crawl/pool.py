@@ -289,13 +289,21 @@ class BrowserPool:
             return False
         return True
 
-    async def _close_pages(self, ctx: BrowserContext, anchor: Page | None) -> None:
+    async def _close_pages(
+        self,
+        ctx: BrowserContext,
+        anchor: Page | None,
+    ) -> None:
         """Close all non-anchor tabs as one deadline-bounded operation."""
         for page in list(getattr(ctx, "pages", [])):
             if page is not anchor:
                 await page.close()
 
-    async def _retire(self, key: str, ctx: BrowserContext) -> None:
+    async def _retire(
+        self,
+        key: str,
+        ctx: BrowserContext,
+    ) -> None:
         """Remove one tracked context and finish closing its process tree."""
         self._contexts.pop(key, None)
         self._anchors.pop(key, None)

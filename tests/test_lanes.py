@@ -106,7 +106,11 @@ class FakePage:
         """No-op wait."""
         pass
 
-    async def evaluate(self, code: str, *args: object) -> str:
+    async def evaluate(
+        self,
+        code: str,
+        *args: object,
+    ) -> str:
         """Return a bounded HTML snapshot or fake turnstile widget box."""
         if args:
             self._last = self._contents.pop(0) if self._contents else self._last
@@ -153,7 +157,11 @@ class FakePool:
         """Record invalidated contexts."""
         self.invalidated.append((key, ctx, error))
 
-    async def release(self, ctx: FakeContext, key: str | None = None) -> None:
+    async def release(
+        self,
+        ctx: FakeContext,
+        key: str | None = None,
+    ) -> None:
         """Record released contexts."""
         self.released.append((ctx, key))
 
@@ -468,7 +476,11 @@ class BackoffDB:
         """Initialize a fake db recording streak bumps."""
         self.bumped = []
 
-    async def log_crawl(self, *args: object, **kwargs: object) -> None:
+    async def log_crawl(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
         """No-op crawl-log sink."""
 
     async def execute(

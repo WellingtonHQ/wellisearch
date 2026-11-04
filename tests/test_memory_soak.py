@@ -89,7 +89,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def log_message(self, format: str, *args: object) -> None:
+    def log_message(
+        self,
+        format: str,
+        *args: object,
+    ) -> None:
         """Keep soak output aggregate-only and easy to scan."""
 
 
@@ -181,7 +185,11 @@ async def main(health_url: str) -> None:
 # Exercise Tiers
 # ---------------------------------------------------------------------------
 
-async def _exercise_http(base: str, settings: Settings, port: int) -> None:
+async def _exercise_http(
+    base: str,
+    settings: Settings,
+    port: int,
+) -> None:
     """Verify bounded HTTP downloads and header-only short-link resolution."""
     with patch.object(http, "get_settings", return_value=settings):
         rendered = await http.HttpTier().fetch(base + "/article", DEFAULT_POLICY)
@@ -197,7 +205,11 @@ async def _exercise_http(base: str, settings: Settings, port: int) -> None:
             assert final == f"http://localhost:{port}/article", final
 
 
-async def _exercise_browser(base: str, settings: Settings, snapshots: list[dict]) -> None:
+async def _exercise_browser(
+    base: str,
+    settings: Settings,
+    snapshots: list[dict],
+) -> None:
     """Recycle real browser contexts and reject oversized DOMs before capture."""
     pool = BrowserPool(size=PARALLEL)
     with (
@@ -229,7 +241,11 @@ async def _exercise_browser(base: str, settings: Settings, snapshots: list[dict]
             await pool.close_all()
 
 
-async def _exercise_stealth(base: str, settings: Settings, root: str) -> None:
+async def _exercise_stealth(
+    base: str,
+    settings: Settings,
+    root: str,
+) -> None:
     """Reject oversized Scrapling DOMs and reap cancelled stealth process trees."""
     with patch.object(tempfile, "tempdir", root):
         with patch.object(stealth, "get_settings", return_value=settings):

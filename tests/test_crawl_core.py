@@ -342,7 +342,11 @@ class FakeShortSession:
     async def __aexit__(self, *exc_info):
         return False
 
-    async def get(self, url: str, **kwargs):
+    async def get(
+        self,
+        url: str,
+        **kwargs,
+    ):
         return FakeShortResponse(self.final_url)
 
 

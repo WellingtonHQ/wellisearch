@@ -358,7 +358,12 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         s = Settings(_env_file=None)
         seen_k = []
 
-        async def fake_index(query, k, max_age_days, widened=False):
+        async def fake_index(
+            query,
+            k,
+            max_age_days,
+            widened=False,
+        ):
             seen_k.append(k)
             return [], 0, None
 
