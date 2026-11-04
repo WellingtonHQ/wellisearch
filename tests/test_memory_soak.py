@@ -157,13 +157,15 @@ async def main(health_url: str) -> None:
     heartbeat = asyncio.create_task(probe())
     try:
         with tempfile.TemporaryDirectory(prefix="wellisearch-soak-") as root:
-            settings = get_settings().model_copy(update={
-                "CRAWL_BROWSER_MAX_USES": 4,
-                "CRAWL_HTML_MAX_BYTES": 65536,
-                "CRAWL_PROFILE_DIR": str(Path(root) / "browsers"),
-                "CRAWL_SETTLE_S": 0,
-                "CRAWL_SHORT_URL_HOSTS": "127.0.0.1",
-            })
+            settings = get_settings().model_copy(
+                update={
+                    "CRAWL_BROWSER_MAX_USES": 4,
+                    "CRAWL_HTML_MAX_BYTES": 65536,
+                    "CRAWL_PROFILE_DIR": str(Path(root) / "browsers"),
+                    "CRAWL_SETTLE_S": 0,
+                    "CRAWL_SHORT_URL_HOSTS": "127.0.0.1",
+                },
+            )
             await _exercise_http(base, settings, server.server_port)
             await _exercise_browser(base, settings, snapshots)
             await _exercise_stealth(base, settings, root)
@@ -177,17 +179,20 @@ async def main(health_url: str) -> None:
     assert baseline["oom_kill"] == final["oom_kill"], "soak caused an OOM kill"
     assert not errors, errors
     assert latencies, "no health probes completed"
-    print(json.dumps({
-        "result": "passed",
-        "browser_fetches": ROUNDS * PARALLEL,
-        "stealth_cancellations": STEALTH_CANCEL_ROUNDS,
-        "health_checks": len(latencies),
-        "health_max_ms": round(max(latencies) * 1000, 1),
-        "health_avg_ms": round(sum(latencies) / len(latencies) * 1000, 1),
-        "peak_memory_mib": max(row["memory_mib"] for row in snapshots),
-        "baseline": baseline,
-        "final": final,
-    }), flush=True)
+    print(
+        json.dumps({
+            "result": "passed",
+            "browser_fetches": ROUNDS * PARALLEL,
+            "stealth_cancellations": STEALTH_CANCEL_ROUNDS,
+            "health_checks": len(latencies),
+            "health_max_ms": round(max(latencies) * 1000, 1),
+            "health_avg_ms": round(sum(latencies) / len(latencies) * 1000, 1),
+            "peak_memory_mib": max(row["memory_mib"] for row in snapshots),
+            "baseline": baseline,
+            "final": final,
+        }),
+        flush=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -236,10 +241,12 @@ async def _exercise_browser(
 async def _browser_rounds(base: str, pool: BrowserPool, snapshots: list[dict]) -> None:
     """Recycle real browser contexts across ROUNDS of parallel fetches."""
     for round_no in range(ROUNDS):
-        results = await asyncio.gather(*(
-            browser.BrowserTier().fetch(base + f"/article?i={round_no}-{i}", DEFAULT_POLICY)
-            for i in range(PARALLEL)
-        ))
+        results = await asyncio.gather(
+            *(
+                browser.BrowserTier().fetch(base + f"/article?i={round_no}-{i}", DEFAULT_POLICY)
+                for i in range(PARALLEL)
+            )
+        )
         assert all(result.status == 200 for result in results)
         assert len(pool._contexts) <= PARALLEL
         assert all(
