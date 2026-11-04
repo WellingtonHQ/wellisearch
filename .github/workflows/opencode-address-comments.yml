@@ -142,6 +142,20 @@ jobs:
           # never the base branch. gh pr checkout is fork-safe.
           gh pr checkout "$PR_NUMBER"
 
+      - name: Create issue branch
+        if: steps.determine.outputs.is_pr == 'false'
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          # Plain-issue runs must never push to the default branch. Create a
+          # dedicated branch up front so "push to the current branch" in the
+          # prompt can only ever land here. The run ID keeps the name unique
+          # across successive runs on the same issue.
+          SLUG=$(printf '%s' "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-$//' | cut -c1-40)
+          BRANCH="oc/issue-${ISSUE_NUMBER}-${SLUG:-untitled}-${GITHUB_RUN_ID}"
+          git checkout -b "$BRANCH"
+
       - name: Configure Git user
         run: |
           git config --global user.name "github-actions[bot]"
@@ -205,9 +219,10 @@ jobs:
           Read the triggering comment(s) from the file `triggering_comment.txt` in the current directory.
           If the file contains multiple comments (labeled "### Comment N"), you MUST address EVERY one of them before finishing — do not stop after the first.
 
+          You are already on a dedicated branch for this issue: the workflow created it before you started (named oc/issue-<ISSUE_NUMBER>-...; run `git branch --show-current` to see the exact name).
           Read each comment and implement the suggestion in the codebase, or answer it.
           Test and verify changes to make sure they compile and work as expected.
-          If you make code changes, do NOT push to the default branch: create a new branch named oc/issue-<ISSUE_NUMBER>-<short-slug> (using the ISSUE_NUMBER environment variable), commit there, push the new branch, and include the branch name in your reply.
+          If you make code changes, commit and push them to the current branch — it is never the default branch. Include the branch name in your reply.
           If a comment is not a suggestion, write your response or explanation to a file named `reply.md` in the current directory (it will be posted to the issue). Do not make code changes unless told to do so.
           If no changes are currently pending and there is nothing to reply, do not create reply.md.
           EOF
