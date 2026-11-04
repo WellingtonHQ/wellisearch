@@ -19,19 +19,22 @@ from __future__ import annotations
 import re
 
 # Human-readable wall copy: must appear as visible page text to count.
+# First-match-wins order: is_botwall reports the first matching phrase, and that
+# label is written into the per-tier failure detail, so the order is load-bearing
+# (Rule 3's business-logic exception) and must not be sorted alphabetically.
 PHRASE_MARKERS: tuple[str, ...] = (
-    "access denied",
-    "are you a robot",
-    "attention required",
-    "javascript is disabled",
     "just a moment",
     "pardon our interruption",
-    "prove your humanity",  # reddit's reCAPTCHA interstitial (title + body text)
-    "request blocked",
+    "access denied",
+    "are you a robot",
     "robot or human",
+    "attention required",
     "unusual traffic",
-    "verify that you're not a robot",
+    "request blocked",
     "you've been blocked by network security",
+    "javascript is disabled",
+    "prove your humanity",  # reddit's reCAPTCHA interstitial (title + body text)
+    "verify that you're not a robot",
 )
 
 # CF internal asset names: live in scripts/attributes, so they only count on
