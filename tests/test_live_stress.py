@@ -137,12 +137,11 @@ class MetricsMonitor:
         """Read cgroup counters and health latency, then check the gates."""
         sample: dict = {"t": round(time.monotonic(), 1)}
         try:
-            out = subprocess.run(
-                [
-                    "docker", "exec", self._container, "sh", "-c",
-                    "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/pids.current"
-                    " /sys/fs/cgroup/memory.events /sys/fs/cgroup/pids.events",
-                ],
+            out = subprocess.run([
+                "docker", "exec", self._container, "sh", "-c",
+                "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/pids.current"
+                " /sys/fs/cgroup/memory.events /sys/fs/cgroup/pids.events",
+            ],
                 capture_output=True, text=True, timeout=10, check=False,
             )
             lines = out.stdout.splitlines()

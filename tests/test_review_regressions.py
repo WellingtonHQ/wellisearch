@@ -397,13 +397,11 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             patch.object(fetch, "_resolve_all", AsyncMock(return_value=(pages, []))),
             patch.object(fetch, "get_settings", return_value=Settings(_env_file=None)),
         ):
-            out = await fetch.fetch_pages(
-                [
-                    "https://example.com/a?utm_source=test",
-                    "https://example.com/b?gclid=x",
-                    "https://example.com/b",
-                ]
-            )
+            out = await fetch.fetch_pages([
+                "https://example.com/a?utm_source=test",
+                "https://example.com/b?gclid=x",
+                "https://example.com/b",
+            ])
         self.assertTrue(out["ok"])
         # The two b-variants collapse into one served page (first-seen order).
         self.assertEqual(out["pages_fetched"], 2)

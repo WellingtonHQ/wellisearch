@@ -499,12 +499,11 @@ def _db_conn(env: dict[str, str], dbname: str) -> psycopg.Connection:
 def _sample_cgroup(container: str) -> dict | None:
     """One cgroup v2 read from inside the container; None on failure."""
     try:
-        out = subprocess.run(
-            [
-                "docker", "exec", container, "sh", "-c",
-                "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/pids.current"
-                " /sys/fs/cgroup/memory.events /sys/fs/cgroup/pids.events",
-            ],
+        out = subprocess.run([
+            "docker", "exec", container, "sh", "-c",
+            "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/pids.current"
+            " /sys/fs/cgroup/memory.events /sys/fs/cgroup/pids.events",
+        ],
             capture_output=True, text=True, timeout=10, check=False,
         )
         lines = out.stdout.splitlines()
