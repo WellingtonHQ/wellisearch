@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-import unittest
 from typing import Any
+import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from wellisearch import activity_log, embed, fetch, tools, worker
