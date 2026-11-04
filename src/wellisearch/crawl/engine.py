@@ -192,17 +192,28 @@ class _ProcessingPool:
         """Wait without occupying a thread or adding an executor work item."""
         loop = asyncio.get_running_loop()
         while True:
-            with self._lock:
-                if self._active < self._workers:
-                    self._active += 1
-                    return
-                waiter = loop.create_future()
-                self._waiters.add(waiter)
+            waiter = self._try_acquire(loop)
+            if waiter is None:
+                return
             try:
                 await waiter
             finally:
-                with self._lock:
-                    self._waiters.discard(waiter)
+                self._forget_waiter(waiter)
+
+    def _try_acquire(self, loop: asyncio.AbstractEventLoop) -> asyncio.Future | None:
+        """Take a slot if one is free; else register and return a waiter future."""
+        with self._lock:
+            if self._active < self._workers:
+                self._active += 1
+                return None
+            waiter = loop.create_future()
+            self._waiters.add(waiter)
+            return waiter
+
+    def _forget_waiter(self, waiter: asyncio.Future) -> None:
+        """Drop a settled waiter from the pool's waiter set."""
+        with self._lock:
+            self._waiters.discard(waiter)
 
     def _finished(
         self,

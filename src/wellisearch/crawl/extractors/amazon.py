@@ -292,10 +292,10 @@ def _reviews(soup: BeautifulSoup, limit: int) -> list[str]:
         block: list[str] = [label]
         title = _review_title(card)
         date = _review_date(card)
+        if date and not title:
+            block.append(date)
         if title:
             block.append(f"**{title}**" + (f" — {date}" if date else ""))
-        elif date:
-            block.append(date)
         block.append(body)
         out.append("\n\n".join(block))
         if len(out) >= limit:

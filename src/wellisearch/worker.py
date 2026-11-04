@@ -429,6 +429,11 @@ async def _run_bounded(
     """
     pending = iter(items)
 
+    async def _process_item(item: object) -> None:
+        """Run one item under its remaining wall-clock budget."""
+        async with asyncio.timeout(max(0, deadline - time.monotonic())):
+            await process(item)
+
     async def run() -> None:
         """Take the next row only while this tick still has wall-clock budget."""
         while time.monotonic() < deadline:
@@ -436,8 +441,7 @@ async def _run_bounded(
             if item is None:
                 return
             try:
-                async with asyncio.timeout(max(0, deadline - time.monotonic())):
-                    await process(item)
+                await _process_item(item)
             except TimeoutError:
                 return
 

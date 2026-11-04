@@ -47,11 +47,7 @@ async def resolve_short_url(url: str) -> str | None:
         return url
     s = get_settings()
     try:
-        from curl_cffi.requests import AsyncSession
-
-        async with asyncio.timeout(clamp(s.CRAWL_TIMEOUT_S)):
-            async with AsyncSession(impersonate="chrome", max_clients=1) as sess:
-                final = await _resolve_headers(sess, url)
+        final = await _resolve_with_session(clamp(s.CRAWL_TIMEOUT_S), url)
     except Exception as e:
         log.warning("short-url resolve failed for %s: %s", url, e)
         return None
@@ -69,19 +65,36 @@ async def resolve_short_url(url: str) -> str | None:
 # Header-Only Redirects
 # ---------------------------------------------------------------------------
 
+async def _resolve_with_session(timeout_s: float, url: str) -> str | None:
+    """Follow the redirect chain inside a short, cookie-carrying session."""
+    from curl_cffi.requests import AsyncSession
+
+    async with asyncio.timeout(timeout_s):
+        async with AsyncSession(impersonate="chrome", max_clients=1) as sess:
+            return await _resolve_headers(sess, url)
+
+
 async def _resolve_headers(sess: AsyncSession, url: str) -> str | None:
     """Try HEAD first; a refused/misimplemented HEAD must not hide a valid GET redirect."""
     if callable(getattr(sess, "head", None)):
-        try:
-            r = await _request_headers(sess, url, "head")
-            final = _destination(r)
-            if final is not None and r.status_code < 400:
-                return final
-        except Exception:
-            # Some shorteners close HEAD connections instead of returning 405.
-            # Cancellation/deadline still propagates (CancelledError is not Exception).
-            pass
+        head = await _head_destination(sess, url)
+        if head is not None:
+            return head
     return _destination(await _request_headers(sess, url, "get"))
+
+
+async def _head_destination(sess: AsyncSession, url: str) -> str | None:
+    """Destination via HEAD, tolerating shorteners that refuse or misreport it."""
+    try:
+        r = await _request_headers(sess, url, "head")
+        final = _destination(r)
+        if final is not None and r.status_code < 400:
+            return final
+    except Exception:
+        # Some shorteners close HEAD connections instead of returning 405.
+        # Cancellation/deadline still propagates (CancelledError is not Exception).
+        pass
+    return None
 
 
 async def _request_headers(
@@ -137,12 +150,15 @@ class _RedirectHeaders:
         if chunk.startswith(b"HTTP/"):
             self._status = int(chunk.split(maxsplit=2)[1])
             self._has_location = False
-        elif chunk.lower().startswith(b"location:"):
+            return len(chunk)
+        if chunk.lower().startswith(b"location:"):
             self._has_location = bool(chunk.partition(b":")[2].strip())
-        elif not chunk.strip() and self._status >= 200:
-            if self._status not in _REDIRECT_STATUSES or not self._has_location:
-                self.finished = True
-                return _WRITE_ERROR
+            return len(chunk)
+        if chunk.strip() or self._status < 200:
+            return len(chunk)
+        if self._status not in _REDIRECT_STATUSES or not self._has_location:
+            self.finished = True
+            return _WRITE_ERROR
         return len(chunk)
 
     def discard(self, chunk: bytes) -> int:

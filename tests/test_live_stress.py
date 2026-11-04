@@ -258,16 +258,13 @@ def assess(monitor: MetricsMonitor, phase_results: dict[str, list[dict]]) -> tup
     elif peak_mem_gib > PASS_MEM_PEAK_GIB:
         verdict, reasons = "WARN", [f"peak memory {peak_mem_gib:.1f} GiB above the pass band"]
     if peak_pids > PID_GATE:
-        if verdict == "PASS":
-            verdict = "WARN"
+        verdict = _demote(verdict)
         reasons.append(f"peak process/thread count {peak_pids} crossed the soft gate (limit 1,024)")
     elif peak_pids > 800:
-        if verdict == "PASS":
-            verdict = "WARN"
+        verdict = _demote(verdict)
         reasons.append(f"peak process/thread count {peak_pids} is close to the 1,024 limit")
     if p95_health > 2000:
-        if verdict == "PASS":
-            verdict = "WARN"
+        verdict = _demote(verdict)
         reasons.append(f"health p95 latency {p95_health} ms during load")
 
     for phase, results in phase_results.items():
@@ -285,6 +282,11 @@ def assess(monitor: MetricsMonitor, phase_results: dict[str, list[dict]]) -> tup
         verdict = "FAIL"
         reasons.append("too few metric samples to assess the run")
     return verdict, reasons
+
+
+def _demote(verdict: str) -> str:
+    """Downgrade PASS to WARN; keep WARN/FAIL as-is."""
+    return "WARN" if verdict == "PASS" else verdict
 
 
 # ---------------------------------------------------------------------------

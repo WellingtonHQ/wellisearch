@@ -147,18 +147,19 @@ def _parse_json(raw: str) -> object:
 def _find_product(node: object) -> dict | None:
     """A Product node, searching plain lists and @graph arrays."""
     if isinstance(node, list):
-        for item in node:
-            found = _find_product(item)
-            if found is not None:
-                return found
-        return None
+        return _find_in_items(node)
     if not isinstance(node, dict):
         return None
     t = node.get("@type")
     types = [t] if isinstance(t, str) else (list(t) if isinstance(t, list) else [])
     if "Product" in types and node.get("name"):
         return node
-    for item in node.get("@graph") or []:
+    return _find_in_items(list(node.get("@graph") or []))
+
+
+def _find_in_items(items: list[object]) -> dict | None:
+    """First product node found in a list of nodes, else None."""
+    for item in items:
         found = _find_product(item)
         if found is not None:
             return found

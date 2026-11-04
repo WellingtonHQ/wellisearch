@@ -78,14 +78,11 @@ def is_botwall(
     if _is_non_html(content_type):
         return None
     visible = _visible_text(html).lower()
-    for marker in PHRASE_MARKERS:
-        if re.search(r"\b" + re.escape(marker) + r"\b", visible):
-            return marker
+    marker = _find_marker(PHRASE_MARKERS, visible)
+    if marker is not None:
+        return marker
     if len(visible) <= _STRUCTURAL_MAX_VISIBLE_CHARS:
-        low = html.lower()
-        for marker in STRUCTURAL_MARKERS:
-            if re.search(r"\b" + re.escape(marker) + r"\b", low):
-                return marker
+        return _find_marker(STRUCTURAL_MARKERS, html.lower())
     return None
 
 
@@ -127,6 +124,14 @@ def _visible_text(html: str) -> str:
     return re.sub(r"\s+", " ", _strip_tags(html)).strip()
 
 
+def _find_marker(markers: tuple[str, ...], text: str) -> str | None:
+    """First marker in text (word-boundary matched), in marker order, else None."""
+    for marker in markers:
+        if re.search(r"\b" + re.escape(marker) + r"\b", text):
+            return marker
+    return None
+
+
 def _strip_tags(html: str) -> str:
     """Strip tags/attributes in one pass, including quoted '>' and unclosed tags."""
     out: list[str] = []
@@ -136,16 +141,15 @@ def _strip_tags(html: str) -> str:
     for token in _TAG_PART_RE.finditer(html):
         char = token.group()
         if tag_start is None:
-            if char == "<":
-                tag_start = token.start()
+            tag_start = token.start() if char == "<" else tag_start
             continue
         if quote is not None:
-            if char == quote:
-                quote = None
+            quote = None if char == quote else quote
             continue
         if char in ("\"", "'"):
             quote = char
-        elif char == ">":
+            continue
+        if char == ">":
             out.extend((html[pos:tag_start], " "))
             pos = token.end()
             tag_start = None

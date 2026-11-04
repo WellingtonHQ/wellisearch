@@ -75,21 +75,35 @@ class BrowserTier:
         key = _profile_key(url, p)
         pool = get_cf_pool() if get_lane() == CF else get_pool()
         for attempt in range(BROWSER_CLOSED_RETRIES + 1):
-            ctx = await pool.acquire(key)
-            page = None
-            try:
-                page = await ctx.new_page()
-                return await self._crawl(page, url, p)
-            except Exception as e:
-                if not is_closed_context_error(e):
-                    raise
-                await pool.invalidate(key, ctx, e)
-                if attempt >= BROWSER_CLOSED_RETRIES:
-                    raise
-                log.warning("browser context %s closed; retrying once with a fresh context", key)
-            finally:
-                await complete_cleanup(_release_page(pool, ctx, key, page))
+            rendered = await self._attempt(pool, key, url, p, attempt)
+            if rendered is not None:
+                return rendered
         raise RuntimeError("browser recovery loop ended without a result")
+
+    async def _attempt(
+        self,
+        pool: BrowserPool,
+        key: str,
+        url: str,
+        p: Policy,
+        attempt: int,
+    ) -> Rendered | None:
+        """One acquire/crawl/release cycle; None when a closed context is retried."""
+        ctx = await pool.acquire(key)
+        page = None
+        try:
+            page = await ctx.new_page()
+            return await self._crawl(page, url, p)
+        except Exception as e:
+            if not is_closed_context_error(e):
+                raise
+            await pool.invalidate(key, ctx, e)
+            if attempt >= BROWSER_CLOSED_RETRIES:
+                raise
+            log.warning("browser context %s closed; retrying once with a fresh context", key)
+            return None
+        finally:
+            await complete_cleanup(_release_page(pool, ctx, key, page))
 
     async def _crawl(
         self,
@@ -173,22 +187,10 @@ class BrowserTier:
         """Click the turnstile checkbox until clean or the budget is exhausted."""
         budget = budget if budget is not None else get_settings().CRAWL_CHALLENGE_BUDGET_S
         deadline = time.monotonic() + budget
-        round_no = 0
         timeout = asyncio.timeout_at(deadline)
         try:
             async with timeout:
-                marker = await _botwall(html, status, content_type)
-                while marker is not None:
-                    round_no += 1
-                    log.info(
-                        "challenge present (poll %d, budget %ds) — clicking turnstile",
-                        round_no,
-                        budget,
-                    )
-                    await _click_turnstile_checkbox(page)
-                    await page.wait_for_timeout(CHALLENGE_POLL_MS)
-                    html = await _page_html(page)
-                    marker = await _botwall(html, status, content_type)
+                html, marker = await self._click_until_clean(page, html, status, content_type, budget)
         except TimeoutError:
             if not timeout.expired():
                 raise
@@ -197,6 +199,30 @@ class BrowserTier:
         if marker is not None:
             log.warning("challenge still present after %ds budget for %s", budget, url)
         return html
+
+    async def _click_until_clean(
+        self,
+        page: Page,
+        html: str,
+        status: int,
+        content_type: str | None,
+        budget: int,
+    ) -> tuple[str, str | None]:
+        """Click the turnstile checkbox until the wall clears; (html, marker)."""
+        round_no = 0
+        marker = await _botwall(html, status, content_type)
+        while marker is not None:
+            round_no += 1
+            log.info(
+                "challenge present (poll %d, budget %ds) — clicking turnstile",
+                round_no,
+                budget,
+            )
+            await _click_turnstile_checkbox(page)
+            await page.wait_for_timeout(CHALLENGE_POLL_MS)
+            html = await _page_html(page)
+            marker = await _botwall(html, status, content_type)
+        return html, marker
 
     def worst_case_s(self, p: Policy) -> float:
         """Worst-case budget for the engine's wait_for backstop.
@@ -259,13 +285,24 @@ async def _release_page(
 ) -> None:
     """Retire failed page cleanup and always return its lease exactly once."""
     try:
-        if page is not None:
-            try:
-                await _safe_close(page)
-            except Exception:
-                await pool.invalidate(key, ctx, RuntimeError("transport closed during cleanup"))
+        await _close_page(pool, ctx, key, page)
     finally:
         await pool.release(ctx, key)
+
+
+async def _close_page(
+    pool: BrowserPool,
+    ctx: BrowserContext,
+    key: str,
+    page: Page | None,
+) -> None:
+    """Close the page; invalidate the context if the transport died mid-close."""
+    if page is None:
+        return
+    try:
+        await _safe_close(page)
+    except Exception:
+        await pool.invalidate(key, ctx, RuntimeError("transport closed during cleanup"))
 
 
 def _response_content_type(resp: object) -> str | None:

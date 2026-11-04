@@ -48,19 +48,7 @@ class StealthTier:
         timeout_s = clamp(get_settings().CRAWL_STEALTH_TIMEOUT_S)
         async with _semaphore:
             with tempfile.TemporaryDirectory(prefix="wellisearch-stealth-", ignore_cleanup_errors=True) as profile:
-                context = multiprocessing.get_context("spawn")
-                receiver, sender = context.Pipe(duplex=False)
-                process = context.Process(target=_run_worker, args=(sender, url, timeout_s, profile), daemon=True)
-                try:
-                    process.start()
-                    sender.close()
-                    message = await asyncio.to_thread(receiver.recv)
-                    if isinstance(message, Rendered):
-                        return message
-                    raise RuntimeError(f"stealth worker failed: {message}")
-                finally:
-                    sender.close()
-                    await complete_cleanup(asyncio.to_thread(_stop_worker, process, receiver, profile))
+                return await _run_worker_process(url, timeout_s, profile)
 
     def _fetch_sync(
         self,
@@ -152,6 +140,23 @@ def _run_worker(
         sender.close()
 
 
+async def _run_worker_process(url: str, timeout_s: float, profile: str) -> Rendered:
+    """Spawn the sync worker, await its result, and guarantee its death."""
+    context = multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(target=_run_worker, args=(sender, url, timeout_s, profile), daemon=True)
+    try:
+        process.start()
+        sender.close()
+        message = await asyncio.to_thread(receiver.recv)
+        if isinstance(message, Rendered):
+            return message
+        raise RuntimeError(f"stealth worker failed: {message}")
+    finally:
+        sender.close()
+        await complete_cleanup(asyncio.to_thread(_stop_worker, process, receiver, profile))
+
+
 def _stop_worker(
     process: multiprocessing.Process,
     receiver: Connection,
@@ -161,21 +166,7 @@ def _stop_worker(
     try:
         if process.pid is None:
             return
-        if os.name == "posix":
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        elif process.is_alive():
-            try:
-                subprocess.run(
-                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                    capture_output=True,
-                    check=False,
-                    timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S,
-                )
-            except (OSError, subprocess.TimeoutExpired):
-                log.warning("stealth process-tree termination failed; killing worker directly")
+        _kill_process_tree(process)
         if process.is_alive():
             process.kill()
         process.join()
@@ -187,6 +178,27 @@ def _stop_worker(
         receiver.close()
 
 
+def _kill_process_tree(process: multiprocessing.Process) -> None:
+    """Best-effort kill of the worker's whole process tree, per platform."""
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        return
+    if not process.is_alive():
+        return
+    try:
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+            timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        log.warning("stealth process-tree termination failed; killing worker directly")
+
+
 def _extract_title(page: object) -> str | None:
     """Best-effort <title> from the Scrapling Response; None on any failure.
 
@@ -194,12 +206,18 @@ def _extract_title(page: object) -> str | None:
     matching how browsers resolve document.title.
     """
     try:
-        for el in reversed(page.css("title")):
-            t = el.get_all_text()
-            if t and t.strip():
-                return t.strip()
+        return _first_title_text(page)
     except Exception:
         pass
+    return None
+
+
+def _first_title_text(page: object) -> str | None:
+    """The last non-empty <title> text on the page, or None."""
+    for el in reversed(page.css("title")):
+        t = el.get_all_text()
+        if t and t.strip():
+            return t.strip()
     return None
 
 
