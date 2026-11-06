@@ -73,7 +73,9 @@ class HttpMemoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_libcurl_size_backstop_is_a_terminal_payload_rejection(self) -> None:
         """libcurl may reject inflated data before invoking the body callback."""
-        session = _Session({"get": [_Hop(error=RequestException("max file size", CurlECode.FILESIZE_EXCEEDED))]})
+        session = _Session({
+            "get": [_Hop(error=RequestException("max file size", CurlECode.FILESIZE_EXCEEDED))],
+        })
         with _settings_patch(http), _session_patch(session):
             with self.assertRaisesRegex(ValueError, "CRAWL_HTML_MAX_BYTES"):
                 await http.HttpTier().fetch(FINAL_URL, DEFAULT_POLICY)
@@ -89,12 +91,7 @@ class HttpMemoryTests(unittest.IsolatedAsyncioTestCase):
         )
         for headers, error in cases:
             with self.subTest(error=error, mime=headers.get("Content-Type")):
-                session = _Session({"get": [_Hop(headers=headers, chunks=(b"never",))]})
-                with _settings_patch(http), _session_patch(session):
-                    with self.assertRaisesRegex(ValueError, error):
-                        await http.HttpTier().fetch(FINAL_URL, DEFAULT_POLICY)
-                self.assertEqual(session.body_chunks, 0)
-                self.assertTrue(session.closed)
+                await self._assert_rejected_at_headers(headers, error)
 
     async def test_html_without_headers_and_charset_html_are_preserved(self) -> None:
         """Missing MIME headers remain valid, and explicit character encodings still work."""
@@ -106,14 +103,7 @@ class HttpMemoryTests(unittest.IsolatedAsyncioTestCase):
         )
         for headers, content, title in cases:
             with self.subTest(title=title):
-                session = _Session({"get": [_Hop(headers=headers, chunks=(content,))]})
-                with _settings_patch(http), _session_patch(session):
-                    result = await http.HttpTier().fetch(FINAL_URL, DEFAULT_POLICY)
-                self.assertEqual(result.title, title)
-                self.assertEqual(result.status, 200)
-                self.assertEqual(result.engine, "http")
-                self.assertEqual(result.content_type, headers.get("Content-Type"))
-                self.assertTrue(session.closed)
+                await self._assert_served_html(headers, content, title)
 
     async def test_redirect_headers_do_not_reject_valid_final_html(self) -> None:
         """Only the final response's type and length govern HTML admission."""
@@ -145,6 +135,26 @@ class HttpMemoryTests(unittest.IsolatedAsyncioTestCase):
                 await task
         self.assertTrue(session.closed)
 
+    async def _assert_rejected_at_headers(self, headers: dict, error: str) -> None:
+        """One unsupported/oversized header case: rejected before any body chunk."""
+        session = _Session({"get": [_Hop(headers=headers, chunks=(b"never",))]})
+        with _settings_patch(http), _session_patch(session):
+            with self.assertRaisesRegex(ValueError, error):
+                await http.HttpTier().fetch(FINAL_URL, DEFAULT_POLICY)
+        self.assertEqual(session.body_chunks, 0)
+        self.assertTrue(session.closed)
+
+    async def _assert_served_html(self, headers: dict, content: bytes, title: str | None) -> None:
+        """One served HTML case: title/status/engine/content-type all match."""
+        session = _Session({"get": [_Hop(headers=headers, chunks=(content,))]})
+        with _settings_patch(http), _session_patch(session):
+            result = await http.HttpTier().fetch(FINAL_URL, DEFAULT_POLICY)
+        self.assertEqual(result.title, title)
+        self.assertEqual(result.status, 200)
+        self.assertEqual(result.engine, "http")
+        self.assertEqual(result.content_type, headers.get("Content-Type"))
+        self.assertTrue(session.closed)
+
 
 # ---------------------------------------------------------------------------
 # Short URLs
@@ -170,16 +180,7 @@ class ShortUrlMemoryTests(unittest.IsolatedAsyncioTestCase):
         """Shorteners that only implement GET must still resolve without downloading a body."""
         for status in (200, 403, 405, 501):
             with self.subTest(status=status):
-                session = _Session({
-                    "head": [_Hop(url=SHORT_URL, status=status)],
-                    "get": [_Hop(url=SHORT_URL, status=302, headers={"Location": FINAL_URL}),
-                            _Hop(chunks=(b"never",), hang=True)],
-                })
-                with _settings_patch(shorturl), _session_patch(session):
-                    self.assertEqual(await shorturl.resolve_short_url(SHORT_URL), FINAL_URL)
-                self.assertEqual([method for method, _ in session.calls], ["head", "get"])
-                self.assertEqual(session.body_chunks, 0)
-                self.assertTrue(session.closed)
+                await self._assert_head_fallback_resolves(status)
 
     async def test_head_connection_error_can_fall_back(self) -> None:
         """An early HEAD-only connection failure does not suppress a valid GET redirect."""
@@ -223,6 +224,19 @@ class ShortUrlMemoryTests(unittest.IsolatedAsyncioTestCase):
                 await task
         self.assertTrue(session.closed)
         self.assertEqual(len(session.calls), 1)
+
+    async def _assert_head_fallback_resolves(self, status: int) -> None:
+        """One refused/non-redirecting HEAD: GET headers resolve the short URL."""
+        session = _Session({
+            "head": [_Hop(url=SHORT_URL, status=status)],
+            "get": [_Hop(url=SHORT_URL, status=302, headers={"Location": FINAL_URL}),
+                    _Hop(chunks=(b"never",), hang=True)],
+        })
+        with _settings_patch(shorturl), _session_patch(session):
+            self.assertEqual(await shorturl.resolve_short_url(SHORT_URL), FINAL_URL)
+        self.assertEqual([method for method, _ in session.calls], ["head", "get"])
+        self.assertEqual(session.body_chunks, 0)
+        self.assertTrue(session.closed)
 
 
 # ---------------------------------------------------------------------------
@@ -597,19 +611,27 @@ class _Session:
             lines = [f"HTTP/2 {hop.status}\r\n".encode()]
             lines.extend(f"{name}: {value}\r\n".encode() for name, value in hop.headers.items())
             lines.append(b"\r\n")
-            for line in lines:
-                if self.curl_options[CurlOpt.HEADERFUNCTION](line) == WRITE_ERROR:
-                    raise RequestException("header aborted", CurlECode.WRITE_ERROR, response)
+            self._deliver_headers(lines, response)
             if hop.status in (301, 302, 303, 307, 308) and "Location" in hop.headers:
                 continue
             if hop.hang:
                 await asyncio.Event().wait()
-            for chunk in hop.chunks:
-                self.body_chunks += 1
-                if kwargs["content_callback"](chunk) == WRITE_ERROR:
-                    raise RequestException("body aborted", CurlECode.WRITE_ERROR, response)
+            self._deliver_body(hop, kwargs, response)
             return response
         raise AssertionError("redirect plan ended without a final response")
+
+    def _deliver_headers(self, lines: list[bytes], response: Response) -> None:
+        """Run each header line through the header callback, aborting on WRITE_ERROR."""
+        for line in lines:
+            if self.curl_options[CurlOpt.HEADERFUNCTION](line) == WRITE_ERROR:
+                raise RequestException("header aborted", CurlECode.WRITE_ERROR, response)
+
+    def _deliver_body(self, hop: _Hop, kwargs: dict, response: Response) -> None:
+        """Run each body chunk through the content callback, aborting on WRITE_ERROR."""
+        for chunk in hop.chunks:
+            self.body_chunks += 1
+            if kwargs["content_callback"](chunk) == WRITE_ERROR:
+                raise RequestException("body aborted", CurlECode.WRITE_ERROR, response)
 
 
 def _rendered(html: str) -> Rendered:

@@ -89,18 +89,23 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def log_message(self, format: str, *args: object) -> None:
+    def log_message(
+        self,
+        format: str,
+        *args: object,
+    ) -> None:
         """Keep soak output aggregate-only and easy to scan."""
 
 
 def sample() -> dict:
     """Read cgroup memory and process/thread counts without external commands."""
     group = Path("/sys/fs/cgroup")
+    events = dict(line.split() for line in (group / "memory.events").read_text().splitlines())
     return {
         "memory_mib": round(int((group / "memory.current").read_text()) / 1024 ** 2, 1),
         "swap_mib": round(int((group / "memory.swap.current").read_text()) / 1024 ** 2, 1),
         "pids": int((group / "pids.current").read_text()),
-        "oom_kill": dict(line.split() for line in (group / "memory.events").read_text().splitlines())["oom_kill"],
+        "oom_kill": events["oom_kill"],
     }
 
 
@@ -125,32 +130,42 @@ async def main(health_url: str) -> None:
     errors = []
     stop = asyncio.Event()
 
+    async def _probe_once(client: httpx.AsyncClient) -> None:
+        """One timed health probe: record the latency or the failure class."""
+        started = time.perf_counter()
+        try:
+            response = await client.get(health_url)
+            assert response.status_code == 200 and response.json()["status"] == "ok"
+            latencies.append(time.perf_counter() - started)
+        except Exception as error:
+            errors.append(type(error).__name__)
+
+    async def _probe_pause() -> None:
+        """Sleep one health interval, woken early by stop."""
+        with suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=HEALTH_INTERVAL_S)
+
     async def probe() -> None:
         """Measure API responsiveness while real browser processes turn over."""
         async with httpx.AsyncClient(timeout=5) as client:
             while not stop.is_set():
-                started = time.perf_counter()
-                try:
-                    response = await client.get(health_url)
-                    assert response.status_code == 200 and response.json()["status"] == "ok"
-                    latencies.append(time.perf_counter() - started)
-                except Exception as error:
-                    errors.append(type(error).__name__)
-                with suppress(TimeoutError):
-                    await asyncio.wait_for(stop.wait(), timeout=HEALTH_INTERVAL_S)
+                await _probe_once(client)
+                await _probe_pause()
 
     baseline = sample()
     snapshots = [baseline]
     heartbeat = asyncio.create_task(probe())
     try:
         with tempfile.TemporaryDirectory(prefix="wellisearch-soak-") as root:
-            settings = get_settings().model_copy(update={
-                "CRAWL_BROWSER_MAX_USES": 4,
-                "CRAWL_HTML_MAX_BYTES": 65536,
-                "CRAWL_PROFILE_DIR": str(Path(root) / "browsers"),
-                "CRAWL_SETTLE_S": 0,
-                "CRAWL_SHORT_URL_HOSTS": "127.0.0.1",
-            })
+            settings = get_settings().model_copy(
+                update={
+                    "CRAWL_BROWSER_MAX_USES": 4,
+                    "CRAWL_HTML_MAX_BYTES": 65536,
+                    "CRAWL_PROFILE_DIR": str(Path(root) / "browsers"),
+                    "CRAWL_SETTLE_S": 0,
+                    "CRAWL_SHORT_URL_HOSTS": "127.0.0.1",
+                },
+            )
             await _exercise_http(base, settings, server.server_port)
             await _exercise_browser(base, settings, snapshots)
             await _exercise_stealth(base, settings, root)
@@ -164,24 +179,31 @@ async def main(health_url: str) -> None:
     assert baseline["oom_kill"] == final["oom_kill"], "soak caused an OOM kill"
     assert not errors, errors
     assert latencies, "no health probes completed"
-    print(json.dumps({
-        "result": "passed",
-        "browser_fetches": ROUNDS * PARALLEL,
-        "stealth_cancellations": STEALTH_CANCEL_ROUNDS,
-        "health_checks": len(latencies),
-        "health_max_ms": round(max(latencies) * 1000, 1),
-        "health_avg_ms": round(sum(latencies) / len(latencies) * 1000, 1),
-        "peak_memory_mib": max(row["memory_mib"] for row in snapshots),
-        "baseline": baseline,
-        "final": final,
-    }), flush=True)
+    print(
+        json.dumps({
+            "result": "passed",
+            "browser_fetches": ROUNDS * PARALLEL,
+            "stealth_cancellations": STEALTH_CANCEL_ROUNDS,
+            "health_checks": len(latencies),
+            "health_max_ms": round(max(latencies) * 1000, 1),
+            "health_avg_ms": round(sum(latencies) / len(latencies) * 1000, 1),
+            "peak_memory_mib": max(row["memory_mib"] for row in snapshots),
+            "baseline": baseline,
+            "final": final,
+        }),
+        flush=True,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Exercise Tiers
 # ---------------------------------------------------------------------------
 
-async def _exercise_http(base: str, settings: Settings, port: int) -> None:
+async def _exercise_http(
+    base: str,
+    settings: Settings,
+    port: int,
+) -> None:
     """Verify bounded HTTP downloads and header-only short-link resolution."""
     with patch.object(http, "get_settings", return_value=settings):
         rendered = await http.HttpTier().fetch(base + "/article", DEFAULT_POLICY)
@@ -197,7 +219,11 @@ async def _exercise_http(base: str, settings: Settings, port: int) -> None:
             assert final == f"http://localhost:{port}/article", final
 
 
-async def _exercise_browser(base: str, settings: Settings, snapshots: list[dict]) -> None:
+async def _exercise_browser(
+    base: str,
+    settings: Settings,
+    snapshots: list[dict],
+) -> None:
     """Recycle real browser contexts and reject oversized DOMs before capture."""
     pool = BrowserPool(size=PARALLEL)
     with (
@@ -206,30 +232,46 @@ async def _exercise_browser(base: str, settings: Settings, snapshots: list[dict]
         patch.object(browser, "get_pool", return_value=pool),
     ):
         try:
-            for round_no in range(ROUNDS):
-                results = await asyncio.gather(*(
-                    browser.BrowserTier().fetch(base + f"/article?i={round_no}-{i}", DEFAULT_POLICY)
-                    for i in range(PARALLEL)
-                ))
-                assert all(result.status == 200 for result in results)
-                assert len(pool._contexts) <= PARALLEL
-                assert all(
-                    ctx.pages == [pool._anchors[key]]
-                    for key, ctx in pool._contexts.items()
-                )
-                snapshots.append(sample())
-                if (round_no + 1) % 5 == 0:
-                    print(json.dumps({"browser_round": round_no + 1, **snapshots[-1]}), flush=True)
-            try:
-                await browser.BrowserTier().fetch(base + "/oversized", DEFAULT_POLICY)
-                raise AssertionError("browser transferred an oversized DOM")
-            except PayloadRejectedError:
-                pass
+            await _browser_rounds(base, pool, snapshots)
+            await _assert_browser_oversized_rejected(base)
         finally:
             await pool.close_all()
 
 
-async def _exercise_stealth(base: str, settings: Settings, root: str) -> None:
+async def _browser_rounds(base: str, pool: BrowserPool, snapshots: list[dict]) -> None:
+    """Recycle real browser contexts across ROUNDS of parallel fetches."""
+    for round_no in range(ROUNDS):
+        results = await asyncio.gather(
+            *(
+                browser.BrowserTier().fetch(base + f"/article?i={round_no}-{i}", DEFAULT_POLICY)
+                for i in range(PARALLEL)
+            )
+        )
+        assert all(result.status == 200 for result in results)
+        assert len(pool._contexts) <= PARALLEL
+        assert all(
+            ctx.pages == [pool._anchors[key]]
+            for key, ctx in pool._contexts.items()
+        )
+        snapshots.append(sample())
+        if (round_no + 1) % 5 == 0:
+            print(json.dumps({"browser_round": round_no + 1, **snapshots[-1]}), flush=True)
+
+
+async def _assert_browser_oversized_rejected(base: str) -> None:
+    """An oversized DOM must be rejected before the browser transfers it."""
+    try:
+        await browser.BrowserTier().fetch(base + "/oversized", DEFAULT_POLICY)
+        raise AssertionError("browser transferred an oversized DOM")
+    except PayloadRejectedError:
+        pass
+
+
+async def _exercise_stealth(
+    base: str,
+    settings: Settings,
+    root: str,
+) -> None:
     """Reject oversized Scrapling DOMs and reap cancelled stealth process trees."""
     with patch.object(tempfile, "tempdir", root):
         with patch.object(stealth, "get_settings", return_value=settings):
@@ -241,29 +283,39 @@ async def _exercise_stealth(base: str, settings: Settings, root: str) -> None:
             )
             assert rendered.title == "Memory fixture"
             assert "Useful article text." in rendered.html
-            try:
-                await asyncio.to_thread(
-                    stealth.StealthTier()._fetch_sync,
-                    base + "/oversized",
-                    10,
-                    str(Path(root) / "stealth-oversized"),
-                )
-                raise AssertionError("Scrapling transferred an oversized DOM")
-            except PayloadRejectedError:
-                pass
+            await _assert_stealth_oversized_rejected(base, root)
         assert not owned_chrome_profiles(root), "oversized stealth DOM left a browser alive"
         for i in range(STEALTH_CANCEL_ROUNDS):
-            SLOW_STARTED.clear()
-            task = asyncio.create_task(stealth.StealthTier().fetch(base + "/slow", DEFAULT_POLICY))
-            try:
-                started = await asyncio.to_thread(SLOW_STARTED.wait, FIXTURE_TIMEOUT_S)
-                assert started, "stealth browser did not reach the slow navigation"
-            finally:
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
-            assert not owned_chrome_profiles(root), "cancelled stealth left an owned browser alive"
-            print(json.dumps({"stealth_cancel": i + 1, **sample()}), flush=True)
+            await _stealth_cancel_round(base, root, i)
+
+
+async def _assert_stealth_oversized_rejected(base: str, root: str) -> None:
+    """An oversized DOM must be rejected before Scrapling transfers it."""
+    try:
+        await asyncio.to_thread(
+            stealth.StealthTier()._fetch_sync,
+            base + "/oversized",
+            10,
+            str(Path(root) / "stealth-oversized"),
+        )
+        raise AssertionError("Scrapling transferred an oversized DOM")
+    except PayloadRejectedError:
+        pass
+
+
+async def _stealth_cancel_round(base: str, root: str, round_no: int) -> None:
+    """One cancel round: reach the slow navigation, cancel, verify no leftovers."""
+    SLOW_STARTED.clear()
+    task = asyncio.create_task(stealth.StealthTier().fetch(base + "/slow", DEFAULT_POLICY))
+    try:
+        started = await asyncio.to_thread(SLOW_STARTED.wait, FIXTURE_TIMEOUT_S)
+        assert started, "stealth browser did not reach the slow navigation"
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+    assert not owned_chrome_profiles(root), "cancelled stealth left an owned browser alive"
+    print(json.dumps({"stealth_cancel": round_no + 1, **sample()}), flush=True)
 
 
 if __name__ == "__main__":

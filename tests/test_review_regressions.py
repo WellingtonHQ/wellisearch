@@ -103,8 +103,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             fake_db.refresh_success_reset.assert_awaited_once_with(CANONICAL)
             error = crawler.CrawlError(CANONICAL, "failed")
             with patch.object(worker.crawler, "fit_markdown", AsyncMock(side_effect=error)):
-                with self.assertRaises(crawler.CrawlError):
-                    await worker._crawl_and_store(VARIANT, "refresh")
+                await self._assert_refresh_replays_failure(error)
         self.assertEqual(fake_db.execute.await_args.args[1], (error.status_label(), CANONICAL))
         fake_db.refresh_fail_bump.assert_not_awaited()
 
@@ -124,8 +123,7 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             fake_db.queue_challenge_in_flight.assert_awaited_once_with(CANONICAL)
             crawl.side_effect = ChallengeDetected(VARIANT)
             with patch.object(fetch.queue, "enqueue", AsyncMock(return_value=False)):
-                with self.assertRaises(crawler.CrawlError):
-                    await fetch._probe_crawl(VARIANT)
+                await self._assert_probe_crawl_replays_challenge()
             await fetch._record_failed_refresh(VARIANT, True)
         fake_db.queue_route_to_cf.assert_awaited_once_with(CANONICAL)
         fake_db.refresh_fail_bump.assert_awaited_once_with(CANONICAL)
@@ -268,7 +266,9 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             for i in range(200)
         ]
         with patch.object(search_web, "get_settings", return_value=s):
-            big = search_web._candidate_rows(rows[: max(s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM, 200)], k=200)
+            big = search_web._candidate_rows(
+                rows[: max(s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM, 200)], k=200
+            )
             small = search_web._candidate_rows(rows[: s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM], k=5)
         self.assertEqual(len(big), 200)
         self.assertEqual(len(small), s.SEARCH_GATE_MIN_K + s.SEARCH_TOP_BY_SIM)
@@ -296,7 +296,9 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         """Config entries with mixed-case paths match lowercase live URLs."""
         boards = ("glassdoor.com/Job", "ziprecruiter.com/Jobs")
         self.assertTrue(search_web._is_job_board("https://www.glassdoor.com/job/listings", boards))
-        self.assertTrue(search_web._is_job_board("https://ziprecruiter.com/jobs/search?query=engineer", boards))
+        self.assertTrue(
+            search_web._is_job_board("https://ziprecruiter.com/jobs/search?query=engineer", boards)
+        )
         self.assertFalse(search_web._is_job_board("https://glassdoor.com/reviews", boards))
 
     def test_uk_second_level_domains_are_distinct(self) -> None:
@@ -358,7 +360,13 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         s = Settings(_env_file=None)
         seen_k = []
 
-        async def fake_index(query, k, max_age_days, widened=False):
+        async def fake_index(
+            query: str,
+            k: int,
+            max_age_days: float | None,
+            widened: bool = False,
+        ) -> tuple[list[dict], int, str | None]:
+            """Record the k it was called with and return no results."""
             seen_k.append(k)
             return [], 0, None
 
@@ -389,13 +397,11 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             patch.object(fetch, "_resolve_all", AsyncMock(return_value=(pages, []))),
             patch.object(fetch, "get_settings", return_value=Settings(_env_file=None)),
         ):
-            out = await fetch.fetch_pages(
-                [
-                    "https://example.com/a?utm_source=test",
-                    "https://example.com/b?gclid=x",
-                    "https://example.com/b",
-                ]
-            )
+            out = await fetch.fetch_pages([
+                "https://example.com/a?utm_source=test",
+                "https://example.com/b?gclid=x",
+                "https://example.com/b",
+            ])
         self.assertTrue(out["ok"])
         # The two b-variants collapse into one served page (first-seen order).
         self.assertEqual(out["pages_fetched"], 2)
@@ -420,6 +426,16 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(out["pages"]), 1)
         self.assertEqual(out["total_chars"], len(STORED["fit_markdown"]))
         fake_db.bump_fetch_counts.assert_awaited_once_with([CANONICAL])
+
+    async def _assert_refresh_replays_failure(self, error: crawler.CrawlError) -> None:
+        """A failed refresh re-raises the crawl error (backoff is the caller's job)."""
+        with self.assertRaises(crawler.CrawlError):
+            await worker._crawl_and_store(VARIANT, "refresh")
+
+    async def _assert_probe_crawl_replays_challenge(self) -> None:
+        """A challenged probe crawl re-raises (the route-to-CF row is already set)."""
+        with self.assertRaises(crawler.CrawlError):
+            await fetch._probe_crawl(VARIANT)
 
 
 if __name__ == "__main__":

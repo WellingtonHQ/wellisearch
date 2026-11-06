@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+from typing import NoReturn
+
 from unittest.mock import AsyncMock, Mock, patch
 
 from wellisearch.config import get_settings
@@ -12,9 +14,9 @@ from wellisearch.crawl.policy import Policy, match
 from wellisearch.crawl.results import Rendered
 from wellisearch.crawl.shorturl import is_short_url, resolve_short_url
 from wellisearch.crawl.signals import find_price, find_stock
-from wellisearch.crawler import CrawlError
 import wellisearch.crawl.tiers.http as http_tier
 import wellisearch.crawl.tiers.stealth as stealth_tier
+from wellisearch.crawler import CrawlError
 import wellisearch.worker as worker_mod
 
 # ---------------------------------------------------------------------------
@@ -81,7 +83,8 @@ assert is_botwall("<html><body>JavaScript is disabled. Enable it to continue.</b
 reddit_wall = (
     '<!DOCTYPE html><html lang="en"><head><title>Reddit - Prove your humanity</title>'
     "<script src=\"https://www.google.com/recaptcha/api.js\"></script></head>"
-    "<body><form action=\"/r/programming/\" method=\"post\"><input type=\"submit\" value=\"Continue\"></form></body></html>"
+    "<body><form action=\"/r/programming/\" method=\"post\">"
+    "<input type=\"submit\" value=\"Continue\"></form></body></html>"
 )
 assert is_botwall(reddit_wall, 200) == "prove your humanity"
 # marker phrases in code samples are content, not walls (security articles show
@@ -89,7 +92,8 @@ assert is_botwall(reddit_wall, 200) == "prove your humanity"
 article_code = (
     '<html><head><title>Fix Privilege Escalation Vulnerabilities</title></head>'
     "<body><h1>Privilege escalation</h1>" + "<p>Article text. " * 200 + "</p>"
-    "<pre><code>if (!req.user.isAdmin) { return res.status(403).json({ error: 'Access denied' }); }</code></pre>"
+    "<pre><code>if (!req.user.isAdmin) { return res.status(403).json("
+    "{ error: 'Access denied' }); }</code></pre>"
     "</body></html>"
 )
 assert is_botwall(article_code, 200) is None
@@ -316,7 +320,7 @@ assert any("botwall" in a.get("error", "") for a in res.attempts), res.attempts
 print("OK engine loop")
 
 # ---------------------------------------------------------------------------
-# Short URL Resolution (a.co → final URL)
+# Short URL Resolution (a.co → Final URL)
 # ---------------------------------------------------------------------------
 
 SHORT_URL = "https://a.co/d/0aNZTVwt"
@@ -327,6 +331,7 @@ class FakeShortResponse:
     """Fake curl_cffi response carrying the final (post-redirect) URL."""
 
     def __init__(self, url: str) -> None:
+        """Store the final (post-redirect) URL."""
         self.url = url
 
 
@@ -334,15 +339,23 @@ class FakeShortSession:
     """Fake curl_cffi AsyncSession whose GET lands on a canned final URL."""
 
     def __init__(self, final_url: str) -> None:
+        """Store the final URL this session's GET will return."""
         self.final_url = final_url
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> FakeShortSession:
+        """Enter the context, returning the session itself."""
         return self
 
-    async def __aexit__(self, *exc_info):
+    async def __aexit__(self, *exc_info) -> bool:
+        """Exit the context, suppressing nothing."""
         return False
 
-    async def get(self, url: str, **kwargs):
+    async def get(
+        self,
+        url: str,
+        **kwargs,
+    ) -> FakeShortResponse:
+        """Return the canned final-URL response for any GET."""
         return FakeShortResponse(self.final_url)
 
 
@@ -360,7 +373,8 @@ with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(FINA
     assert asyncio.run(resolve_short_url(SHORT_URL)) == FINAL_URL
 
 
-def _shorturl_boom(**kwargs):
+def _shorturl_boom(**kwargs) -> NoReturn:
+    """Simulate a network failure on the short-URL request."""
     raise RuntimeError("network down")
 
 
@@ -411,7 +425,7 @@ with patch.object(engine, "resolve_short_url", AsyncMock(return_value=None)):
 print("OK short url resolution")
 
 # ---------------------------------------------------------------------------
-# Worker Short-URL Guard (crawl_url entry)
+# Worker Short-URL Guard (crawl_url Entry)
 # ---------------------------------------------------------------------------
 
 # unresolvable short URL fails before any crawl (no dedup, no store)
@@ -436,7 +450,7 @@ delete.assert_awaited_once_with("DELETE FROM pages WHERE url = %s", (SHORT_URL,)
 print("OK worker short-url guard")
 
 # ---------------------------------------------------------------------------
-# Probe Budget (read-path fast detection)
+# Probe Budget (Read-Path Fast Detection)
 # ---------------------------------------------------------------------------
 
 s = get_settings()
@@ -459,6 +473,7 @@ try:
 
     # A child task inherits the active budget; siblings never see each other's.
     async def with_budget() -> float:
+        """Set a child probe budget of 7 s, report what clamp(90) sees under it, then reset."""
         t2 = probe.set_probe_budget(7)
         try:
             return await asyncio.sleep(0, result=probe.clamp(90.0))
@@ -466,9 +481,11 @@ try:
             probe.reset_probe_budget(t2)
 
     async def sibling() -> float:
+        """Report what clamp(90) sees under the parent's active budget."""
         return await asyncio.sleep(0, result=probe.clamp(90.0))
 
     async def iso() -> list[float]:
+        """Run sibling and with_budget concurrently to prove task-context isolation."""
         return await asyncio.gather(sibling(), with_budget())
 
     got = asyncio.run(iso())
@@ -481,4 +498,7 @@ assert http_tier.HttpTier().worst_case_s(p_default) == float(s.CRAWL_TIMEOUT_S)
 print("OK probe budget")
 
 # ---------------------------------------------------------------------------
+# All Tests Passed
+# ---------------------------------------------------------------------------
+
 print("ALL CRAWL CORE TESTS PASSED")

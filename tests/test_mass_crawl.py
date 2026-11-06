@@ -277,7 +277,11 @@ def _take_sample(
     return sample, ok, health_latency, pending, in_flight, cg
 
 
-def _oom_gate(cg: dict | None, prev_oom_kill: int, elapsed: float) -> str | None:
+def _oom_gate(
+    cg: dict | None,
+    prev_oom_kill: int,
+    elapsed: float,
+) -> str | None:
     """Hard gate 1: any NEW OOM kill stops the run for inspection.
     Pauses the worker and returns the FAIL reason, else None."""
     if not (cg and cg["oom_kill"] > prev_oom_kill):
@@ -495,12 +499,11 @@ def _db_conn(env: dict[str, str], dbname: str) -> psycopg.Connection:
 def _sample_cgroup(container: str) -> dict | None:
     """One cgroup v2 read from inside the container; None on failure."""
     try:
-        out = subprocess.run(
-            [
-                "docker", "exec", container, "sh", "-c",
-                "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/pids.current"
-                " /sys/fs/cgroup/memory.events /sys/fs/cgroup/pids.events",
-            ],
+        out = subprocess.run([
+            "docker", "exec", container, "sh", "-c",
+            "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/pids.current"
+            " /sys/fs/cgroup/memory.events /sys/fs/cgroup/pids.events",
+        ],
             capture_output=True, text=True, timeout=10, check=False,
         )
         lines = out.stdout.splitlines()

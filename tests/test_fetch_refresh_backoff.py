@@ -10,9 +10,9 @@ import asyncio
 import datetime as dt
 
 from wellisearch import crawler
+from wellisearch.config import get_settings as real_get_settings
 from wellisearch.crawl.extractors.reddit import _comments_heading, needs_refresh
 from wellisearch.crawl.results import ChallengeDetected
-from wellisearch.config import get_settings as real_get_settings
 import wellisearch.fetch as fetch_mod
 import wellisearch.queue as queue_mod
 
@@ -20,7 +20,8 @@ import wellisearch.queue as queue_mod
 class FakeDB:
     """In-memory stand-in for the db helpers _resolve_page uses."""
 
-    def __init__(self, page: dict | None = None):
+    def __init__(self, page: dict | None = None) -> None:
+        """Start with no bumped pages, no enqueues, no in-flight challenge, no pause."""
         self.page = page
         self.bumped: list[str] = []
         self.enqueued: list[tuple] = []
@@ -28,21 +29,29 @@ class FakeDB:
         self.paused = False
 
     async def page_get(self, url: str) -> dict | None:
+        """Serve the canned stored page (or None for an unindexed URL)."""
         return self.page
 
     async def worker_paused(self) -> bool:
+        """Report the fake worker-pause flag."""
         return self.paused
 
     async def queue_challenge_in_flight(self, url: str) -> bool:
+        """Report whether a CF challenge is already in flight."""
         return self.challenge_in_flight
 
     async def queue_enqueue(
-        self, url: str, source: str = "fetch", lane: str | None = None
+        self,
+        url: str,
+        source: str = "fetch",
+        lane: str | None = None,
     ) -> bool:
+        """Record the enqueue and report success."""
         self.enqueued.append((url, source, lane))
         return True
 
     async def refresh_fail_bump(self, url: str) -> int | None:
+        """Record the bump and report a streak of 1."""
         self.bumped.append(url)
         return 1
 
@@ -51,12 +60,18 @@ class TwoPhaseDB(FakeDB):
     """page_get returns `first` on the first call and `second` afterwards —
     simulates a crawl that stores fresh content between _resolve_page's reads."""
 
-    def __init__(self, first: dict | None, second: dict | None):
+    def __init__(
+        self,
+        first: dict | None,
+        second: dict | None,
+    ) -> None:
+        """Arm page_get with the first and second canned results and a fresh call count."""
         super().__init__(first)
         self._second = second
         self._calls = 0
 
     async def page_get(self, url: str) -> dict | None:
+        """Serve the first canned result once, then the second on every later call."""
         self._calls += 1
         return self.page if self._calls == 1 else self._second
 
@@ -88,7 +103,10 @@ def stale_row(backoff_until: dt.datetime | None) -> dict:
     }
 
 
-# --- save module globals we monkeypatch -------------------------------------
+# ---------------------------------------------------------------------------
+# Save Module Globals We Monkeypatch
+# ---------------------------------------------------------------------------
+
 _real_db = fetch_mod.db
 _real_crawl_url = fetch_mod.crawl_url
 _real_get_settings = fetch_mod.get_settings
@@ -99,6 +117,7 @@ kicks: list[bool] = []
 
 
 def _count_kick() -> None:
+    """Record that the worker kick fired."""
     kicks.append(True)
 
 
@@ -109,12 +128,13 @@ calls: list[str] = []
 
 
 async def failing_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call, then fail with a simulated two-tier failure."""
     calls.append(url)
     raise crawler.CrawlError(url, "simulated tier failure on both tiers")
 
 
 # ---------------------------------------------------------------------------
-# Backoff active + stale markdown -> serve the stored copy, no crawl at all
+# Backoff Active + Stale Markdown -> Serve The Stored Copy, No Crawl At All
 # ---------------------------------------------------------------------------
 
 db1 = FakeDB(stale_row(dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=6)))
@@ -130,7 +150,7 @@ assert db1.bumped == [], "a served-from-index fetch has nothing to bump"
 print("OK backoff active (stale served, no crawl)")
 
 # ---------------------------------------------------------------------------
-# Backoff expired + stale markdown -> re-crawl runs; failure bumps the streak
+# Backoff Expired + Stale Markdown -> Re-Crawl Runs; Failure Bumps The Streak
 # ---------------------------------------------------------------------------
 
 db2 = FakeDB(stale_row(dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)))
@@ -150,11 +170,11 @@ assert db2.enqueued == [], "a plain tier failure is not CF-routed from the fetch
 print("OK backoff expired (re-crawl ran, failure bumped)")
 
 # ---------------------------------------------------------------------------
-# Bot-wall on the re-crawl -> CF lane + bump (same pattern as worker refresh)
+# Bot-Wall On The Re-Crawl -> CF Lane + Bump (Same Pattern As Worker Refresh)
 # ---------------------------------------------------------------------------
 
-
 async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call, then fail with a bot-wall challenge."""
     calls.append(url)
     raise ChallengeDetected(url)
 
@@ -177,7 +197,7 @@ assert db3.bumped == [URL_POST], f"walled re-crawl must bump the streak: {db3.bu
 print("OK bot-wall (CF-routed + bumped)")
 
 # ---------------------------------------------------------------------------
-# Unindexed URL failure -> no bump (first-time indexing is not a refresh)
+# Unindexed URL Failure -> No Bump (First-Time Indexing Is Not A Refresh)
 # ---------------------------------------------------------------------------
 
 db4 = FakeDB(None)
@@ -196,11 +216,11 @@ assert db4.bumped == [], "a first-time indexing failure must not touch refresh b
 print("OK unindexed (no bump on first-time crawl failure)")
 
 # ---------------------------------------------------------------------------
-# Success after expiry -> fresh content served, nothing bumped
+# Success After Expiry -> Fresh Content Served, Nothing Bumped
 # ---------------------------------------------------------------------------
 
-
 async def ok_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call and succeed, returning the minimal result dict."""
     calls.append(url)
     return {"url": url}
 
@@ -222,6 +242,9 @@ assert db5.bumped == [], "a successful crawl never bumps (worker resets on store
 print("OK success path (fresh stored content served, no bump)")
 
 # ---------------------------------------------------------------------------
+# Restore Module Globals
+# ---------------------------------------------------------------------------
+
 fetch_mod.db = _real_db
 queue_mod.db = _real_queue_db
 queue_mod.kick_worker = _real_kick_worker

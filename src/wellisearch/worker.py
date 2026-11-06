@@ -53,7 +53,8 @@ ERROR_DETAIL_MAX_LEN = 1000    # max chars kept in a crawl error detail (crawl_l
 ERROR_REPR_MAX_LEN = 500       # max chars kept in a crash repr (crawl_log)
 REFRESH_ERROR_MAX_LEN = 200    # max chars kept in a refresh-stats error entry
 TRIM_THRESHOLD = 0             # malloc_trim threshold: 0 releases all returnable memory
-DRAIN_OVERFETCH = 2            # claim window per drain: up to Nx the effective cap, so failures/routing don't starve a tick
+DRAIN_OVERFETCH = 2            # claim window per drain: up to Nx the effective cap, so failures/routing
+                               # don't starve a tick
 
 # runtime state for the dashboard "Now" panel
 STATE: dict = {
@@ -429,6 +430,11 @@ async def _run_bounded(
     """
     pending = iter(items)
 
+    async def _process_item(item: object) -> None:
+        """Run one item under its remaining wall-clock budget."""
+        async with asyncio.timeout(max(0, deadline - time.monotonic())):
+            await process(item)
+
     async def run() -> None:
         """Take the next row only while this tick still has wall-clock budget."""
         while time.monotonic() < deadline:
@@ -436,8 +442,7 @@ async def _run_bounded(
             if item is None:
                 return
             try:
-                async with asyncio.timeout(max(0, deadline - time.monotonic())):
-                    await process(item)
+                await _process_item(item)
             except TimeoutError:
                 return
 

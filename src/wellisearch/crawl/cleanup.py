@@ -53,8 +53,13 @@ async def bounded_operation(
             task.cancel()
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _operation_done(task: asyncio.Task) -> None:
     """Release a finished operation and consume errors after its caller leaves."""
     _pending_operations.discard(task)
-    if not task.cancelled():
-        task.exception()
+    if task.cancelled():
+        return
+    task.exception()

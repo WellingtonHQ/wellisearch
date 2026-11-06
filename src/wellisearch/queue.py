@@ -155,6 +155,7 @@ async def shutdown_kick() -> None:
     """Cancel and join a kick-driven tick before its database is closed."""
     global _kick_task
     task, _kick_task = _kick_task, None
-    if task is not None:
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+    if task is None:
+        return
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)

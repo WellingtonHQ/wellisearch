@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-import unittest
 from typing import Any
+import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from wellisearch import activity_log, embed, fetch, tools, worker
@@ -304,7 +304,11 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             status = 200
             headers: dict[str, str] = {}
 
-            def evaluate(self, script: str, limit: int) -> int | None:
+            def evaluate(
+                self,
+                script: str,
+                limit: int,
+            ) -> int | None:
                 """Report an oversized DOM without serializing it."""
                 return None
 
@@ -350,7 +354,11 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             status = 200
             headers: dict[str, str] = {"Content-Type": "text/html"}
 
-            def evaluate(self, script: str, limit: int) -> str:
+            def evaluate(
+                self,
+                script: str,
+                limit: int,
+            ) -> str:
                 """Return the bounded capture from the same operation as its size check."""
                 return "<html><title>Saved</title><body>Article</body></html>"
 
@@ -571,9 +579,10 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         def reap(profile: str) -> None:
             """Hold the first profile scan while a caller cancellation arrives."""
-            if not started.is_set():
-                started.set()
-                finish.wait()
+            if started.is_set():
+                return
+            started.set()
+            finish.wait()
 
         async def launch(key: str, playwright: object) -> Context:
             """Record replacement launch only after orphan cleanup has completed."""
@@ -760,10 +769,14 @@ class ResourceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             patch.object(stealth.os, "killpg", create=True),
             patch.object(stealth.subprocess, "run"),
         ):
-            first = asyncio.create_task(stealth.StealthTier().fetch("https://example.com/one", DEFAULT_POLICY))
+            first = asyncio.create_task(
+                stealth.StealthTier().fetch("https://example.com/one", DEFAULT_POLICY)
+            )
             await asyncio.sleep(0)
             await asyncio.to_thread(receivers[0].started.wait)
-            second = asyncio.create_task(stealth.StealthTier().fetch("https://example.com/two", DEFAULT_POLICY))
+            second = asyncio.create_task(
+                stealth.StealthTier().fetch("https://example.com/two", DEFAULT_POLICY)
+            )
             await asyncio.sleep(0)
             self.assertEqual(len(processes), 1)
             first.cancel()

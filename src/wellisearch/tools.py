@@ -55,6 +55,16 @@ def _clean(obj: Any) -> Any:
     return json.loads(json.dumps(obj, default=str))
 
 
+async def _page_status_page(url: str) -> dict | None:
+    """Page row for url, falling back to its resolved short-URL target."""
+    page = await db.page_get(normalize_url(url))
+    if page is None:
+        resolved = await resolve_short_url(normalize_url(url))
+        if resolved and normalize_url(resolved) != normalize_url(url):
+            page = await db.page_get(normalize_url(resolved))
+    return page
+
+
 def _fmt(
     out: dict,
     format_param: str | None,
@@ -340,11 +350,7 @@ def _tool_refresh_page(server: MCPServer) -> None:
         except Exception as e:
             # A resolved short URL records its state under the final URL; look up
             # both keys so last_status is reported for either form.
-            page = await db.page_get(normalize_url(url))
-            if page is None:
-                resolved = await resolve_short_url(normalize_url(url))
-                if resolved and normalize_url(resolved) != normalize_url(url):
-                    page = await db.page_get(normalize_url(resolved))
+            page = await _page_status_page(url)
             return _clean({
                 "ok": False,
                 "url": url,

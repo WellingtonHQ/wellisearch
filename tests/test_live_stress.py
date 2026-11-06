@@ -101,7 +101,11 @@ class MetricsMonitor:
     skips the auto-resume of indexing at teardown.
     """
 
-    def __init__(self: MetricsMonitor, base_url: str, container_name: str) -> None:
+    def __init__(
+        self: MetricsMonitor,
+        base_url: str,
+        container_name: str,
+    ) -> None:
         """Initialize the sampler state and the gate events."""
         self._base_url = base_url
         self._container = container_name
@@ -133,12 +137,11 @@ class MetricsMonitor:
         """Read cgroup counters and health latency, then check the gates."""
         sample: dict = {"t": round(time.monotonic(), 1)}
         try:
-            out = subprocess.run(
-                [
-                    "docker", "exec", self._container, "sh", "-c",
-                    "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/pids.current"
-                    " /sys/fs/cgroup/memory.events /sys/fs/cgroup/pids.events",
-                ],
+            out = subprocess.run([
+                "docker", "exec", self._container, "sh", "-c",
+                "cat /sys/fs/cgroup/memory.current /sys/fs/cgroup/pids.current"
+                " /sys/fs/cgroup/memory.events /sys/fs/cgroup/pids.events",
+            ],
                 capture_output=True, text=True, timeout=10, check=False,
             )
             lines = out.stdout.splitlines()
@@ -254,16 +257,13 @@ def assess(monitor: MetricsMonitor, phase_results: dict[str, list[dict]]) -> tup
     elif peak_mem_gib > PASS_MEM_PEAK_GIB:
         verdict, reasons = "WARN", [f"peak memory {peak_mem_gib:.1f} GiB above the pass band"]
     if peak_pids > PID_GATE:
-        if verdict == "PASS":
-            verdict = "WARN"
+        verdict = _demote(verdict)
         reasons.append(f"peak process/thread count {peak_pids} crossed the soft gate (limit 1,024)")
     elif peak_pids > 800:
-        if verdict == "PASS":
-            verdict = "WARN"
+        verdict = _demote(verdict)
         reasons.append(f"peak process/thread count {peak_pids} is close to the 1,024 limit")
     if p95_health > 2000:
-        if verdict == "PASS":
-            verdict = "WARN"
+        verdict = _demote(verdict)
         reasons.append(f"health p95 latency {p95_health} ms during load")
 
     for phase, results in phase_results.items():
@@ -281,6 +281,11 @@ def assess(monitor: MetricsMonitor, phase_results: dict[str, list[dict]]) -> tup
         verdict = "FAIL"
         reasons.append("too few metric samples to assess the run")
     return verdict, reasons
+
+
+def _demote(verdict: str) -> str:
+    """Downgrade PASS to WARN; keep WARN/FAIL as-is."""
+    return "WARN" if verdict == "PASS" else verdict
 
 
 # ---------------------------------------------------------------------------
@@ -452,7 +457,11 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         print(f"[fixture] {kind} {n} ({len(body)} bytes)", flush=True)
         self._respond(200, body)
 
-    def _respond(self: _FixtureHandler, status: int, body: bytes) -> None:
+    def _respond(
+        self: _FixtureHandler,
+        status: int,
+        body: bytes,
+    ) -> None:
         """Send one response with an explicit Content-Length."""
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -543,7 +552,11 @@ def _delete_pages(
     return deleted
 
 
-def _phase_failures(phase: str, attempted: list[dict], failed: list[dict]) -> str | None:
+def _phase_failures(
+    phase: str,
+    attempted: list[dict],
+    failed: list[dict],
+) -> str | None:
     """The FAIL reason for a phase's results, or None when the phase is clean."""
     if phase == "oversized":
         # Every attempted oversized page must be rejected, never stored.

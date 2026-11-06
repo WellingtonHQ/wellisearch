@@ -136,34 +136,39 @@ class BrowserPool:
         """Retire leaked pages and aged idle contexts before admitting more work."""
         try:
             async with self._lock:
-                key = key or self._key_of(ctx)
-                if key is None:
-                    return
-                self._in_use[key] = max(0, self._in_use.get(key, 0) - 1)
-                if self._contexts.get(key) is not ctx:
-                    if not self._in_use[key]:
-                        current = self._contexts.get(key)
-                        if current is not None and key in self._retiring:
-                            await self._retire(key, current)
-                        self._available.notify_all()
-                    return
-                self._uses[key] = self._uses.get(key, 0) + 1
-                s = get_settings()
-                expired = (
-                    self._uses[key] >= s.CRAWL_BROWSER_MAX_USES
-                    or time.monotonic() - self._created_at.get(key, time.monotonic())
-                    >= s.CRAWL_BROWSER_MAX_AGE_S
-                )
-                if expired:
-                    self._retiring.add(key)
-                if self._in_use[key]:
-                    return
-                self._in_use.pop(key, None)
-                if key in self._retiring or not await self._close_idle_pages(ctx, self._anchors.get(key)):
-                    await self._retire(key, ctx)
-                self._available.notify_all()
+                await self._release_locked(ctx, key)
         finally:
             self._sem.release()
+
+    async def _release_locked(self, ctx: BrowserContext, key: str | None) -> None:
+        """Apply one release under the pool lock."""
+        key = key or self._key_of(ctx)
+        if key is None:
+            return
+        self._in_use[key] = max(0, self._in_use.get(key, 0) - 1)
+        if self._contexts.get(key) is not ctx:
+            if self._in_use[key]:
+                return
+            current = self._contexts.get(key)
+            if current is not None and key in self._retiring:
+                await self._retire(key, current)
+            self._available.notify_all()
+            return
+        self._uses[key] = self._uses.get(key, 0) + 1
+        s = get_settings()
+        expired = (
+            self._uses[key] >= s.CRAWL_BROWSER_MAX_USES
+            or time.monotonic() - self._created_at.get(key, time.monotonic())
+            >= s.CRAWL_BROWSER_MAX_AGE_S
+        )
+        if expired:
+            self._retiring.add(key)
+        if self._in_use[key]:
+            return
+        self._in_use.pop(key, None)
+        if key in self._retiring or not await self._close_idle_pages(ctx, self._anchors.get(key)):
+            await self._retire(key, ctx)
+        self._available.notify_all()
 
     async def _invalidate(
         self,
@@ -256,15 +261,7 @@ class BrowserPool:
                     timeout=get_settings().CRAWL_BROWSER_LAUNCH_TIMEOUT_S,
                 )
             except BaseException as error:
-                self._anchors.pop(key, None)
-                self._reaped.discard(key)
-                if (
-                    isinstance(error, (TimeoutError, asyncio.CancelledError))
-                    or (self._pw_manager is not None and self._pw is None)
-                ):
-                    await complete_cleanup(self._reset_resources())
-                await complete_cleanup(asyncio.to_thread(_reap_orphans, _profile_dir(key, self._prefix)))
-                self._launch_failed_at[key] = time.monotonic()
+                await self._fail_launch(key, error)
                 raise
             self._launch_failed_at.pop(key, None)
             self._contexts[key] = ctx
@@ -273,6 +270,18 @@ class BrowserPool:
             self._uses[key] = 0
             self._in_use[key] = self._in_use.get(key, 0) + 1
             return ctx
+
+    async def _fail_launch(self, key: str, error: BaseException) -> None:
+        """Record a failed launch, resetting the pool when its transport died."""
+        self._anchors.pop(key, None)
+        self._reaped.discard(key)
+        if (
+            isinstance(error, (TimeoutError, asyncio.CancelledError))
+            or (self._pw_manager is not None and self._pw is None)
+        ):
+            await complete_cleanup(self._reset_resources())
+        await complete_cleanup(asyncio.to_thread(_reap_orphans, _profile_dir(key, self._prefix)))
+        self._launch_failed_at[key] = time.monotonic()
 
     async def _close_idle_pages(
         self,
@@ -289,13 +298,21 @@ class BrowserPool:
             return False
         return True
 
-    async def _close_pages(self, ctx: BrowserContext, anchor: Page | None) -> None:
+    async def _close_pages(
+        self,
+        ctx: BrowserContext,
+        anchor: Page | None,
+    ) -> None:
         """Close all non-anchor tabs as one deadline-bounded operation."""
         for page in list(getattr(ctx, "pages", [])):
             if page is not anchor:
                 await page.close()
 
-    async def _retire(self, key: str, ctx: BrowserContext) -> None:
+    async def _retire(
+        self,
+        key: str,
+        ctx: BrowserContext,
+    ) -> None:
         """Remove one tracked context and finish closing its process tree."""
         self._contexts.pop(key, None)
         self._anchors.pop(key, None)
@@ -337,19 +354,12 @@ class BrowserPool:
     ) -> None:
         """Best-effort stop for a Playwright driver being retired."""
         try:
-            if playwright is not None:
-                stop = playwright.stop()
-            elif manager is not None:
-                stop_manager = getattr(manager, "__aexit__", None)
-                if stop_manager is None:
-                    return
-                stop = stop_manager(None, None, None)
-            else:
-                return
-            await bounded_operation(
-                stop,
-                timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S,
-            )
+            stop = self._stop_call(playwright, manager)
+            if stop is not None:
+                await bounded_operation(
+                    stop,
+                    timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S,
+                )
         except TimeoutError:
             log.warning("stop retired playwright driver timed out")
         except Exception as e:
@@ -361,13 +371,18 @@ class BrowserPool:
             connection = getattr(implementation, "_connection", None)
             if connection is None:
                 connection = getattr(manager, "_connection", None)
-            transport = getattr(connection, "_transport", None)
-            process = getattr(transport, "_proc", None)
-            if process is not None and process.returncode is None:
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
+            process = getattr(getattr(connection, "_transport", None), "_proc", None)
+            _kill_transport_process(process)
+
+    def _stop_call(self, playwright: Playwright | None, manager: Any) -> Any:
+        """The stop callable for a retiring driver, or None when there is none."""
+        if playwright is not None:
+            return playwright.stop()
+        if manager is not None:
+            stop_manager = getattr(manager, "__aexit__", None)
+            if stop_manager is not None:
+                return stop_manager(None, None, None)
+        return None
 
     async def _evict_lru_if_needed(self) -> None:
         """Evict the least recently used idle context when at capacity."""
@@ -457,29 +472,20 @@ async def close_pools() -> None:
     _pool = _cf_pool = None
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _sanitize_key(key: str) -> str:
-    """Filesystem-safe profile dir name from a profile key."""
-    return re.sub(r"[^A-Za-z0-9._-]", "_", key)
-
-
 def is_closed_context_error(error: Exception) -> bool:
     """True when Playwright reports that a page, context, browser, or transport closed."""
     message = str(error).lower()
     return any(
         marker in message
         for marker in (
-            "transport closed",
-            "handler is closed",
-            "target page, context or browser has been closed",
             "browser has been closed",
             "browsercontext has been closed",
             "context has been closed",
-            "target closed",
             "failed to open a new tab",
+            "handler is closed",
+            "target closed",
+            "target page, context or browser has been closed",
+            "transport closed",
         )
     )
 
@@ -488,6 +494,15 @@ def is_transport_closed_error(error: Exception) -> bool:
     """True for errors showing that the shared Playwright command transport died."""
     message = str(error).lower()
     return "transport closed" in message or "handler is closed" in message
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _sanitize_key(key: str) -> str:
+    """Filesystem-safe profile dir name from a profile key."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", key)
 
 
 def _profile_dir(key: str, prefix: str = "") -> str:
@@ -506,12 +521,13 @@ def _profile_dir(key: str, prefix: str = "") -> str:
 def _remove_singleton_lock(profile_dir: str) -> None:
     """Drop a stale SingletonLock so a fresh launch can acquire the profile."""
     lock = os.path.join(profile_dir, "SingletonLock")
-    if os.path.islink(lock) or os.path.exists(lock):
-        try:
-            os.unlink(lock)
-            log.warning("removed stale profile SingletonLock %s", profile_dir)
-        except OSError:
-            pass
+    if not os.path.islink(lock) and not os.path.exists(lock):
+        return
+    try:
+        os.unlink(lock)
+        log.warning("removed stale profile SingletonLock %s", profile_dir)
+    except OSError:
+        pass
 
 
 def _is_orphan_chromium(pid: str, marker: str) -> bool:
@@ -524,12 +540,52 @@ def _is_orphan_chromium(pid: str, marker: str) -> bool:
     return marker in cmd.split("\0") and "chrom" in cmd
 
 
+def _parent_of(pid: str) -> str | None:
+    """Parent pid from /proc/<pid>/stat, or None when it cannot be read."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
+            return f.read().rsplit(")", 1)[1].split()[1]
+    except (IndexError, OSError):
+        return None
+
+
+def _process_parents(pids: list[str]) -> dict[str, str]:
+    """Parent pid per live pid, skipping the ones that cannot be read."""
+    parents: dict[str, str] = {}
+    for pid in pids:
+        parent = _parent_of(pid)
+        if parent is not None:
+            parents[pid] = parent
+    return parents
+
+
+def _descendants(roots: set[str], parents: dict[str, str]) -> set[str]:
+    """roots plus every process descended from them (via parent links)."""
+    targets = roots.copy()
+    while True:
+        children = {pid for pid, parent in parents.items() if parent in targets}
+        if children <= targets:
+            break
+        targets.update(children)
+    return targets
+
+
 def _kill_pid(pid: str) -> None:
     """SIGKILL a pid, logging when the orphan is reaped."""
     try:
         os.kill(int(pid), signal.SIGKILL)
         log.warning("reaped orphaned chromium pid=%s", pid)
     except OSError:
+        pass
+
+
+def _kill_transport_process(process: Any) -> None:
+    """Best-effort kill of a live driver process."""
+    if process is None or process.returncode is not None:
+        return
+    try:
+        process.kill()
+    except ProcessLookupError:
         pass
 
 
@@ -544,19 +600,6 @@ def _reap_orphans(profile_dir: str) -> None:
         marker = f"--user-data-dir={profile_dir}"
         pids = [p for p in os.listdir("/proc") if p.isdigit()]
         roots = {p for p in pids if _is_orphan_chromium(p, marker)}
-        parents = {}
-        for pid in pids:
-            try:
-                with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
-                    parents[pid] = f.read().rsplit(")", 1)[1].split()[1]
-            except (IndexError, OSError):
-                continue
-        targets = roots.copy()
-        while True:
-            children = {pid for pid, parent in parents.items() if parent in targets}
-            if children <= targets:
-                break
-            targets.update(children)
-        for pid in targets:
+        for pid in _descendants(roots, _process_parents(pids)):
             _kill_pid(pid)
     _remove_singleton_lock(profile_dir)

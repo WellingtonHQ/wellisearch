@@ -192,17 +192,28 @@ class _ProcessingPool:
         """Wait without occupying a thread or adding an executor work item."""
         loop = asyncio.get_running_loop()
         while True:
-            with self._lock:
-                if self._active < self._workers:
-                    self._active += 1
-                    return
-                waiter = loop.create_future()
-                self._waiters.add(waiter)
+            waiter = self._try_acquire(loop)
+            if waiter is None:
+                return
             try:
                 await waiter
             finally:
-                with self._lock:
-                    self._waiters.discard(waiter)
+                self._forget_waiter(waiter)
+
+    def _try_acquire(self, loop: asyncio.AbstractEventLoop) -> asyncio.Future | None:
+        """Take a slot if one is free; else register and return a waiter future."""
+        with self._lock:
+            if self._active < self._workers:
+                self._active += 1
+                return None
+            waiter = loop.create_future()
+            self._waiters.add(waiter)
+            return waiter
+
+    def _forget_waiter(self, waiter: asyncio.Future) -> None:
+        """Drop a settled waiter from the pool's waiter set."""
+        with self._lock:
+            self._waiters.discard(waiter)
 
     def _finished(
         self,
@@ -234,8 +245,9 @@ class _ProcessingPool:
 
 def _consume_processing_error(future: asyncio.Future) -> None:
     """Retrieve detached worker errors so a cancelled caller leaves no warning."""
-    if not future.cancelled():
-        future.exception()
+    if future.cancelled():
+        return
+    future.exception()
 
 
 def _finish_processing_result(waiter: asyncio.Future, future: Future) -> None:
@@ -250,8 +262,9 @@ def _finish_processing_result(waiter: asyncio.Future, future: Future) -> None:
 
 def _wake_processing_waiter(waiter: asyncio.Future) -> None:
     """Notify one admission waiter unless it has already been cancelled/notified."""
-    if not waiter.done():
-        waiter.set_result(None)
+    if waiter.done():
+        return
+    waiter.set_result(None)
 
 
 def _process_rendered(

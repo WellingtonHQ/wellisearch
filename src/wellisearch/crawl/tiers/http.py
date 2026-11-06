@@ -20,7 +20,9 @@ log = logging.getLogger("wellisearch.crawl.tiers.http")
 # libcurl's explicit write-abort sentinel; a short/zero return is ignored by
 # older curl_cffi write-callback wrappers.
 _WRITE_ERROR = 0xFFFFFFFF
-_TEXT_APPLICATION_TYPES = ("application/json", "application/ld+json", "application/xhtml+xml", "application/xml")
+_TEXT_APPLICATION_TYPES = (
+    "application/json", "application/ld+json", "application/xhtml+xml", "application/xml",
+)
 _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 _CHARSET_RE = re.compile(r"\bcharset\s*=\s*[\"']?([\w.-]+)", re.IGNORECASE)
 _TITLE_OPEN_RE = re.compile(r"<title\b[^<>]*>", re.IGNORECASE)
@@ -70,15 +72,7 @@ class HttpTier:
                     verify=not s.CRAWL_IGNORE_SSL_ERRORS,
                 )
             except Exception as error:
-                if body.error is not None:
-                    raise PayloadRejectedError(body.error) from None
-                if getattr(error, "code", None) == CurlECode.FILESIZE_EXCEEDED:
-                    # Recent libcurl versions enforce MAXFILESIZE on decoded
-                    # bytes before our callback sees the chunk crossing the cap.
-                    raise PayloadRejectedError(
-                        f"HTML exceeds CRAWL_HTML_MAX_BYTES ({s.CRAWL_HTML_MAX_BYTES} bytes)"
-                    ) from None
-                raise
+                _translate_download_error(body, error, s.CRAWL_HTML_MAX_BYTES)
         html = body.text()
         ms = int((time.monotonic() - start) * 1000)
         return Rendered(
@@ -122,18 +116,22 @@ class _HtmlDownload:
             self._status = int(chunk.split(maxsplit=2)[1])
         elif not chunk.strip():
             return self._finish_headers(len(chunk))
-        else:
-            name, _, value = chunk.partition(b":")
-            name = name.strip().lower()
-            if name == b"content-type":
-                self.content_type = value.strip().decode("latin-1")
-            elif name == b"content-length" and value.strip().isdigit():
-                # Avoid converting arbitrarily long untrusted decimal strings.
-                length = value.strip().lstrip(b"0") or b"0"
-                self._content_length = int(length) if len(length) <= 20 else self.max_bytes + 1
-            elif name == b"location":
-                self._has_location = bool(value.strip())
+        name, _, value = chunk.partition(b":")
+        self._record_header(name.strip().lower(), value)
         return len(chunk)
+
+    def _record_header(self, name: bytes, value: bytes) -> None:
+        """Record one content-type/length/location header of the current block."""
+        if name == b"content-type":
+            self.content_type = value.strip().decode("latin-1")
+            return
+        if name == b"content-length" and value.strip().isdigit():
+            # Avoid converting arbitrarily long untrusted decimal strings.
+            length = value.strip().lstrip(b"0") or b"0"
+            self._content_length = int(length) if len(length) <= 20 else self.max_bytes + 1
+            return
+        if name == b"location":
+            self._has_location = bool(value.strip())
 
     def write(self, chunk: bytes) -> int:
         """Abort before retaining a chunk that crosses the decompressed limit."""
@@ -165,6 +163,25 @@ class _HtmlDownload:
         elif self._content_length is not None and self._content_length > self.max_bytes:
             self.error = f"HTML exceeds CRAWL_HTML_MAX_BYTES ({self.max_bytes} bytes)"
         return _WRITE_ERROR if self.error is not None else size
+
+
+def _translate_download_error(
+    body: _HtmlDownload,
+    error: Exception,
+    max_bytes: int,
+) -> None:
+    """Re-raise a bounded download failure as PayloadRejectedError, else re-raise."""
+    from curl_cffi import CurlECode
+
+    if body.error is not None:
+        raise PayloadRejectedError(body.error) from None
+    if getattr(error, "code", None) == CurlECode.FILESIZE_EXCEEDED:
+        # Recent libcurl versions enforce MAXFILESIZE on decoded
+        # bytes before our callback sees the chunk crossing the cap.
+        raise PayloadRejectedError(
+            f"HTML exceeds CRAWL_HTML_MAX_BYTES ({max_bytes} bytes)"
+        ) from None
+    raise
 
 
 # ---------------------------------------------------------------------------

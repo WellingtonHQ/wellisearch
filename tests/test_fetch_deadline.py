@@ -15,23 +15,31 @@ import wellisearch.queue as queue_mod
 class FakeDB:
     """In-memory stand-in for the db helpers _resolve_page uses."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Start with an empty enqueue log and no in-flight challenge or pause."""
         self.enqueued = []
         self.challenge_in_flight = False
         self.paused = False
 
     async def page_get(self, url: str) -> dict | None:
+        """Report the URL as unindexed, forcing the on-demand crawl path."""
         return None  # not indexed yet: force the on-demand crawl path
 
     async def worker_paused(self) -> bool:
+        """Report the fake worker-pause flag."""
         return self.paused
 
     async def queue_challenge_in_flight(self, url: str) -> bool:
+        """Report whether a CF challenge is already in flight."""
         return self.challenge_in_flight
 
     async def queue_enqueue(
-        self, url: str, source: str = "fetch", lane: str | None = None
+        self,
+        url: str,
+        source: str = "fetch",
+        lane: str | None = None,
     ) -> bool:
+        """Record the enqueue and report success."""
         self.enqueued.append((url, source, lane))
         return True
 
@@ -43,7 +51,10 @@ _CANCEL_S = type(_REAL_SETTINGS)(FETCH_TIMEOUT_S=5.0, FETCH_PROBE_TIMEOUT_S=0.1)
 
 URL = "https://example.com/slow"
 
-# --- save module globals we monkeypatch -------------------------------------
+# ---------------------------------------------------------------------------
+# Save Module Globals We Monkeypatch
+# ---------------------------------------------------------------------------
+
 _real_db = fetch_mod.db
 _real_crawl_url = fetch_mod.crawl_url
 _real_get_settings = fetch_mod.get_settings
@@ -54,6 +65,7 @@ kicks: list[bool] = []
 
 
 def _count_kick() -> None:
+    """Record that the worker kick fired."""
     kicks.append(True)
 
 
@@ -65,6 +77,7 @@ _records: list[str] = []
 
 class _Capture(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
+        """Append the record's message to the captured log list."""
         _records.append(record.getMessage())
 
 
@@ -73,11 +86,11 @@ fetch_log.addHandler(_capture)
 fetch_log.setLevel(logging.INFO)  # capture INFO records too (grace expiry, stored-while-gone)
 
 # ---------------------------------------------------------------------------
-# Deadline path: crawl slower than FETCH_TIMEOUT_S -> timeout hint + re-enqueue
+# Deadline Path: Crawl Slower Than FETCH_TIMEOUT_S -> Timeout Hint + Re-Enqueue
 # ---------------------------------------------------------------------------
 
-
 async def failing_slow_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Sleep past the 0.3 s deadline, then fail with a simulated tier error."""
     await asyncio.sleep(0.6)  # longer than the 0.3 s deadline
     raise crawler.CrawlError(url, "simulated tier failure after client gave up")
 
@@ -89,7 +102,9 @@ fetch_mod.crawl_url = failing_slow_crawl
 fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
-async def scenario_deadline():
+async def scenario_deadline() -> Exception | None:
+    """Resolve the slow URL, capture the raised error, then let the background
+    crawl's done-callback fire in-loop."""
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL)
@@ -113,11 +128,11 @@ assert any(
 print("OK deadline path (hint + re-enqueue + kick + background watch)")
 
 # ---------------------------------------------------------------------------
-# Cancel path: client disconnect must propagate as CancelledError, not replaced
+# Cancel Path: Client Disconnect Must Propagate As CancelledError, Not Replaced
 # ---------------------------------------------------------------------------
 
-
 async def slow_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Succeed after 1.0 s, long enough that a cancellation lands mid-wait."""
     await asyncio.sleep(1.0)  # long enough that cancellation lands mid-wait
     return {"url": url}
 
@@ -129,7 +144,8 @@ fetch_mod.crawl_url = slow_crawl
 fetch_mod.get_settings = lambda: _CANCEL_S  # long deadline: cancel must win, not the clock
 
 
-async def scenario_cancel():
+async def scenario_cancel() -> str:
+    """Cancel the in-flight fetch and report whether CancelledError survived."""
     fetch_task = asyncio.create_task(fetch_mod._resolve_page(URL))
     await asyncio.sleep(0.05)  # _resolve_page is inside its deadline wait now
     fetch_task.cancel()
@@ -148,10 +164,9 @@ assert result == "cancelled", f"cancellation was swallowed/replaced: {result!r}"
 print("OK cancel path (CancelledError preserved)")
 
 # ---------------------------------------------------------------------------
-# Grace window: an orphan is stopped after FETCH_ORPHAN_GRACE_S, freeing slot + dedup;
-# a probe that finishes inside its grace window stores normally (no cancel)
+# Grace Window: An Orphan Is Stopped After FETCH_ORPHAN_GRACE_S, Freeing Slot + Dedup;
+# A Probe That Finishes Inside Its Grace Window Stores Normally (No Cancel)
 # ---------------------------------------------------------------------------
-
 
 URL_G1 = "https://example.com/hang"      # never finishes -> the grace timer must stop it
 URL_G2 = "https://example.com/finishes"  # past the deadline but inside grace -> let it store
@@ -159,6 +174,7 @@ hang_cancelled: list[bool] = []
 
 
 async def grace_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Succeed past the deadline for the finishing URL; hang the other until cancelled."""
     if url == URL_G2:
         await asyncio.sleep(0.5)  # past the 0.3 s deadline but inside the 1.0 s grace
         return {"url": url}
@@ -180,7 +196,8 @@ fetch_mod.crawl_url = grace_crawl
 fetch_mod.get_settings = lambda: _GRACE_S
 
 
-async def scenario_grace(url: str):
+async def scenario_grace(url: str) -> Exception | None:
+    """Resolve the given URL, capture the raised error, then let the grace window elapse."""
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(url)
@@ -200,7 +217,9 @@ assert any(
 assert queue_mod.INFLIGHT.urls() == [], f"dedup entry survived its grace expiry: {queue_mod.INFLIGHT.urls()}"
 
 err_g2 = asyncio.run(scenario_grace(URL_G2))
-assert isinstance(err_g2, crawler.CrawlError), f"deadline must still raise for {URL_G2}: {type(err_g2)}: {err_g2}"
+assert isinstance(err_g2, crawler.CrawlError), (
+    f"deadline must still raise for {URL_G2}: {type(err_g2)}: {err_g2}"
+)
 assert "timed out" in str(err_g2), f"timeout hint missing: {str(err_g2)!r}"
 assert hang_cancelled == [True], "grace timer cancelled a probe that finished inside its window"
 assert any(
@@ -209,14 +228,15 @@ assert any(
 assert not any(URL_G2 in r for r in _records if r.startswith("orphan grace expired")), (
     "grace expiry logged for a probe that finished inside its window"
 )
-assert db3.enqueued == [(URL_G1, "fetch", "fast"), (URL_G2, "fetch", "fast")], f"both deadlines must re-queue: {db3.enqueued}"
+assert db3.enqueued == [(URL_G1, "fetch", "fast"), (URL_G2, "fetch", "fast")], (
+    f"both deadlines must re-queue: {db3.enqueued}"
+)
 print("OK grace window (orphan stopped + dedup freed; in-window finish untouched)")
 
 # ---------------------------------------------------------------------------
-# Paused worker: fetch-sourced queue rows won't run until resume, so error
-# text must not quote a seconds-based retry ETA (callers would tight-loop)
+# Paused Worker: Fetch-Sourced Queue Rows Won't Run Until Resume, So Error
+# Text Must Not Quote A Seconds-Based Retry ETA (Callers Would Tight-Loop)
 # ---------------------------------------------------------------------------
-
 
 URL_P = "https://example.com/paused"
 URL_CF = "https://example.com/challenge-paused"
@@ -229,7 +249,9 @@ fetch_mod.crawl_url = failing_slow_crawl  # slower than the 0.3 s deadline
 fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
-async def scenario_paused_timeout():
+async def scenario_paused_timeout() -> Exception | None:
+    """Resolve the paused URL, capture the raised error, then let the background
+    crawl's done-callback fire in-loop."""
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL_P)
@@ -250,13 +272,15 @@ assert db4.enqueued == [(URL_P, "fetch", "fast")], f"background retry was not en
 assert len(kicks) == kicks_before + 1, f"re-queue must still kick the worker: {kicks}"
 print("OK paused timeout (no seconds ETA; re-queued until resume)")
 
-# --- fast-fail on a pending CF row while paused -----------------------------
-
+# ---------------------------------------------------------------------------
+# Fast-Fail On A Pending CF Row While Paused
+# ---------------------------------------------------------------------------
 
 called_crawls: list[str] = []
 
 
 async def no_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Record the call and succeed without ever crawling."""
     called_crawls.append(url)
     return {"url": url}
 
@@ -270,7 +294,8 @@ fetch_mod.crawl_url = no_crawl
 fetch_mod.get_settings = lambda: _DEADLINE_S
 
 
-async def scenario_paused_fastfail():
+async def scenario_paused_fastfail() -> Exception | None:
+    """Resolve the CF URL against the paused db and capture the raised error."""
     err: Exception | None = None
     try:
         await fetch_mod._resolve_page(URL_CF)
@@ -290,10 +315,12 @@ assert "try again in ~" not in msg_p2, f"seconds-based ETA quoted while indexing
 assert called_crawls == [], f"fast-fail must not start a crawl: {called_crawls}"
 print("OK paused fast-fail (pending CF row; no seconds ETA)")
 
-# --- probe hits a bot-wall while paused -------------------------------------
-
+# ---------------------------------------------------------------------------
+# Probe Hits A Bot-Wall While Paused
+# ---------------------------------------------------------------------------
 
 async def challenge_crawl(url: str, trigger: str = "fetch") -> dict:
+    """Fail immediately with a bot-wall challenge."""
     raise ChallengeDetected(url)
 
 
@@ -316,6 +343,9 @@ assert db6.enqueued == [(URL_CF, "fetch", "cf")], f"challenge was not routed to 
 print("OK paused probe bot-wall (CF-routed; no seconds ETA)")
 
 # ---------------------------------------------------------------------------
+# Restore Module Globals
+# ---------------------------------------------------------------------------
+
 fetch_mod.db = _real_db
 queue_mod.db = _real_queue_db
 queue_mod.kick_worker = _real_kick_worker

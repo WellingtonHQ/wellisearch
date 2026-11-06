@@ -233,17 +233,7 @@ async def fetch_pages(
             "timing": _timing(),
         }
 
-    budget: int | None
-    if max_chars is _OMITTED:
-        budget = s.FETCH_MAX_CHARS or None
-    else:
-        budget = max_chars if max_chars and max_chars > 0 else None  # 0/None = unlimited
-
-    per_page: int | None
-    if per_page_chars is _OMITTED:
-        per_page = s.FETCH_PER_PAGE_CHARS or None
-    else:
-        per_page = per_page_chars if per_page_chars and per_page_chars > 0 else None
+    budget, per_page = _resolve_limits(max_chars, per_page_chars)
 
     # --- resolve all pages in parallel (in-flight-deduped)
     resolved, failed = await _resolve_all(clean)
@@ -295,6 +285,14 @@ async def fetch_pages(
         "pages": pages_out + failed + bad,
         "timing": timing,
     }
+
+
+async def shutdown_probes() -> None:
+    """Stop and join adopted fetch probes before closing browser pools or the DB."""
+    tasks = list(_probe_tasks)
+    for task in tasks:
+        task.cancel()
+    await complete_cleanup(_join_probes(tasks))
 
 
 # ---------------------------------------------------------------------------
@@ -454,13 +452,16 @@ def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
     grace = get_settings().FETCH_ORPHAN_GRACE_S
 
     def _expire() -> None:
-        if not task.done():
-            log.info("orphan grace expired; stopping abandoned fetch crawl for %s", url)
-            task.cancel()
+        """Grace-window expiry: cancel the orphan if it is still running."""
+        if task.done():
+            return
+        log.info("orphan grace expired; stopping abandoned fetch crawl for %s", url)
+        task.cancel()
 
     timer = asyncio.get_running_loop().call_later(grace, _expire)
 
     def _watched(t: asyncio.Task[dict]) -> None:
+        """Done-callback: drop the grace timer and log how the orphan ended."""
         timer.cancel()
         try:
             exc = t.exception()
@@ -475,14 +476,6 @@ def _adopt_orphan(task: asyncio.Task[dict], url: str) -> None:
             )
 
     task.add_done_callback(_watched)
-
-
-async def shutdown_probes() -> None:
-    """Stop and join adopted fetch probes before closing browser pools or the DB."""
-    tasks = list(_probe_tasks)
-    for task in tasks:
-        task.cancel()
-    await complete_cleanup(_join_probes(tasks))
 
 
 async def _join_probes(tasks: list[asyncio.Task]) -> None:
@@ -524,6 +517,25 @@ def _friendly_error(e: Exception) -> str:
     if isinstance(e, PoolTimeout):
         return "database is busy (no free connection); try again in a few seconds"
     return str(e)[:ERROR_MAX_LEN]
+
+
+def _resolve_limits(
+    max_chars: int | None,
+    per_page_chars: int | None,
+) -> tuple[int | None, int | None]:
+    """Effective char limits for a bulk fetch: a not-provided sentinel (or a
+    zero/negative value) falls back to the config default; 0/None mean
+    unlimited. Returns (budget, per_page)."""
+    s = get_settings()
+    if max_chars is _OMITTED:
+        budget = s.FETCH_MAX_CHARS or None
+    else:
+        budget = max_chars if max_chars and max_chars > 0 else None  # 0/None = unlimited
+    if per_page_chars is _OMITTED:
+        per_page = s.FETCH_PER_PAGE_CHARS or None
+    else:
+        per_page = per_page_chars if per_page_chars and per_page_chars > 0 else None
+    return budget, per_page
 
 
 def _validate_urls(urls: list[str]) -> tuple[list[str], list[dict]]:

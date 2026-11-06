@@ -112,6 +112,7 @@ API_PAGES_MAX_LIMIT = 100  # /api/pages limit cap
 API_PAGES_DEFAULT_LIMIT = 20  # /api/pages default limit
 API_LOGS_MAX_LIMIT = 500   # /api/logs* limit cap
 API_LOGS_DEFAULT_LIMIT = 50  # /api/logs* default limit
+API_LOGS_MERGED_DEFAULT_LIMIT = 200  # /api/logs (merged stream) default limit
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +514,7 @@ async def api_window(secs: int = WINDOW_MAX_SECS) -> Any:
 @app.get("/api/logs")
 async def api_logs(
     secs: int = WINDOW_MAX_SECS,
-    limit: int = 200,
+    limit: int = API_LOGS_MERGED_DEFAULT_LIMIT,
     q: str = "",
 ) -> Any:
     """Merged windowed log stream: crawls + searches + events, ts DESC.
@@ -653,12 +654,7 @@ async def _auth(request: Request, call_next: Callable[[Request], Awaitable[Respo
     key = s.WELLISEARCH_API_KEY
     path = request.url.path
     if key and (path.startswith("/api") or path.startswith("/mcp")):
-        token: str | None = None
-        authz = request.headers.get("authorization", "")
-        if authz.lower().startswith("bearer "):
-            token = authz[len("bearer "):].strip()
-        elif request.headers.get("x-api-key"):
-            token = request.headers["x-api-key"].strip()
+        token = _extract_token(request)
         if token is None or not hmac.compare_digest(token, key):
             return JSONResponse(
                 {"error": "unauthorized — set Authorization: Bearer <WELLISEARCH_API_KEY>"},
@@ -674,6 +670,17 @@ def _negotiate(format_param: str | None, request: Request) -> str:
         return resolve_format(format_param, request.headers.get("accept"))
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+def _extract_token(request: Request) -> str | None:
+    """The bearer token from Authorization or x-api-key, else None."""
+    authz = request.headers.get("authorization", "")
+    if authz.lower().startswith("bearer "):
+        return authz[len("bearer "):].strip()
+    api_key = request.headers.get("x-api-key")
+    if api_key:
+        return api_key.strip()
+    return None
 
 
 def _respond(

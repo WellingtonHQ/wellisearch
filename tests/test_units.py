@@ -101,23 +101,26 @@ assert normalize_url(once) == once, "idempotent"
 print("OK url normalization")
 
 # ---------------------------------------------------------------------------
-# Tier Title Extraction (last <title> wins, matching browser document.title)
+# Tier Title Extraction (Last <title> Wins, Matching Browser document.title)
 # ---------------------------------------------------------------------------
 
-
 class _FakeTitleEl:
-    def __init__(self, text):
+    def __init__(self, text: str) -> None:
+        """Store the title text."""
         self._text = text
 
-    def get_all_text(self):
+    def get_all_text(self) -> str:
+        """Return the stored title text."""
         return self._text
 
 
 class _FakeStealthPage:
-    def __init__(self, texts):
+    def __init__(self, texts: list[str]) -> None:
+        """Store the candidate title texts."""
         self._texts = texts
 
-    def css(self, selector):
+    def css(self, selector: str) -> list[_FakeTitleEl]:
+        """Answer the "title" query with one fake title element per stored text."""
         assert selector == "title"
         return [_FakeTitleEl(t) for t in self._texts]
 
@@ -193,7 +196,7 @@ assert not trunc and text == "x" * 100
 print("OK per-page trim")
 
 # ---------------------------------------------------------------------------
-# Timing Header (feature: response timing)
+# Timing Header (Feature: Response Timing)
 # ---------------------------------------------------------------------------
 
 # format_timing: None/empty -> no line
@@ -303,7 +306,7 @@ assert "Time:" not in md, md
 print("OK render_fetch_pages_markdown timing")
 
 # ---------------------------------------------------------------------------
-# URL Filter (garbage URL rejection)
+# URL Filter (Garbage URL Rejection)
 # ---------------------------------------------------------------------------
 
 # binary / non-page files must be rejected
@@ -359,17 +362,16 @@ from wellisearch.crawl.results import CrawlResult  # noqa: E402
 from wellisearch.crawler import failure_detail  # noqa: E402
 
 
-def _result(attempts):
+def _result(attempts: list[dict]) -> CrawlResult:
+    """Build a failed CrawlResult around the given attempts."""
     return CrawlResult(ok=False, title=None, md="", tier="browser", ms=1, attempts=attempts)
 
 
 d = failure_detail(
-    _result(
-        [
-            {"tier": "http", "error": "ssl.SSLCertVerificationError: certificate has expired"},
-            {"tier": "browser", "error": "botwall: turnstile-challenge", "status": 403},
-        ]
-    )
+    _result([
+        {"tier": "http", "error": "ssl.SSLCertVerificationError: certificate has expired"},
+        {"tier": "browser", "error": "botwall: turnstile-challenge", "status": 403},
+    ])
 )
 assert d.startswith("http: ssl.SSLCertVerificationError"), d
 assert "(http 403)" in d, d
@@ -390,7 +392,7 @@ assert failure_detail(_result([])) == "all tiers failed or empty markdown"
 print("OK failure detail")
 
 # ---------------------------------------------------------------------------
-# Search Serving Policies (search_web auto-mode helpers)
+# Search Serving Policies (search_web Auto-Mode Helpers)
 # ---------------------------------------------------------------------------
 
 # _registrable_domain: www stripping, plain host, two-part TLDs, garbage in
@@ -408,7 +410,7 @@ assert _registrable_domain("not a url") == ""
 assert _registrable_domain("") == ""
 
 # _is_job_board: host[/path] prefix matching, subdomains, path boundaries
-boards = ("linkedin.com/jobs", "indeed.com")
+boards = ("indeed.com", "linkedin.com/jobs")
 assert _is_job_board("https://www.linkedin.com/jobs/view/123?refId=x", boards)
 assert _is_job_board("https://uk.linkedin.com/jobs/search?keywords=a", boards), \
     "subdomain of listed host matches"
@@ -422,7 +424,7 @@ assert _is_job_board("https://www.glassdoor.com/job/listings", ("glassdoor.com/J
     "paths match case-insensitively"
 
 # _job_intent: word-boundary match on the configured terms
-terms = ("job", "jobs", "hiring", "open roles", "careers")
+terms = ("careers", "hiring", "job", "jobs", "open roles")
 assert _job_intent("principal software engineer jobs", terms)
 assert not _job_intent("Transitioning from Staff to Principal Software Engineer", terms), \
     "career-advice query is not job intent"
@@ -451,7 +453,7 @@ assert not _passes_local_gate(pen_board[0]), \
 
 # _cap_per_domain: first N per registrable domain kept in order
 rows = [{"url": f"https://www.linkedin.com/jobs/view/{i}"} for i in range(5)] + [
-    {"url": f"https://{d}/a"} for d in ("graphapp.dev", "byjlw.com", "reddit.com")
+    {"url": f"https://{d}/a"} for d in ("byjlw.com", "graphapp.dev", "reddit.com")
 ]
 capped = _cap_per_domain(rows, 2)
 assert len(capped) == 5, [r["url"] for r in capped]

@@ -115,7 +115,7 @@ async def store_page(
         page_params = (url, title, domain, markdown, digest, s.EMBED_MODEL, title, domain)
     else:
         # Re-embed only: nothing was fetched from the URL, so crawl-time values
-        # (last_crawled, last_status, crawl_count) keep their stored values.
+        # (crawl_count, last_crawled, last_status) keep their stored values.
         page_sql = """
             INSERT INTO pages
               (url, title, domain, fit_markdown, content_hash, embedding_model)
