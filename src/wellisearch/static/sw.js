@@ -1,7 +1,7 @@
 // wellisearch service worker: app-shell caching only.
 // The dashboard polls /api/* and /health every five seconds, so those
 // requests always go straight to the network and are never cached.
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL_CACHE = `wellisearch-shell-${VERSION}`;
 const SHELL = [
   "/",

@@ -451,10 +451,10 @@ function renderProviders(prov) {
       <td data-label="status">${status}</td>
       <td class="num" data-label="quota">${used}${limit ? " / " + limit : ""}</td>
       <td data-label="usage"><div class="bar"><div class="${over ? "over" : ""}" style="width:${pct}%"></div></div></td>
-      <td class="num" data-label="limit"><input type="number" min="0" placeholder="env" style="width:90px"
+      <td class="num" data-label="limit"><span><input type="number" min="0" placeholder="env" style="width:90px"
           value="${limVal === "" ? "" : (limVal ?? "")}"
           onchange="setLimit('${esc(p.name)}', this)">
-          <span class="muted">${p.limit_default ? "env:" + p.limit_default : "no env limit"}</span></td>
+          <span class="muted">${p.limit_default ? "env:" + p.limit_default : "no env limit"}</span></span></td>
       <td data-label="served">${p.last_served ? ts(p.last_served) : "—"}</td>
       <td class="muted clip-220" data-label="error" title="${esc(p.last_error)}">${esc(p.last_error) || "—"}</td>
       <td>
@@ -557,8 +557,8 @@ function renderLog(logs) {
     const info = infoHtml(l.info);
     return `<tr>
       <td class="card-head nowrap">${ts(l.ts)} <span class="muted">(${age(l.ts)})</span></td>
-      <td class="clip-420" data-label="message" title="${esc(l.message)}">${esc(l.message)}</td>
-      <td class="muted clip-340" data-label="info" title="${esc(infoPlain(entries))}">${info || "—"}</td>
+      <td class="clip-420" data-label="message" title="${esc(l.message)}"><span>${esc(l.message)}</span></td>
+      <td class="muted clip-340" data-label="info" title="${esc(infoPlain(entries))}"><span>${info || "—"}</span></td>
     </tr>`;
   }).join("");
   $("#log-title").textContent = "Log (last " + winLabel() + ")";
@@ -615,7 +615,7 @@ function renderRecentQueries(searches, total) {
       : "";
     return `<tr onclick="toggleSearchesRow(${s.id}, event)" style="cursor:pointer">
       <td class="muted">${arrow}</td>
-      <td class="nowrap" data-label="time">${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></td>
+      <td class="nowrap" data-label="time"><span>${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></span></td>
       <td class="card-head clip-420" data-arrow="${arrow}" title="${esc(s.query)}">${esc(s.query)}</td>
       <td data-label="source">${sqSourceTag(s.source)}</td>
       <td class="num" data-label="results">${s.n_results ?? urls.length}</td>
