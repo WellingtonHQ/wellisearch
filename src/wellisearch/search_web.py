@@ -291,7 +291,8 @@ def _candidate_rows(local_rows: list[dict], k: int) -> list[dict]:
     seen = {r.get("url") for r in head}
     similar = [r for r in local_rows if r.get("similarity") is not None]
     similar.sort(key=lambda r: -(r["similarity"]))
-    extra = [r for r in similar if r.get("url") not in seen][: s.SEARCH_TOP_BY_SIM]
+    fresh = [r for r in similar if r.get("url") not in seen]
+    extra = fresh[: s.SEARCH_TOP_BY_SIM]
     return head + extra
 
 
