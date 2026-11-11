@@ -419,31 +419,65 @@ lines = "\n".join(
 
 ## 18. No Nested or Over-Packed Expressions
 
-One expression does one thing. Never nest a comprehension or generator
-expression inside another — not in its iterable, its element expression, or
-its filter — and never pack several logical operations into a single line so
-that it takes re-reading to parse. Break such expressions into separate
-statements with named intermediates, one operation per line. A nested
-comprehension is a violation even when the whole line is short; a long line
-that is a single simple operation is not (that is Rule 6's territory).
+One expression does one thing. If a line takes a second reading to parse,
+split it into separate statements with named intermediates, one operation per
+line. A nested expression is a violation even when the line is short; a long
+line that is a single simple operation is not (that is Rule 6's territory).
 
-An `and`/`or` condition is fine when each side is a single clear operation
-(the `isinstance(x, str) and x.strip()` idiom). It is over-packed when a side
-chains several distinct transforms — a nested `.get`, a type/string
-conversion, a casefold, and a comparison — in which case split it into a
-guard clause plus a named intermediate.
+Check every comprehension/generator line against the two violation classes
+below. When in doubt, split it: a named intermediate is never wrong.
 
-**Do:**
+**A. Nested comprehension/generator — always a violation.** A comprehension or
+generator expression is nested when any of these is true:
+- its iterable, element expression, or filter is itself a comprehension or
+  generator. This includes the common `next(...)` idiom
+  `next((t for t in (f(x) for x in xs) if t is not None), None)` and a list
+  comprehension written over a generator:
+  `[line for line in (f(k) for k in fields) if line is not None]`;
+- it has more than one `for` clause (flattening a nested structure):
+  `[z for x in A for y in B if pred]`;
+- it star-unpacks a generator in its element expression:
+  `[max(a, *(g(x) for x in xs)) for ...]`.
+
+**B. Over-packed single expression — a violation.** One expression doing more
+than one thing on a line:
+- a comprehension combined with another operation on the same line (a slice,
+  `sorted(...)`, a `+`, ...): `[x for x in xs if pred][: n]`;
+- an `and`/`or` side that chains several distinct transforms — a nested
+  `.get`, a type/string conversion, a casefold, a comparison — e.g.
+  `isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting"`.
+  An `and`/`or` whose sides are each a single clear operation is fine (the
+  `isinstance(x, str) and x.strip()` idiom is not a violation).
+
+**Break them up, one operation per line:**
 ```python
+# next((t for t in (f(x) for x in xs) if pred), None)  ->  loop with early return.
+for x in xs:
+    t = f(x)
+    if t is not None:
+        return t
+return None
+
 # Map, then filter: two readable steps.
 addresses = [_location_address(loc) for loc in locs]
 addresses = [a for a in addresses if a is not None]
+
+# Comprehension + slice: name the filtered list, then slice on its own line.
+fresh = [r for r in similar if r.get("url") not in seen]
+extra = fresh[: s.SEARCH_TOP_BY_SIM]
 
 # Per-column widths: compute the inner values in a named step first.
 widths = []
 for i in range(len(cols)):
     col_widths = [len(r[i]) for r in data]
     widths.append(max(len(cols[i]), *col_widths))
+
+# Two-for flattening: plain nested loop, same order.
+urls = []
+for results in phase_results.values():
+    for r in results:
+        if r.get("ok"):
+            urls.append(r["url"])
 
 # Guard clause + named intermediate for a multi-step condition.
 if not isinstance(item, dict):
@@ -453,17 +487,11 @@ if job_type == "jobposting":
     return item
 ```
 
-**Don't:**
-```python
-# Nested generator: map + filter fused into one unreadable line.
-(t for t in (_location_address(l) for l in locs) if t is not None)
-
-# Comprehension nested in a comprehension, with a star-unpacked inner generator.
-widths = [max(len(cols[i]), *(len(r[i]) for r in data)) for i in range(len(cols))]
-
-# Two for-clauses flattening a nested structure in one line.
-[r["url"] for results in phase_results.values() for r in results if r.get("ok")]
-
-# A condition side chaining get + conversion + casefold + comparison.
-if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
-```
+**Not violations — do not reformat these:**
+- a single-level comprehension/generator with one `for` clause, with or without
+  an `if`: `[k for k in keys if k in d]`,
+  `next((p for p in rows if p.get("url") == url), None)`;
+- a `for` statement (not a comprehension) iterating a single-level generator:
+  `for task in (t for t in tasks if not t.done()):`;
+- regular nested `for` loops (statements, not expressions);
+- a short chain that reads as one operation: `open(f).read().split()`.
