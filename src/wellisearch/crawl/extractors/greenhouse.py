@@ -89,7 +89,10 @@ def _job_posting(soup: BeautifulSoup) -> dict | None:
 def _first_job_posting(items: object) -> dict | None:
     """First JobPosting dict among parsed JSON-LD items, else None."""
     for item in items:
-        if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
+        if not isinstance(item, dict):
+            continue
+        job_type = str(item.get("@type", "")).lower()
+        if job_type == "jobposting":
             return item
     return None
 
