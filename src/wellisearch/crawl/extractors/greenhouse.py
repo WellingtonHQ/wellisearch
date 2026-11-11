@@ -144,7 +144,9 @@ def _location_text(addr: dict) -> str | None:
     """'Remote, Nationwide, US' style text from an address dict; None when empty."""
     seen: list[str] = []
     primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
-    candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
+    region = _addr_piece(addr.get("addressRegion"))
+    country = _addr_piece(addr.get("addressCountry"))
+    candidates = (primary, region, country)
     for piece in candidates:
         if piece and piece not in seen:
             seen.append(piece)
