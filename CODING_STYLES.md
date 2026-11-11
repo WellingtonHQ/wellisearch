@@ -53,10 +53,11 @@ async def _drain_queue(deadline: float) -> dict: ...
 
 ## 3. Alphabetical Sorting
 
-Sort collections of equal elements alphabetically — enum members, list
-literals, provider lists, and comment enumerations — unless business logic
-dictates a specific order (e.g. `SEARCH_PROVIDERS = "tavily,brave,exa,youcom"`
-is priority order, not alphabetical). Import ordering is covered by Rule 7.
+Sort collections of equal elements alphabetically: enum members, list
+literals, provider lists, and comment enumerations. The one exception is
+when business logic dictates a specific order (e.g. `SEARCH_PROVIDERS =
+"tavily,brave,exa,youcom"` is priority order, not alphabetical). Import
+ordering is covered by Rule 7.
 
 **Do:**
 ```python
@@ -72,7 +73,7 @@ class CrawlStatus(str, Enum):
 
 ## 4. Function Length
 
-A function should not exceed ~100 lines. If it does, break it into smaller
+A function shouldn't exceed ~100 lines. If it does, break it into smaller
 sub-functions with clear names that describe their purpose.
 
 **Do:**
@@ -113,7 +114,7 @@ async def _log_event(message: str, info: dict | None = None) -> None:
 ## 6. Line Length Cap
 
 Soft cap at **110 characters**; hard cap at **125**. Docstrings, SQL, and URLs
-may approach the hard cap; code should stay under the soft cap — wrap strings
+may approach the hard cap. Code should stay under the soft cap. Wrap strings
 across lines, put function arguments on separate lines, or extract to a variable.
 
 **Do:**
@@ -131,7 +132,7 @@ log.info(
 `from __future__ import annotations` first, then three groups separated by
 blank lines: standard library, third-party packages, local modules (relative
 imports in this package). Sort alphabetically **within each group**, by the
-full import path — so parent-package (`..`) imports come before sibling (`.`)
+full import path, so parent-package (`..`) imports come before sibling (`.`)
 imports. Business logic may dictate a specific order (e.g. a provider priority
 list); that overrides alphabetical.
 
@@ -161,14 +162,14 @@ third-party imports, or leave any group in arbitrary order (e.g. sandwiching
 ## 8. Type Hints Everywhere
 
 Require type hints on all function and class signatures, public and `_prefixed`
-helpers alike. Use modern syntax (`list[str]`, `dict`, `str | None`) — the
+helpers alike. Use modern syntax (`list[str]`, `dict`, `str | None`). The
 project requires Python 3.12+.
 
 **Do:**
 ```python
 async def crawl_url(url: str, trigger: str) -> dict: ...
 
-async def _crawl_and_store(url: str, trigger: str) -> dict: ...  # private — hints required too
+async def _crawl_and_store(url: str, trigger: str) -> dict: ...  # private: hints required too
 ```
 
 ---
@@ -176,7 +177,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict: ...  # private — h
 ## 9. Docstrings
 
 Every module gets a docstring stating its purpose (reference the BLUEPRINT
-section when applicable). Every function gets one too — a one-liner is fine
+section when applicable). Every function gets one too. A one-liner is fine
 for trivial helpers; entry points and multi-step functions get a fuller
 description.
 
@@ -195,7 +196,7 @@ async def tick() -> dict:
 ## 10. Magic Numbers → Settings or Named Constants
 
 Tunable behavior belongs in the `Settings` class in `config.py` (UPPER_CASE
-fields, env-overridable) — never as bare literals at the call site. One-off
+fields, env-overridable), never as bare literals at the call site. One-off
 meaningful numbers that aren't tunables become module-level `UPPER_CASE`
 constants.
 
@@ -243,9 +244,9 @@ async def tick() -> dict:
 ## 12. String Formatting
 
 Use f-strings for building response bodies, SQL-adjacent strings, and user-facing
-text. For **logging calls only**, use lazy `%s`/`%d` formatting with arguments —
-never f-strings, so the interpolation is skipped when the level is disabled and
-no secrets are formatted on the hot path.
+text. For **logging calls only**, use lazy `%s`/`%d` formatting with arguments,
+never f-strings. The interpolation is then skipped when the level is disabled,
+and no secrets are formatted on the hot path.
 
 **Do:**
 ```python
@@ -280,9 +281,9 @@ log.warning("queue crawl failed for %s: %s", url, e)
 
 Separate top-level sections with a three-line divider: a line of dashes, a short
 Title Cased label, and a closing line of dashes (see Rule 2). This is the one
-way to do separators/headings in code — never a single-line `# ----...---- label`.
-Leave exactly **one empty line** between the divider's closing dashes and the
-following element (function, class, variable, etc.).
+way to do separators/headings in code. Never use a single-line `# ----...----
+label`. Leave exactly **one empty line** between the divider's closing dashes
+and the following element (function, class, variable, etc.).
 
 **Do:**
 ```python
@@ -313,8 +314,8 @@ def _helper() -> None: ...
 
 ## 15. Multi-line Call Parameters
 
-When a call spans multiple lines, break immediately after the opening paren —
-no parameter may sit on the same line as `(` — indent the parameters with a
+When a call spans multiple lines, break immediately after the opening paren.
+No parameter may sit on the same line as `(`. Indent the parameters with a
 4-space hanging indent (not aligned to the opening paren) and put the closing
 paren on its own line. The one exception is a literal (dict or list) that opens
 inline right after the opening paren; it stays bound per Rule 17, so its
@@ -341,8 +342,8 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
 ```
 
-**Don't:** first parameter left on the call line while the rest hang below —
-break right after `(`:
+**Don't:** first parameter left on the call line while the rest hang below.
+Break right after `(`:
 ```python
 print(f"  {done}/{total} (ok={stats['ok']} unchanged={stats['unchanged']} "
     f"failed={stats['failed']}) eta={eta_min:.0f}m", flush=True
@@ -379,10 +380,10 @@ def run()
 
 When a literal (dict or list) is passed to a call and its opening bracket sits
 inline on the call line (`name({` / `name([`), keep the pair bound at both ends:
-the closing bracket and the call's closing paren share one line — `})` / `])`
-at the enclosing indent — never two separate lines. Dropping the opening
+the closing bracket and the call's closing paren share one line (`})` / `])`
+at the enclosing indent), never two separate lines. Dropping the opening
 bracket onto its own line under a bare `(` is the mirror-image violation of
-this rule (this takes precedence over Rule 15's "closing paren on its own line"
+this rule (it takes precedence over Rule 15's "closing paren on its own line"
 for exactly this shape).
 
 **Do:**
