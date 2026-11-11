@@ -89,7 +89,10 @@ def _job_posting(soup: BeautifulSoup) -> dict | None:
 def _first_job_posting(items: object) -> dict | None:
     """First JobPosting dict among parsed JSON-LD items, else None."""
     for item in items:
-        if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
+        if not isinstance(item, dict):
+            continue
+        job_type = str(item.get("@type", "")).lower()
+        if job_type == "jobposting":
             return item
     return None
 
@@ -141,7 +144,9 @@ def _location_text(addr: dict) -> str | None:
     """'Remote, Nationwide, US' style text from an address dict; None when empty."""
     seen: list[str] = []
     primary = _addr_piece(addr.get("streetAddress")) or _addr_piece(addr.get("addressLocality"))
-    candidates = (primary, _addr_piece(addr.get("addressRegion")), _addr_piece(addr.get("addressCountry")))
+    region = _addr_piece(addr.get("addressRegion"))
+    country = _addr_piece(addr.get("addressCountry"))
+    candidates = (primary, region, country)
     for piece in candidates:
         if piece and piece not in seen:
             seen.append(piece)

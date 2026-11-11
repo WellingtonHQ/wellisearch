@@ -356,10 +356,12 @@ def main() -> None:
         monitor.stop()
         server.stop()
 
-    stored_urls = (
-        [preflight_url]
-        + [r["url"] for results in phase_results.values() for r in results if r.get("ok")]
-    )
+    phase_urls = []
+    for results in phase_results.values():
+        for r in results:
+            if r.get("ok"):
+                phase_urls.append(r["url"])
+    stored_urls = [preflight_url] + phase_urls
     deleted = 0 if args.keep_pages else _delete_pages(args.base_url, api_key, stored_urls)
 
     resumed = False
