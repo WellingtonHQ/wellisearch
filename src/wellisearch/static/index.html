@@ -86,8 +86,9 @@
       border-radius: 8px; margin-bottom: 8px; overflow: hidden;
     }
     #providers td, #recent-queries td, #log-table td {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 10px; padding: 5px 10px; border-bottom: 1px solid var(--border); text-align: left;
+      display: grid; grid-template-columns: max-content minmax(0, 1fr);
+      align-items: center; gap: 4px 10px; padding: 5px 10px;
+      border-bottom: 1px solid var(--border); text-align: left; overflow-wrap: anywhere;
     }
     #providers tr > td:last-child, #recent-queries tr > td:last-child,
     #log-table tr > td:last-child { border-bottom: none; }
@@ -102,7 +103,6 @@
     #recent-queries td.card-head::before { content: attr(data-arrow) "  "; color: var(--dim); }
     #recent-queries tr > td:first-child { display: none; }
     #recent-queries tr.sq-detail > td { display: block; padding: 5px 10px; }
-    #providers td .bar { flex: 1 1 0; min-width: 0; }
     .clip-220, .clip-340, .clip-420, .clip-860 {
       max-width: none; overflow: visible; text-overflow: clip; white-space: normal;
     }
