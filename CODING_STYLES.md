@@ -414,3 +414,56 @@ lines = "\n".join(
     ]
 )
 ```
+
+---
+
+## 18. No Nested or Over-Packed Expressions
+
+One expression does one thing. Never nest a comprehension or generator
+expression inside another — not in its iterable, its element expression, or
+its filter — and never pack several logical operations into a single line so
+that it takes re-reading to parse. Break such expressions into separate
+statements with named intermediates, one operation per line. A nested
+comprehension is a violation even when the whole line is short; a long line
+that is a single simple operation is not (that is Rule 6's territory).
+
+An `and`/`or` condition is fine when each side is a single clear operation
+(the `isinstance(x, str) and x.strip()` idiom). It is over-packed when a side
+chains several distinct transforms — a nested `.get`, a type/string
+conversion, a casefold, and a comparison — in which case split it into a
+guard clause plus a named intermediate.
+
+**Do:**
+```python
+# Map, then filter: two readable steps.
+addresses = [_location_address(loc) for loc in locs]
+addresses = [a for a in addresses if a is not None]
+
+# Per-column widths: compute the inner values in a named step first.
+widths = []
+for i in range(len(cols)):
+    col_widths = [len(r[i]) for r in data]
+    widths.append(max(len(cols[i]), *col_widths))
+
+# Guard clause + named intermediate for a multi-step condition.
+if not isinstance(item, dict):
+    continue
+job_type = str(item.get("@type", "")).lower()
+if job_type == "jobposting":
+    return item
+```
+
+**Don't:**
+```python
+# Nested generator: map + filter fused into one unreadable line.
+(t for t in (_location_address(l) for l in locs) if t is not None)
+
+# Comprehension nested in a comprehension, with a star-unpacked inner generator.
+widths = [max(len(cols[i]), *(len(r[i]) for r in data)) for i in range(len(cols))]
+
+# Two for-clauses flattening a nested structure in one line.
+[r["url"] for results in phase_results.values() for r in results if r.get("ok")]
+
+# A condition side chaining get + conversion + casefold + comparison.
+if isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting":
+```

@@ -677,7 +677,10 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
             row += [jmed("faithfulness"), jmed("noise_removal"), jmed("preservation")]
         data.append(row)
 
-    widths = [max(len(cols[i]), *(len(r[i]) for r in data)) for i in range(len(cols))]
+    widths = []
+    for i in range(len(cols)):
+        col_widths = [len(r[i]) for r in data]
+        widths.append(max(len(cols[i]), *col_widths))
 
     def line(cells: list[str]) -> str:
         """Format a row of cells to fixed widths (first left, rest right-aligned)."""
