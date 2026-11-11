@@ -419,35 +419,35 @@ lines = "\n".join(
 
 ## 18. No Nested or Over-Packed Expressions
 
-One expression does one thing. If a line takes a second reading to parse,
-split it into separate statements with named intermediates, one operation per
-line. A nested expression is a violation even when the line is short; a long
-line that is a single simple operation is not (that is Rule 6's territory).
+One expression does one thing. If you have to read a line twice, split it
+into separate statements with named intermediates, one operation per line. A
+nested expression is a violation even when the line is short. A long line
+that does one simple thing is not (that is Rule 6's territory).
 
-Check every comprehension/generator line against the two violation classes
-below. When in doubt, split it: a named intermediate is never wrong.
+Check every comprehension and generator line against the two classes below.
+When in doubt, split it. A named intermediate is never wrong.
 
-**A. Nested comprehension/generator — always a violation.** A comprehension or
-generator expression is nested when any of these is true:
+**A. Nested comprehension or generator. Always a violation.** A comprehension
+or generator is nested when any of these is true:
 - its iterable, element expression, or filter is itself a comprehension or
-  generator. This includes the common `next(...)` idiom
-  `next((t for t in (f(x) for x in xs) if t is not None), None)` and a list
-  comprehension written over a generator:
+  generator. The common `next(...)` idiom counts:
+  `next((t for t in (f(x) for x in xs) if t is not None), None)`. So does a
+  list comprehension written over a generator:
   `[line for line in (f(k) for k in fields) if line is not None]`;
-- it has more than one `for` clause (flattening a nested structure):
+- it has more than one `for` clause, flattening a nested structure:
   `[z for x in A for y in B if pred]`;
 - it star-unpacks a generator in its element expression:
   `[max(a, *(g(x) for x in xs)) for ...]`.
 
-**B. Over-packed single expression — a violation.** One expression doing more
+**B. Over-packed single expression. A violation.** One expression doing more
 than one thing on a line:
 - a comprehension combined with another operation on the same line (a slice,
-  `sorted(...)`, a `+`, ...): `[x for x in xs if pred][: n]`;
-- an `and`/`or` side that chains several distinct transforms — a nested
-  `.get`, a type/string conversion, a casefold, a comparison — e.g.
+  `sorted(...)`, a `+`): `[x for x in xs if pred][: n]`;
+- an `and`/`or` side that chains several distinct transforms: a nested
+  `.get`, a conversion, a casefold, a comparison. Example:
   `isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting"`.
-  An `and`/`or` whose sides are each a single clear operation is fine (the
-  `isinstance(x, str) and x.strip()` idiom is not a violation).
+  An `and`/`or` whose sides are each one clear operation is fine. The
+  `isinstance(x, str) and x.strip()` idiom is not a violation.
 
 **Break them up, one operation per line:**
 ```python
@@ -487,9 +487,9 @@ if job_type == "jobposting":
     return item
 ```
 
-**Not violations — do not reformat these:**
-- a single-level comprehension/generator with one `for` clause, with or without
-  an `if`: `[k for k in keys if k in d]`,
+**Not violations. Don't reformat these:**
+- a single-level comprehension or generator with one `for` clause, with or
+  without an `if`: `[k for k in keys if k in d]`,
   `next((p for p in rows if p.get("url") == url), None)`;
 - a `for` statement (not a comprehension) iterating a single-level generator:
   `for task in (t for t in tasks if not t.done()):`;
