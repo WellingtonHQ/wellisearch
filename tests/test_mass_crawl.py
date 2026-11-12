@@ -299,16 +299,16 @@ def _pids_pin_gate(
     SUSTAINED_LIMIT_S (a sign of cascading launch failures). Returns
     (FAIL reason, updated pinned_since); the reason is None unless the
     gate trips."""
-    if cg is not None and cg["pids"] >= PIDS_PIN_THRESHOLD:
-        if pinned_since is None:
-            return None, now
-        if now - pinned_since >= SUSTAINED_LIMIT_S:
-            return (
-                f"PIDs pinned at/above {PIDS_PIN_THRESHOLD} for {SUSTAINED_LIMIT_S:.0f}s",
-                pinned_since,
-            )
-        return None, pinned_since
-    return None, None
+    if cg is None or cg["pids"] < PIDS_PIN_THRESHOLD:
+        return None, None
+    if pinned_since is None:
+        return None, now
+    if now - pinned_since >= SUSTAINED_LIMIT_S:
+        return (
+            f"PIDs pinned at/above {PIDS_PIN_THRESHOLD} for {SUSTAINED_LIMIT_S:.0f}s",
+            pinned_since,
+        )
+    return None, pinned_since
 
 
 def _soft_mem_gate(
