@@ -406,10 +406,13 @@ async def _rank_query(
     """Rank the page's stored chunks for an open-ended query and map the winner
     to a body offset. Returns {offset, similarity, fts, matched}.
 
-    Only chunks that map to a real body offset at/after `offset` are eligible
-    (so `offset` scopes the search); if none qualify, all mappable chunks are.
-    The query embed is best-effort: on failure the ranking degrades to
-    full-text only (similarity stays None).
+    A chunk is eligible when it has content at/after `offset` (it extends past
+    the offset), so `offset` scopes the search without reading back before it:
+    the window then starts at max(chunk_start, offset). A page stored as one
+    large chunk still honors `offset` this way. When no chunk extends past the
+    offset (it is at/past end-of-content) there is nothing to rank. The query
+    embed is best-effort: on failure the ranking degrades to full-text only
+    (similarity stays None).
     """
     qvec: list[float] | None
     try:
@@ -420,11 +423,13 @@ async def _rank_query(
     rows = await db.page_chunk_ranks(url, query, qvec)
     if not rows:
         return {"offset": offset, "similarity": None, "fts": 0.0, "matched": False}
-    offsets = [chunk_body_offset(body, title, r["text"]) for r in rows]
-    eligible = [i for i, o in enumerate(offsets) if o is not None and o >= offset]
+    starts = [chunk_body_offset(body, title, r["text"]) for r in rows]
+    eligible = [
+        i for i, r in enumerate(rows)
+        if starts[i] is not None and starts[i] + len(r["text"]) > offset
+    ]
     if not eligible:
-        eligible = [i for i, o in enumerate(offsets) if o is not None]
-    if not eligible:
+        # offset is at/past the end of the content: nothing to rank
         return {"offset": offset, "similarity": None, "fts": 0.0, "matched": False}
     lexical = [
         float(rows[i]["fts_and"]) if rows[i]["fts_and"] > 0 else float(rows[i]["fts_or"])
@@ -438,7 +443,7 @@ async def _rank_query(
     top = rank_indices(fused)[0]
     gi = eligible[top]
     return {
-        "offset": offsets[gi],
+        "offset": max(starts[gi], offset),
         "similarity": rows[gi]["similarity"],
         "fts": lexical[top],
         "matched": True,

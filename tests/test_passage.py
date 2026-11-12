@@ -191,6 +191,35 @@ class FetchNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Troubleshooting", out["markdown"])
         self.assertIsNone(out["match_similarity"])
 
+    async def test_query_offset_inside_chunk_starts_at_offset(self) -> None:
+        # One chunk spans the whole body: a query offset in its middle must
+        # start the window at the offset, not read back to the chunk start.
+        ranks = [
+            {"seq": 0, "text": BODY, "fts_and": 0.5, "fts_or": 0.0, "similarity": 0.9},
+        ]
+        with (
+            patch.object(fetch, "db", _fake_db(ranks)),
+            patch.object(fetch, "embed_one", return_value=[1.0]),
+        ):
+            mid = len(BODY) // 2
+            out = await fetch.fetch_page("https://example.com/a", query="pool", offset=mid, max_chars=50)
+        self.assertEqual(out["start_offset"], mid)
+        self.assertTrue(BODY.startswith(out["markdown"], mid), out["markdown"])
+
+    async def test_query_offset_past_end_is_empty(self) -> None:
+        # offset at end-of-content: no chunk extends past it -> empty window.
+        ranks = [
+            {"seq": 0, "text": BODY, "fts_and": 0.5, "fts_or": 0.0, "similarity": 0.9},
+        ]
+        with (
+            patch.object(fetch, "db", _fake_db(ranks)),
+            patch.object(fetch, "embed_one", return_value=[1.0]),
+        ):
+            out = await fetch.fetch_page("https://example.com/a", query="pool", offset=len(BODY))
+        self.assertEqual(out["markdown"], "")
+        self.assertIsNone(out["next_offset"])
+        self.assertIsNone(out["match_similarity"])
+
     def test_renderer_includes_navigation_context(self) -> None:
         out = {
             "ok": True,
