@@ -120,12 +120,14 @@ jobs:
             - Define any domain term on first use ("dedup owner = ..."); prefer active voice and concrete verbs over jargon.
         run: |
           set -euo pipefail
-          SESSION_TITLE="PR review $GITHUB_REPOSITORY #$PR_NUMBER"
+          SESSION_TITLE="PR review $GITHUB_REPOSITORY #$PR_NUMBER run $GITHUB_RUN_ID"
           # The shared OpenCode server outlives this job: when GitHub cancels
           # the run, the runner kills only the `opencode run` client, and the
           # server keeps the session (and its inference requests) alive on
-          # the single inference slot. On TERM, find the session by title
-          # and delete it so the slot is released for the replacement run.
+          # the single inference slot. On TERM, find the session by title and
+          # delete it so the slot is released for the replacement run. The
+          # title carries this run's GITHUB_RUN_ID, so a cancelled run can
+          # only delete its own session, never the replacement run's.
           trap '
             opencode api get /api/session \
               | jq -r --arg t "$SESSION_TITLE" ".data[]? | select(.title == $t) | .id" \
