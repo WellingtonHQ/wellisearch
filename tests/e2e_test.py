@@ -49,32 +49,6 @@ def first_url(markdown: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _seed_freshly_crawled(hit: dict | None, seeded_at: dt.datetime) -> bool:
-    """True when the seeded page's last_crawled is at/after the seed time."""
-    if hit is None:
-        return False
-    ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=dt.timezone.utc)
-    return ts >= seeded_at - dt.timedelta(seconds=5)
-
-
-async def _wait_for_seed_drain(
-    c: httpx.AsyncClient,
-    seed_probe: str,
-    seeded_at: dt.datetime,
-) -> bool:
-    """Poll the pages surface until the seed was freshly crawled (60s)."""
-    for _ in range(30):
-        rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
-        rows = rr.json().get("pages", []) if rr.status_code == 200 else []
-        hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
-        if _seed_freshly_crawled(hit, seeded_at):
-            return True
-        await asyncio.sleep(2)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -688,6 +662,32 @@ def _load_api_key() -> str:
 KEY = _load_api_key()
 H = {"X-API-Key": KEY}
 PASS, FAIL = 0, 0
+
+
+def _seed_freshly_crawled(hit: dict | None, seeded_at: dt.datetime) -> bool:
+    """True when the seeded page's last_crawled is at/after the seed time."""
+    if hit is None:
+        return False
+    ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=dt.timezone.utc)
+    return ts >= seeded_at - dt.timedelta(seconds=5)
+
+
+async def _wait_for_seed_drain(
+    c: httpx.AsyncClient,
+    seed_probe: str,
+    seeded_at: dt.datetime,
+) -> bool:
+    """Poll the pages surface until the seed was freshly crawled (60s)."""
+    for _ in range(30):
+        rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
+        rows = rr.json().get("pages", []) if rr.status_code == 200 else []
+        hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
+        if _seed_freshly_crawled(hit, seeded_at):
+            return True
+        await asyncio.sleep(2)
+    return False
 
 
 async def _all_page_urls(c: httpx.AsyncClient) -> list[str]:

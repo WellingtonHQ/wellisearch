@@ -283,11 +283,6 @@ def assess(monitor: MetricsMonitor, phase_results: dict[str, list[dict]]) -> tup
     return verdict, reasons
 
 
-def _demote(verdict: str) -> str:
-    """Downgrade PASS to WARN; keep WARN/FAIL as-is."""
-    return "WARN" if verdict == "PASS" else verdict
-
-
 # ---------------------------------------------------------------------------
 # Entry Point
 # ---------------------------------------------------------------------------
@@ -396,6 +391,11 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _demote(verdict: str) -> str:
+    """Downgrade PASS to WARN; keep WARN/FAIL as-is."""
+    return "WARN" if verdict == "PASS" else verdict
+
 
 def _article_html(n: int) -> str:
     """A plain ~6 KB article page accepted by the HTTP tier."""
