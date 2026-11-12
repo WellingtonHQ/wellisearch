@@ -9,8 +9,8 @@ from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_mar
 from wellisearch.index import _with_title
 from wellisearch.search_web import (
     _apply_job_board_penalty,
-    _cap_per_domain,
     _candidate_rows,
+    _cap_per_domain,
     _is_job_board,
     _job_intent,
     _passes_local_gate,

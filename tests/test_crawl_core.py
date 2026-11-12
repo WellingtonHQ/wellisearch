@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 from typing import NoReturn
-
 from unittest.mock import AsyncMock, Mock, patch
 
 from wellisearch.config import get_settings
