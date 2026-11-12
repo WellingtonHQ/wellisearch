@@ -1,0 +1,90 @@
+{
+  "description": "Synthetic, hand-labeled page navigation examples. Text is illustrative, not factual guidance.",
+  "pages": [
+    {
+      "id": "account",
+      "title": "Account help",
+      "preamble_repeat": 350,
+      "preamble": "General account information, terms, and support notices apply to all customers. ",
+      "sections": [
+        "## Sign in\nEnter your email address and password to sign in.",
+        "## Password reset\nSelect Forgot password on the sign-in screen to receive a reset link by email.",
+        "## Billing\nUpdate your credit card from the billing settings page.",
+        "## Two-factor authentication\nUse a recovery code if you lose your authentication device."
+      ]
+    },
+    {
+      "id": "operations",
+      "title": "Service operations guide",
+      "preamble_repeat": 50,
+      "preamble": "Operational overview and general deployment notes for the service. ",
+      "sections": [
+        "## Connection failure\nError E_CONN_042 means the database pool is exhausted. Increase the pool limit after checking for leaked connections.",
+        "## Timeout failure\nError E_CONN_043 means the upstream request timed out. Check network connectivity.",
+        "## Backups\nRestore a backup by stopping writes and applying the latest verified snapshot.",
+        "## Pool configuration\nSet FETCH_POOL_LIMIT to control the number of fetch workers."
+      ]
+    },
+    {
+      "id": "products",
+      "title": "Product comparison",
+      "preamble_repeat": 10,
+      "preamble": "Our product guide compares models and availability. ",
+      "sections": [
+        "## Apex 100\nThe Apex 100 has a battery life of 8 hours and weighs 2 pounds.",
+        "## Apex 200\nThe Apex 200 has a battery life of 16 hours and weighs 3 pounds.",
+        "## Warranty\nThe standard warranty covers manufacturing defects for one year."
+      ]
+    },
+    {
+      "id": "policy",
+      "title": "Workplace policy",
+      "preamble_repeat": 5,
+      "preamble": "This guide describes workplace benefits and procedures. ",
+      "sections": [
+        "## Holidays\nEmployees receive ten paid holidays each calendar year.",
+        "## Parental leave\nNew parents may take twelve weeks of paid leave after a birth or adoption.",
+        "## Sick leave\nEmployees may use sick leave when they are unable to work due to illness.",
+        "## Returning to work\nContact your manager before returning from any extended absence."
+      ]
+    },
+    {
+      "id": "repeated",
+      "title": "Release notes",
+      "preamble_repeat": 1,
+      "preamble": "Changes by version. ",
+      "sections": [
+        "## Version 1.0 migration\nMigration requires exporting settings manually.",
+        "## Version 2.0 migration\nMigration imports settings automatically using the migrate command.",
+        "## Version 3.0 migration\nMigration requires the new upgrade assistant."
+      ]
+    },
+    {
+      "id": "long-code",
+      "title": "Deployment example",
+      "preamble_repeat": 1,
+      "preamble": "Example configuration follows.",
+      "fence_repeat": 160,
+      "sections": [
+        "## Shutdown\nStop the service before changing the configuration."
+      ]
+    }
+  ],
+  "queries": [
+    {"id": "account-reset", "page": "account", "category": "paraphrase", "query": "How can I regain access when I forgot my credentials?", "answer": "Select Forgot password"},
+    {"id": "account-recovery", "page": "account", "category": "paraphrase", "query": "What if my phone used for verification is lost?", "answer": "Use a recovery code"},
+    {"id": "account-billing", "page": "account", "category": "keyword", "query": "update credit card", "answer": "Update your credit card"},
+    {"id": "error-code", "page": "operations", "category": "identifier", "query": "E_CONN_042", "answer": "Error E_CONN_042"},
+    {"id": "error-neighbor", "page": "operations", "category": "identifier", "query": "E_CONN_043", "answer": "Error E_CONN_043"},
+    {"id": "config-key", "page": "operations", "category": "identifier", "query": "FETCH_POOL_LIMIT", "answer": "Set FETCH_POOL_LIMIT"},
+    {"id": "restore", "page": "operations", "category": "paraphrase", "query": "How do I recover the service from a snapshot?", "answer": "Restore a backup"},
+    {"id": "product-model", "page": "products", "category": "near-duplicate", "query": "Apex 200 battery life", "answer": "The Apex 200 has a battery life of 16 hours"},
+    {"id": "product-warranty", "page": "products", "category": "keyword", "query": "warranty manufacturing defects", "answer": "The standard warranty covers"},
+    {"id": "parental", "page": "policy", "category": "paraphrase", "query": "How much paid time off is available after adopting a child?", "answer": "New parents may take twelve weeks"},
+    {"id": "version", "page": "repeated", "category": "near-duplicate", "query": "version 2.0 migration settings", "answer": "Migration imports settings automatically"},
+    {"id": "long-code-tail", "page": "long-code", "category": "oversized-chunk", "query": "SPECIAL_DEPLOY_KEY", "answer": "SPECIAL_DEPLOY_KEY=enabled"},
+    {"id": "absent", "page": "policy", "category": "no-answer", "query": "What is the company's retirement matching percentage?", "answer": null},
+    {"id": "absent-model", "page": "products", "category": "no-answer", "query": "What is the price of the Apex 300?", "answer": null},
+    {"id": "absent-error", "page": "operations", "category": "no-answer", "query": "What causes error E_CONN_099?", "answer": null}
+  ]
+}

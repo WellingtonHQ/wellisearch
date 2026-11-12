@@ -205,6 +205,40 @@ class Database:
         """The page row for a URL, or None."""
         return await self.fetch_one("SELECT * FROM pages WHERE url = %s", (url,))
 
+    async def page_chunk_ranks(
+        self,
+        url: str,
+        query: str,
+        query_vec: list[float] | None,
+    ) -> list[dict[str, Any]]:
+        """Page-scoped chunk ranks for fetch_page `query` mode.
+
+        One row per chunk: seq, text, fts_and, fts_or, similarity. Both FTS legs
+        are COALESCEd to 0 when the query has no lexemes (plainto_tsquery →
+        NULL). The vector leg is NULL when query_vec is None, so a failed query
+        embed degrades to full-text-only ranking.
+        """
+        fts_and = "COALESCE(ts_rank_cd(tsv, plainto_tsquery('english', %s)), 0)"
+        fts_or = (
+            "COALESCE(ts_rank_cd(tsv, to_tsquery('english', "
+            "replace(plainto_tsquery('english', %s)::text, ' & ', ' | '))), 0)"
+        )
+        if query_vec is None:
+            sql = (
+                "SELECT seq, text, " + fts_and + " AS fts_and, " + fts_or + " AS fts_or, "
+                "NULL::float8 AS similarity "
+                "FROM chunks WHERE url = %s ORDER BY seq"
+            )
+            params: tuple = (query, query, url)
+        else:
+            sql = (
+                "SELECT seq, text, " + fts_and + " AS fts_and, " + fts_or + " AS fts_or, "
+                "1 - (embedding <=> %s::vector) AS similarity "
+                "FROM chunks WHERE url = %s ORDER BY seq"
+            )
+            params = (query, query, query_vec, url)
+        return await self.fetch_all(sql, params)
+
     async def bump_fetch_count(
         self,
         url: str,

@@ -80,20 +80,45 @@ per-domain cap shrank a would-be full local set below `k` (no
 ### `POST /api/fetch`
 Read one URL as fit markdown (stored-first, else crawl+store).
 
-Body: `{ "url": "...", "max_chars": 12000, "format": "markdown" }`
-(`max_chars` and `format` optional).
+Body:
+```json
+{
+  "url": "...",
+  "max_chars": 12000,
+  "find": "E_CONN_042",
+  "query": "how do I raise the pool limit?",
+  "offset": 4096,
+  "format": "markdown"
+}
+```
+Everything besides `url` is optional. Navigation: at most one of `find`
+(literal, case-insensitive text to jump to — an error code, key, heading, or
+phrase) and `query` (open-ended question, answered by a page-scoped full-text
++ embedding hybrid over the stored chunks); `offset` (char position) composes
+with either — start reading / searching from there. No navigation params =
+default head truncation, unchanged. Sending both `find` and `query` is a
+**400**, as is a negative `offset`.
 
 By default returns the Markdown page document (`Content-Type: text/markdown`,
-no JSON envelope): a `Title:` / `URL:` / `From Index:` / `Chars:` / `Truncated:`
-header plus a `Time:` line, then the page body. The `Time:` line shows the
-total ms split into `index:` (Postgres lookup) and — only when the page had to
-be crawled — `crawl:` (native-crawler round-trip). A failed fetch returns a `URL:` /
-`Status: failed` / `Error:` header (HTTP 200). Bumps the page's `fetch_count`.
+no JSON envelope): a `Title:` / `URL:` / `From Index:` header, then — when a
+navigation param was used — a `Mode:` line (`head` | `find` | `query`), a
+`Found:` line (find only), a `Match:` line (query only — the winner's
+`similarity` + `fts` scores so the caller can judge relevance), and a
+`Window: start-end of total[, next N]` line, then `Chars:` / `Truncated:` plus
+a `Time:` line, then the page body. `truncated` means content remains after
+the window; continue reading with `offset=next_offset`. The `Time:` line shows
+the total ms split into `index:` (Postgres lookup), — only when the page had
+to be crawled — `crawl:` (native-crawler round-trip), and — query mode only —
+`rank:` (chunk ranking). A failed fetch returns a `URL:` / `Status: failed` /
+`Error:` header (HTTP 200). Bumps the page's `fetch_count`.
 Set `format=json` (or send `Accept: application/json`) for the structured JSON
 envelope instead (`Content-Type: application/json`):
-`{ ok, url, title, markdown, chars, truncated, from_index,
-timing: { total_ms, index_ms, crawl_ms? } }` (a failed fetch is
-`{ ok: false, url, error, timing: { total_ms } }`). An invalid `format` is a
+`{ ok, url, title, markdown, chars, truncated, from_index, mode,
+start_offset, end_offset, next_offset, total_chars,
+timing: { total_ms, index_ms, crawl_ms?, rank_ms? } }` plus `found` (find
+mode) and `match_similarity` / `match_fts` (query mode); a find miss is
+`found: false` with an empty `markdown`. A failed fetch is
+`{ ok: false, url, error, timing: { total_ms } }`. An invalid `format` is a
 **400**.
 
 ### `POST /api/fetch-bulk`
