@@ -135,7 +135,11 @@ class HttpMemoryTests(unittest.IsolatedAsyncioTestCase):
                 await task
         self.assertTrue(session.closed)
 
-    async def _assert_rejected_at_headers(self, headers: dict, error: str) -> None:
+    async def _assert_rejected_at_headers(
+        self,
+        headers: dict,
+        error: str,
+    ) -> None:
         """One unsupported/oversized header case: rejected before any body chunk."""
         session = _Session({"get": [_Hop(headers=headers, chunks=(b"never",))]})
         with _settings_patch(http), _session_patch(session):
@@ -144,7 +148,12 @@ class HttpMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.body_chunks, 0)
         self.assertTrue(session.closed)
 
-    async def _assert_served_html(self, headers: dict, content: bytes, title: str | None) -> None:
+    async def _assert_served_html(
+        self,
+        headers: dict,
+        content: bytes,
+        title: str | None,
+    ) -> None:
         """One served HTML case: title/status/engine/content-type all match."""
         session = _Session({"get": [_Hop(headers=headers, chunks=(content,))]})
         with _settings_patch(http), _session_patch(session):
@@ -620,13 +629,22 @@ class _Session:
             return response
         raise AssertionError("redirect plan ended without a final response")
 
-    def _deliver_headers(self, lines: list[bytes], response: Response) -> None:
+    def _deliver_headers(
+        self,
+        lines: list[bytes],
+        response: Response,
+    ) -> None:
         """Run each header line through the header callback, aborting on WRITE_ERROR."""
         for line in lines:
             if self.curl_options[CurlOpt.HEADERFUNCTION](line) == WRITE_ERROR:
                 raise RequestException("header aborted", CurlECode.WRITE_ERROR, response)
 
-    def _deliver_body(self, hop: _Hop, kwargs: dict, response: Response) -> None:
+    def _deliver_body(
+        self,
+        hop: _Hop,
+        kwargs: dict,
+        response: Response,
+    ) -> None:
         """Run each body chunk through the content callback, aborting on WRITE_ERROR."""
         for chunk in hop.chunks:
             self.body_chunks += 1
