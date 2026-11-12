@@ -409,9 +409,9 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
             [p["url"] for p in out["pages"]],
             ["https://example.com/a?utm_source=test", "https://example.com/b?gclid=x"],
         )
-        fake_db.bump_fetch_counts.assert_awaited_once_with(
-            ["https://example.com/a", "https://example.com/b"]
-        )
+        fake_db.bump_fetch_counts.assert_awaited_once_with([
+            "https://example.com/a", "https://example.com/b"
+        ])
 
     async def test_bulk_read_serves_variant_pages_once(self) -> None:
         """Variant URLs of one stored page serve a single section, not one per variant."""
