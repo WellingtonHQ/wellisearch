@@ -229,12 +229,15 @@ def _tool_fetch_page(server: MCPServer) -> None:
             "Navigation (at most one of find/query): find=literal text to jump "
             "to (case-insensitive, e.g. an error code, key, or heading); "
             "query=open-ended question — reads from the most relevant section "
-            "(full-text + embedding). offset=start char position (for reading "
-            "block by block, or to search from a position). The response "
-            "carries start/end/next offsets so you can continue reading with "
-            "offset=next_offset. A failed fetch returns a URL/Status/Error "
-            "header. Set format=\"json\" for the structured JSON envelope "
-            "instead of Markdown."
+            "(full-text + embedding); its Match line reports "
+            "semantic_similarity (meaning), coverage (query words present), "
+            "and margin (clear winner vs. coin flip) so you can judge whether "
+            "the section really answers the question. offset=start char "
+            "position (for reading block by block, or to search from a "
+            "position). The response carries start/end/next offsets so you can "
+            "continue reading with offset=next_offset. A failed fetch returns a "
+            "URL/Status/Error header. Set format=\"json\" for the structured "
+            "JSON envelope instead of Markdown."
         ),
     )
     async def fetch_page(

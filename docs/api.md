@@ -103,8 +103,9 @@ By default returns the Markdown page document (`Content-Type: text/markdown`,
 no JSON envelope): a `Title:` / `URL:` / `From Index:` header, then — when a
 navigation param was used — a `Mode:` line (`head` | `find` | `query`), a
 `Found:` line (find only), a `Match:` line (query only — the winner's
-`similarity` + `fts` scores so the caller can judge relevance), and a
-`Window: start-end of total[, next N]` line, then `Chars:` / `Truncated:` plus
+`semantic_similarity`, `coverage`, and `margin` so the caller can judge
+relevance), and a `Window: start-end of total[, next N]` line, then
+`Chars:` / `Truncated:` plus
 a `Time:` line, then the page body. `truncated` means content remains after
 the window; continue reading with `offset=next_offset`. The `Time:` line shows
 the total ms split into `index:` (Postgres lookup), — only when the page had
@@ -116,8 +117,12 @@ envelope instead (`Content-Type: application/json`):
 `{ ok, url, title, markdown, chars, truncated, from_index, mode,
 start_offset, end_offset, next_offset, total_chars,
 timing: { total_ms, index_ms, crawl_ms?, rank_ms? } }` plus `found` (find
-mode) and `match_similarity` / `match_fts` (query mode); a find miss is
-`found: false` with an empty `markdown`. A failed fetch is
+mode) and `semantic_similarity` / `coverage` / `margin` (query mode); a find
+miss is `found: false` with an empty `markdown`. `semantic_similarity` is the
+cosine similarity of the query and winning-chunk embeddings (meaning);
+`coverage` is the fraction of the query's content words present in the
+winning chunk (0..1); `margin` is how much the winner beats the runner-up
+(0 when it is the only candidate). A failed fetch is
 `{ ok: false, url, error, timing: { total_ms } }`. An invalid `format` is a
 **400**.
 

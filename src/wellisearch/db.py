@@ -15,6 +15,7 @@ import datetime as dt
 import json
 import logging
 import pathlib
+import re
 import sys
 from typing import Any
 
@@ -213,31 +214,65 @@ class Database:
     ) -> list[dict[str, Any]]:
         """Page-scoped chunk ranks for fetch_page `query` mode.
 
-        One row per chunk: seq, text, fts_and, fts_or, similarity. Both FTS legs
-        are COALESCEd to 0 when the query has no lexemes (plainto_tsquery →
-        NULL). The vector leg is NULL when query_vec is None, so a failed query
-        embed degrades to full-text-only ranking.
+        One row per chunk: seq, text, fts_and, fts_or, coverage, similarity.
+        Both FTS legs are COALESCEd to 0 when the query has no lexemes
+        (plainto_tsquery → NULL). `coverage` is the fraction of the query's
+        content lexemes present in the chunk (0..1; 0 when the query has no
+        lexemes) — a calibration-free lexical signal using the same lexemes as
+        the FTS legs. The vector leg is NULL when query_vec is None, so a
+        failed query embed degrades to full-text-only ranking.
         """
+        lexemes = await self._query_content_lexemes(query)
+        coverage_sql, coverage_params = self._coverage_sql(lexemes)
         fts_and = "COALESCE(ts_rank_cd(tsv, plainto_tsquery('english', %s)), 0)"
         fts_or = (
             "COALESCE(ts_rank_cd(tsv, to_tsquery('english', "
             "replace(plainto_tsquery('english', %s)::text, ' & ', ' | '))), 0)"
         )
+        base = (
+            "SELECT seq, text, "
+            + fts_and + " AS fts_and, "
+            + fts_or + " AS fts_or, "
+            + coverage_sql + " AS coverage, "
+        )
         if query_vec is None:
-            sql = (
-                "SELECT seq, text, " + fts_and + " AS fts_and, " + fts_or + " AS fts_or, "
-                "NULL::float8 AS similarity "
-                "FROM chunks WHERE url = %s ORDER BY seq"
+            sql = base + (
+                "NULL::float8 AS similarity FROM chunks WHERE url = %s ORDER BY seq"
             )
-            params: tuple = (query, query, url)
+            params: tuple = (query, query, *coverage_params, url)
         else:
-            sql = (
-                "SELECT seq, text, " + fts_and + " AS fts_and, " + fts_or + " AS fts_or, "
+            sql = base + (
                 "1 - (embedding <=> %s::vector) AS similarity "
                 "FROM chunks WHERE url = %s ORDER BY seq"
             )
-            params = (query, query, query_vec, url)
+            params = (query, query, *coverage_params, query_vec, url)
         return await self.fetch_all(sql, params)
+
+    async def _query_content_lexemes(self, query: str) -> list[str]:
+        """The query's content lexemes (stemmed, stop words stripped) — the
+        same set plainto_tsquery uses for the FTS legs. Parsed from
+        querytree (e.g. `'cat' & 'sat'`), since ts_lexeme is unavailable."""
+        row = await self.fetch_one(
+            "SELECT querytree(plainto_tsquery('english', %s)) AS q", (query,)
+        )
+        tree = row["q"] if row else None
+        if not tree:
+            return []
+        return re.findall(r"'([^']+)'", tree)
+
+    @staticmethod
+    def _coverage_sql(lexemes: list[str]) -> tuple[str, tuple]:
+        """A coverage expression counting how many of the query's lexemes are
+        present in the chunk's tsv, divided by the total. Returns the SQL
+        fragment and its bound parameters."""
+        if not lexemes:
+            return "0::float8", ()
+        value_list = ", ".join("(%s)" for _ in lexemes)
+        sql = (
+            f"(SELECT count(*) FROM (VALUES {value_list}) AS q(lex) "
+            f"WHERE tsv @@ to_tsquery(q.lex))::float8 / {len(lexemes)}"
+        )
+        return sql, tuple(lexemes)
 
     async def bump_fetch_count(
         self,

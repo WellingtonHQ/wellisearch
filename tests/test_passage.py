@@ -154,13 +154,14 @@ class FetchNavigationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_query_uses_ranks_and_maps_offset(self) -> None:
         ranks = [
-            {"seq": 0, "text": "Intro line.", "fts_and": 0.0, "fts_or": 0.0, "similarity": 0.2},
+            {"seq": 0, "text": "Intro line.", "fts_and": 0.0, "fts_or": 0.0, "similarity": 0.2, "coverage": 0.0},
             {
                 "seq": 1,
                 "text": "Error E_CONN_042 means the pool is exhausted. Retry after raising the limit.",
                 "fts_and": 0.5,
                 "fts_or": 0.0,
                 "similarity": 0.9,
+                "coverage": 0.6,
             },
         ]
         with (
@@ -171,13 +172,17 @@ class FetchNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["mode"], "query")
         self.assertIn("E_CONN_042", out["markdown"])
         self.assertGreater(out["start_offset"], 0)
-        self.assertIsNotNone(out["match_similarity"])
+        self.assertIsNotNone(out["semantic_similarity"])
+        self.assertEqual(out["coverage"], 0.6)
+        self.assertGreaterEqual(out["margin"], 0.0)
+        self.assertNotIn("match_fts", out)
 
-    async def test_query_without_embed_degrades_to_fts(self) -> None:
-        # embed raises -> qvec None -> ranking degrades to full-text only
+    async def test_query_without_embed_degrades_to_lexical(self) -> None:
+        # embed raises -> qvec None -> ranking degrades to full-text only; the
+        # chunk with the higher lexical score wins.
         ranks = [
-            {"seq": 0, "text": "Intro line.", "fts_and": 0.0, "fts_or": 0.0, "similarity": None},
-            {"seq": 1, "text": "Troubleshooting section text.", "fts_and": 0.4, "fts_or": 0.0, "similarity": None},
+            {"seq": 0, "text": "Intro line.", "fts_and": 0.0, "fts_or": 0.0, "similarity": None, "coverage": 0.0},
+            {"seq": 1, "text": "Run the installer with the --force flag.", "fts_and": 0.4, "fts_or": 0.0, "similarity": None, "coverage": 0.5},
         ]
         def boom(text: str) -> list[float]:
             raise RuntimeError("no model")
@@ -186,16 +191,17 @@ class FetchNavigationTests(unittest.IsolatedAsyncioTestCase):
             patch.object(fetch, "db", _fake_db(ranks)),
             patch.object(fetch, "embed_one", side_effect=boom),
         ):
-            out = await fetch.fetch_page("https://example.com/a", query="troubleshooting", max_chars=200)
+            out = await fetch.fetch_page("https://example.com/a", query="installer", max_chars=200)
         self.assertEqual(out["mode"], "query")
-        self.assertIn("Troubleshooting", out["markdown"])
-        self.assertIsNone(out["match_similarity"])
+        self.assertIn("Run the installer", out["markdown"])
+        self.assertIsNone(out["semantic_similarity"])
+        self.assertEqual(out["coverage"], 0.5)
 
     async def test_query_offset_inside_chunk_starts_at_offset(self) -> None:
         # One chunk spans the whole body: a query offset in its middle must
         # start the window at the offset, not read back to the chunk start.
         ranks = [
-            {"seq": 0, "text": BODY, "fts_and": 0.5, "fts_or": 0.0, "similarity": 0.9},
+            {"seq": 0, "text": BODY, "fts_and": 0.5, "fts_or": 0.0, "similarity": 0.9, "coverage": 0.8},
         ]
         with (
             patch.object(fetch, "db", _fake_db(ranks)),
@@ -205,11 +211,13 @@ class FetchNavigationTests(unittest.IsolatedAsyncioTestCase):
             out = await fetch.fetch_page("https://example.com/a", query="pool", offset=mid, max_chars=50)
         self.assertEqual(out["start_offset"], mid)
         self.assertTrue(BODY.startswith(out["markdown"], mid), out["markdown"])
+        # single candidate -> no runner-up -> margin 0.0
+        self.assertEqual(out["margin"], 0.0)
 
     async def test_query_offset_past_end_is_empty(self) -> None:
         # offset at end-of-content: no chunk extends past it -> empty window.
         ranks = [
-            {"seq": 0, "text": BODY, "fts_and": 0.5, "fts_or": 0.0, "similarity": 0.9},
+            {"seq": 0, "text": BODY, "fts_and": 0.5, "fts_or": 0.0, "similarity": 0.9, "coverage": 0.8},
         ]
         with (
             patch.object(fetch, "db", _fake_db(ranks)),
@@ -218,7 +226,7 @@ class FetchNavigationTests(unittest.IsolatedAsyncioTestCase):
             out = await fetch.fetch_page("https://example.com/a", query="pool", offset=len(BODY))
         self.assertEqual(out["markdown"], "")
         self.assertIsNone(out["next_offset"])
-        self.assertIsNone(out["match_similarity"])
+        self.assertIsNone(out["semantic_similarity"])
 
     def test_renderer_includes_navigation_context(self) -> None:
         out = {
@@ -242,6 +250,31 @@ class FetchNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Found: true", md)
         self.assertIn("Window: 10-14 of 100, next 14", md)
         self.assertIn("Time: 5 ms (index: 2 ms)", md)
+
+    def test_renderer_query_match_line(self) -> None:
+        out = {
+            "ok": True,
+            "url": "https://example.com/a",
+            "title": "T",
+            "markdown": "body",
+            "chars": 4,
+            "truncated": True,
+            "from_index": True,
+            "mode": "query",
+            "semantic_similarity": 0.479,
+            "coverage": 0.67,
+            "margin": 0.5,
+            "start_offset": 10,
+            "end_offset": 14,
+            "next_offset": 14,
+            "total_chars": 100,
+            "timing": {"total_ms": 5, "index_ms": 2},
+        }
+        md = render_fetch_page_markdown(out)
+        self.assertIn("Mode: query", md)
+        self.assertIn(
+            "Match: semantic_similarity 0.479, coverage 0.67, margin 0.5000", md
+        )
 
 
 if __name__ == "__main__":

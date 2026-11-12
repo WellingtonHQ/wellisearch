@@ -86,6 +86,7 @@ async def _check_rank_shape(body: str, chunks: int) -> list[dict]:
     for r in rows:
         assert r["fts_and"] >= 0 and r["fts_or"] >= 0, r
         assert r["similarity"] is not None, r
+        assert 0.0 <= r["coverage"] <= 1.0, r
         assert r["text"], r
     print(
         f"OK page_chunk_ranks ({len(rows)} rows, seq-ordered, fts + similarity present)"
@@ -112,20 +113,22 @@ async def _check_find(body: str) -> None:
 
 
 async def _check_query(body: str, title: str, rows: list[dict]) -> None:
-    """query: the winner maps to a real chunk offset and carries scores."""
+    """query: the winner maps to a real chunk offset and carries the new scores."""
     out = await fetch.fetch_page(URL, query=QUERY, max_chars=400)
     assert out["ok"] and out["mode"] == "query", out
     assert NEEDLE in out["markdown"], out["markdown"]
-    assert out["match_similarity"] is not None, out
-    assert out["match_fts"] > 0, out
+    assert out["semantic_similarity"] is not None, out
+    assert 0.0 <= out["coverage"] <= 1.0, out
+    assert out["margin"] >= 0.0, out
+    assert "match_fts" not in out, out
     offsets = [chunk_body_offset(body, title, r["text"]) for r in rows]
     assert out["start_offset"] in offsets, (out["start_offset"], offsets)
     # the winning chunk's text sits at the reported offset
     winner = next(r for r in rows if chunk_body_offset(body, title, r["text"]) == out["start_offset"])
     assert winner["text"] in body[out["start_offset"]: out["start_offset"] + len(winner["text"])]
     print(
-        "OK query (winner at chunk offset %d; similarity %.3f, fts %.4f)"
-        % (out["start_offset"], out["match_similarity"], out["match_fts"])
+        "OK query (winner at chunk offset %d; semantic %.3f, coverage %.2f, margin %.4f)"
+        % (out["start_offset"], out["semantic_similarity"], out["coverage"], out["margin"])
     )
 
 

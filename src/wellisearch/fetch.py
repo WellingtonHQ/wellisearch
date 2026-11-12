@@ -88,9 +88,10 @@ def render_fetch_page_markdown(out: dict) -> str:
         lines.append(f"Mode: {mode}")
     if out.get("found") is not None:
         lines.append(f"Found: {'true' if out['found'] else 'false'}")
-    if out.get("match_similarity") is not None:
+    if out.get("semantic_similarity") is not None:
         lines.append(
-            f"Match: similarity {out['match_similarity']:.3f}, fts {out.get('match_fts') or 0:.4f}"
+            f"Match: semantic_similarity {out['semantic_similarity']:.3f}, "
+            f"coverage {out.get('coverage') or 0:.2f}, margin {out.get('margin') or 0:.4f}"
         )
     total = out.get("total_chars")
     if total is not None:
@@ -220,7 +221,8 @@ async def fetch_page(
     mode = "head"
     found: bool | None = None
     match_similarity: float | None = None
-    match_fts = 0.0
+    match_coverage = 0.0
+    match_margin = 0.0
     rank_ms = 0
 
     if find is not None:
@@ -252,7 +254,8 @@ async def fetch_page(
         ranked = await _rank_query(body, title, page["url"], query, start)
         rank_ms = int((time.monotonic() - t_rank) * 1000)
         match_similarity = ranked["similarity"]
-        match_fts = ranked["fts"]
+        match_coverage = ranked["coverage"]
+        match_margin = ranked["margin"]
         window = make_window(body, ranked["offset"], max_chars)
     else:
         window = make_window(body, start, max_chars)
@@ -282,8 +285,9 @@ async def fetch_page(
     if mode == "find":
         out["found"] = found
     if mode == "query":
-        out["match_similarity"] = match_similarity
-        out["match_fts"] = match_fts
+        out["semantic_similarity"] = match_similarity
+        out["coverage"] = match_coverage
+        out["margin"] = match_margin
     return out
 
 
@@ -422,7 +426,7 @@ async def _rank_query(
         qvec = None
     rows = await db.page_chunk_ranks(url, query, qvec)
     if not rows:
-        return {"offset": offset, "similarity": None, "fts": 0.0, "matched": False}
+        return {"offset": offset, "similarity": None, "coverage": 0.0, "margin": 0.0, "matched": False}
     starts = [chunk_body_offset(body, title, r["text"]) for r in rows]
     eligible = [
         i for i, r in enumerate(rows)
@@ -430,7 +434,7 @@ async def _rank_query(
     ]
     if not eligible:
         # offset is at/past the end of the content: nothing to rank
-        return {"offset": offset, "similarity": None, "fts": 0.0, "matched": False}
+        return {"offset": offset, "similarity": None, "coverage": 0.0, "margin": 0.0, "matched": False}
     lexical = [
         float(rows[i]["fts_and"]) if rows[i]["fts_and"] > 0 else float(rows[i]["fts_or"])
         for i in eligible
@@ -440,12 +444,20 @@ async def _rank_query(
         for i in eligible
     ]
     fused = fuse_ranks(lexical, semantic)
-    top = rank_indices(fused)[0]
+    ranked = rank_indices(fused)
+    top = ranked[0]
     gi = eligible[top]
+    # The winner's lead over the runner-up as a fraction of its own score
+    # (0..1): 0.0 = coin flip / single candidate, higher = a clear section.
+    if len(ranked) > 1 and fused[top] > 0:
+        margin = (fused[top] - fused[ranked[1]]) / fused[top]
+    else:
+        margin = 0.0
     return {
         "offset": max(starts[gi], offset),
         "similarity": rows[gi]["similarity"],
-        "fts": lexical[top],
+        "coverage": float(rows[gi]["coverage"]),
+        "margin": margin,
         "matched": True,
     }
 
