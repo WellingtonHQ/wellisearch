@@ -353,9 +353,7 @@ def main() -> None:
 
     phase_urls = []
     for results in phase_results.values():
-        for r in results:
-            if r.get("ok"):
-                phase_urls.append(r["url"])
+        phase_urls.extend(r["url"] for r in results if r.get("ok"))
     stored_urls = [preflight_url] + phase_urls
     deleted = 0 if args.keep_pages else _delete_pages(args.base_url, api_key, stored_urls)
 
