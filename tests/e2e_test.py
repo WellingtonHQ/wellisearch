@@ -504,12 +504,13 @@ async def test_window_logs(c: httpx.AsyncClient) -> None:
     """GET /api/window + GET /api/logs: window shape, clamping, merged log stream."""
     r = await c.get("/api/window", params={"secs": "86400"})
     j = r.json()
+    searches = j.get("searches", {})
     check(
         "window: 200 + shape + searches>=1",
         r.status_code == 200 and j.get("secs") == 86400
-        and (j.get("searches", {}).get("total") or 0) >= 1
+        and (searches.get("total") or 0) >= 1
         and "by_status" in j.get("crawls", {})
-        and "local_rate" in j.get("searches", {}),
+        and "local_rate" in searches,
         json.dumps(j)[:160]
     )
     r = await c.get("/api/window", params={"secs": "1"})

@@ -178,6 +178,9 @@ def _with_title(markdown: str, title: str | None) -> str:
         return markdown
     first = next((ln for ln in markdown.lstrip().splitlines() if ln.strip()), "")
     m = _H1_RE.match(first)
-    if m and " ".join(m.group(1).split()).casefold() == " ".join(title.split()).casefold():
-        return markdown
+    if m is not None:
+        h1_norm = " ".join(m.group(1).split()).casefold()
+        title_norm = " ".join(title.split()).casefold()
+        if h1_norm == title_norm:
+            return markdown
     return f"# {title}\n\n{markdown}"

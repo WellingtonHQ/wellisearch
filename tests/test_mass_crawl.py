@@ -442,9 +442,12 @@ def _build_summary(
         verdict = "WARN"
         reasons.append(f"{pids_limit_total} PID-limit events during the run (contained)")
 
-    peak_mem_gib = max((s["mem_bytes"] for s in samples if "mem_bytes" in s), default=0) / 2**30
+    mem_bytes = [s["mem_bytes"] for s in samples if "mem_bytes" in s]
+    peak_mem_bytes = max(mem_bytes, default=0)
+    peak_mem_gib = peak_mem_bytes / 2**30
     peak_pids = max((s["pids"] for s in samples if "pids" in s), default=0)
-    latencies = sorted(s["health_ms"] for s in samples if s.get("health_ms") is not None)
+    health_ms = [s["health_ms"] for s in samples if s.get("health_ms") is not None]
+    latencies = sorted(health_ms)
     p95_health = (
         latencies[int(len(latencies) * 0.95)]
         if len(latencies) > 20
