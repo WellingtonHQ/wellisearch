@@ -140,7 +140,11 @@ class BrowserPool:
         finally:
             self._sem.release()
 
-    async def _release_locked(self, ctx: BrowserContext, key: str | None) -> None:
+    async def _release_locked(
+        self,
+        ctx: BrowserContext,
+        key: str | None,
+    ) -> None:
         """Apply one release under the pool lock."""
         key = key or self._key_of(ctx)
         if key is None:
@@ -271,7 +275,11 @@ class BrowserPool:
             self._in_use[key] = self._in_use.get(key, 0) + 1
             return ctx
 
-    async def _fail_launch(self, key: str, error: BaseException) -> None:
+    async def _fail_launch(
+        self,
+        key: str,
+        error: BaseException,
+    ) -> None:
         """Record a failed launch, resetting the pool when its transport died."""
         self._anchors.pop(key, None)
         self._reaped.discard(key)
@@ -374,7 +382,11 @@ class BrowserPool:
             process = getattr(getattr(connection, "_transport", None), "_proc", None)
             _kill_transport_process(process)
 
-    def _stop_call(self, playwright: Playwright | None, manager: Any) -> Any:
+    def _stop_call(
+        self,
+        playwright: Playwright | None,
+        manager: Any,
+    ) -> Any:
         """The stop callable for a retiring driver, or None when there is none."""
         if playwright is not None:
             return playwright.stop()

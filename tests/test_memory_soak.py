@@ -238,7 +238,11 @@ async def _exercise_browser(
             await pool.close_all()
 
 
-async def _browser_rounds(base: str, pool: BrowserPool, snapshots: list[dict]) -> None:
+async def _browser_rounds(
+    base: str,
+    pool: BrowserPool,
+    snapshots: list[dict],
+) -> None:
     """Recycle real browser contexts across ROUNDS of parallel fetches."""
     for round_no in range(ROUNDS):
         results = await asyncio.gather(
@@ -303,7 +307,11 @@ async def _assert_stealth_oversized_rejected(base: str, root: str) -> None:
         pass
 
 
-async def _stealth_cancel_round(base: str, root: str, round_no: int) -> None:
+async def _stealth_cancel_round(
+    base: str,
+    root: str,
+    round_no: int,
+) -> None:
     """One cancel round: reach the slow navigation, cancel, verify no leftovers."""
     SLOW_STARTED.clear()
     task = asyncio.create_task(stealth.StealthTier().fetch(base + "/slow", DEFAULT_POLICY))

@@ -283,11 +283,6 @@ def assess(monitor: MetricsMonitor, phase_results: dict[str, list[dict]]) -> tup
     return verdict, reasons
 
 
-def _demote(verdict: str) -> str:
-    """Downgrade PASS to WARN; keep WARN/FAIL as-is."""
-    return "WARN" if verdict == "PASS" else verdict
-
-
 # ---------------------------------------------------------------------------
 # Entry Point
 # ---------------------------------------------------------------------------
@@ -358,9 +353,7 @@ def main() -> None:
 
     phase_urls = []
     for results in phase_results.values():
-        for r in results:
-            if r.get("ok"):
-                phase_urls.append(r["url"])
+        phase_urls.extend(r["url"] for r in results if r.get("ok"))
     stored_urls = [preflight_url] + phase_urls
     deleted = 0 if args.keep_pages else _delete_pages(args.base_url, api_key, stored_urls)
 
@@ -396,6 +389,11 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _demote(verdict: str) -> str:
+    """Downgrade PASS to WARN; keep WARN/FAIL as-is."""
+    return "WARN" if verdict == "PASS" else verdict
+
 
 def _article_html(n: int) -> str:
     """A plain ~6 KB article page accepted by the HTTP tier."""

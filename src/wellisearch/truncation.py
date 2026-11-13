@@ -79,27 +79,6 @@ def allocate_budgets(
     return [max(0, min(int(sh), lens[i])) for i, sh in enumerate(shares)]
 
 
-def _weights_for(
-    strategy: str,
-    lens: list[int],
-    page_weights: list[int],
-    total_len: int,
-    n: int,
-) -> list[float]:
-    """Per-page weight vector for a strategy (each sums to ~1)."""
-    if strategy == "even":
-        return [1.0 / n] * n
-    if strategy in ("head", "tail"):
-        return [l / total_len for l in lens]
-    # smart | priority → prominence-based
-    w = [max(1, 1 + int(w)) for w in page_weights]
-    if max(int(wi) for wi in page_weights) <= 0:
-        # no prominence signal (all fetch_count=0) → §15: fall back to even
-        return [1.0 / n] * n
-    sw = sum(w)
-    return [x / sw for x in w]
-
-
 def truncate_page(
     content: str,
     chars: int,
@@ -134,3 +113,28 @@ class TruncatedPage:
     chars_used: int
     truncated: bool
     omitted: int
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _weights_for(
+    strategy: str,
+    lens: list[int],
+    page_weights: list[int],
+    total_len: int,
+    n: int,
+) -> list[float]:
+    """Per-page weight vector for a strategy (each sums to ~1)."""
+    if strategy == "even":
+        return [1.0 / n] * n
+    if strategy in ("head", "tail"):
+        return [l / total_len for l in lens]
+    # smart | priority → prominence-based
+    w = [max(1, 1 + int(w)) for w in page_weights]
+    if max(int(wi) for wi in page_weights) <= 0:
+        # no prominence signal (all fetch_count=0) → §15: fall back to even
+        return [1.0 / n] * n
+    sw = sum(w)
+    return [x / sw for x in w]

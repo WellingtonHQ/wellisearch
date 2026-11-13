@@ -96,38 +96,9 @@ async def store_page(
         raise RuntimeError(f"embed returned {len(vectors)} vectors for {len(chunks)} chunks")
 
     domain = domain_of(url)
-    if crawled:
-        page_sql = """
-            INSERT INTO pages
-              (url, title, domain, fit_markdown, content_hash, embedding_model,
-               last_crawled, last_status, crawl_count)
-            VALUES (%s, %s, %s, %s, %s, %s, now(), 'ok', 1)
-            ON CONFLICT (url) DO UPDATE SET
-              title           = COALESCE(%s, pages.title),
-              domain          = COALESCE(%s, pages.domain),
-              fit_markdown    = EXCLUDED.fit_markdown,
-              content_hash    = EXCLUDED.content_hash,
-              embedding_model = EXCLUDED.embedding_model,
-              last_crawled    = now(),
-              last_status     = 'ok',
-              crawl_count     = pages.crawl_count + 1
-            """
-        page_params = (url, title, domain, markdown, digest, s.EMBED_MODEL, title, domain)
-    else:
-        # Re-embed only: nothing was fetched from the URL, so crawl-time values
-        # (crawl_count, last_crawled, last_status) keep their stored values.
-        page_sql = """
-            INSERT INTO pages
-              (url, title, domain, fit_markdown, content_hash, embedding_model)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (url) DO UPDATE SET
-              title           = COALESCE(%s, pages.title),
-              domain          = COALESCE(%s, pages.domain),
-              fit_markdown    = EXCLUDED.fit_markdown,
-              content_hash    = EXCLUDED.content_hash,
-              embedding_model = EXCLUDED.embedding_model
-            """
-        page_params = (url, title, domain, markdown, digest, s.EMBED_MODEL, title, domain)
+    page_sql, page_params = _page_upsert_sql(
+        url, title, domain, markdown, digest, s.EMBED_MODEL, crawled,
+    )
 
     # chunks.last_crawled is NOT NULL: when re-storing without a fresh fetch,
     # mirror the page's real last crawl time (a re-embed doesn't make content
@@ -153,6 +124,52 @@ async def store_page(
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _page_upsert_sql(
+    url: str,
+    title: str | None,
+    domain: str,
+    markdown: str,
+    digest: str,
+    embed_model: str,
+    crawled: bool,
+) -> tuple[str, tuple]:
+    """Build the pages upsert statement and params: a crawl stamps crawl-time
+    values (last_crawled, last_status, crawl_count); a re-embed keeps them."""
+    if crawled:
+        page_sql = """
+            INSERT INTO pages
+              (url, title, domain, fit_markdown, content_hash, embedding_model,
+               last_crawled, last_status, crawl_count)
+            VALUES (%s, %s, %s, %s, %s, %s, now(), 'ok', 1)
+            ON CONFLICT (url) DO UPDATE SET
+              title           = COALESCE(%s, pages.title),
+              domain          = COALESCE(%s, pages.domain),
+              fit_markdown    = EXCLUDED.fit_markdown,
+              content_hash    = EXCLUDED.content_hash,
+              embedding_model = EXCLUDED.embedding_model,
+              last_crawled    = now(),
+              last_status     = 'ok',
+              crawl_count     = pages.crawl_count + 1
+            """
+        page_params = (url, title, domain, markdown, digest, embed_model, title, domain)
+    else:
+        # Re-embed only: nothing was fetched from the URL, so crawl-time values
+        # (crawl_count, last_crawled, last_status) keep their stored values.
+        page_sql = """
+            INSERT INTO pages
+              (url, title, domain, fit_markdown, content_hash, embedding_model)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (url) DO UPDATE SET
+              title           = COALESCE(%s, pages.title),
+              domain          = COALESCE(%s, pages.domain),
+              fit_markdown    = EXCLUDED.fit_markdown,
+              content_hash    = EXCLUDED.content_hash,
+              embedding_model = EXCLUDED.embedding_model
+            """
+        page_params = (url, title, domain, markdown, digest, embed_model, title, domain)
+    return page_sql, page_params
+
+
 def _with_title(markdown: str, title: str | None) -> str:
     """Prepend the page title as an H1 so it participates in chunking and
     embedding. Skipped when absent or already present (site extractors emit
@@ -161,6 +178,9 @@ def _with_title(markdown: str, title: str | None) -> str:
         return markdown
     first = next((ln for ln in markdown.lstrip().splitlines() if ln.strip()), "")
     m = _H1_RE.match(first)
-    if m and " ".join(m.group(1).split()).casefold() == " ".join(title.split()).casefold():
-        return markdown
+    if m is not None:
+        h1_norm = " ".join(m.group(1).split()).casefold()
+        title_norm = " ".join(title.split()).casefold()
+        if h1_norm == title_norm:
+            return markdown
     return f"# {title}\n\n{markdown}"

@@ -742,7 +742,8 @@ def main() -> None:
     if args.command in ("all", "sample"):
         pages = asyncio.run(build_sample(cfg))
         save_sample(cfg, pages)
-        domains = sorted({p_["domain"] for p_ in pages})
+        domain_set = {p_["domain"] for p_ in pages}
+        domains = sorted(domain_set)
         log(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
 
     if args.command in ("all", "run"):

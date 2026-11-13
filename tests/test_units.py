@@ -9,8 +9,8 @@ from wellisearch.fetch import render_fetch_page_markdown, render_fetch_pages_mar
 from wellisearch.index import _with_title
 from wellisearch.search_web import (
     _apply_job_board_penalty,
-    _cap_per_domain,
     _candidate_rows,
+    _cap_per_domain,
     _is_job_board,
     _job_intent,
     _passes_local_gate,
@@ -452,9 +452,9 @@ assert not _passes_local_gate(pen_board[0]), \
     f"post-penalty similarity {pen_board[0]['similarity']} must fail the gate"
 
 # _cap_per_domain: first N per registrable domain kept in order
-rows = [{"url": f"https://www.linkedin.com/jobs/view/{i}"} for i in range(5)] + [
-    {"url": f"https://{d}/a"} for d in ("byjlw.com", "graphapp.dev", "reddit.com")
-]
+board_rows = [{"url": f"https://www.linkedin.com/jobs/view/{i}"} for i in range(5)]
+other_rows = [{"url": f"https://{d}/a"} for d in ("byjlw.com", "graphapp.dev", "reddit.com")]
+rows = board_rows + other_rows
 capped = _cap_per_domain(rows, 2)
 assert len(capped) == 5, [r["url"] for r in capped]
 assert [r["url"] for r in capped[:2]] == [u["url"] for u in rows[0:2]], \

@@ -406,9 +406,9 @@ async def _refresh_watchlist(deadline: float) -> dict:
             # only that canonical URL leaves the alias eligible every tick.
             await _refresh_fail_backoff(url)
             log.warning("refresh failed for %s: %s", url, e)
-            results.append(
-                {"url": url, "status": "error", "error": str(e)[:REFRESH_ERROR_MAX_LEN]}
-            )
+            results.append({
+                "url": url, "status": "error", "error": str(e)[:REFRESH_ERROR_MAX_LEN]
+            })
 
     await _run_bounded(rows, refresh, deadline, s.CRAWL_MAX_PARALLEL)
     unchanged = sum(1 for r in results if r.get("status") == "unchanged")
