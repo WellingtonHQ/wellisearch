@@ -317,9 +317,12 @@ def _helper() -> None: ...
 When a call spans multiple lines, break immediately after the opening paren.
 No parameter may sit on the same line as `(`. Indent the parameters with a
 4-space hanging indent (not aligned to the opening paren) and put the closing
-paren on its own line. The one exception is a literal (dict or list) that opens
-inline right after the opening paren; it stays bound per Rule 17, so its
-closing bracket shares the call's closing-paren line (`})` / `])`).
+paren on its own line.
+
+The one exception is a literal (dict or list) that opens inline right after
+the opening paren (`name([` / `name({`): it is not a parameter for this rule.
+It is never dropped below the `(`, and it stays bound per Rule 17, so
+its closing bracket shares the call's closing-paren line (`})` / `])`).
 
 **Do:**
 ```python
@@ -347,6 +350,17 @@ Break right after `(`:
 ```python
 print(f"  {done}/{total} (ok={stats['ok']} unchanged={stats['unchanged']} "
     f"failed={stats['failed']}) eta={eta_min:.0f}m", flush=True
+)
+```
+
+**Don't:** dropping an inline literal below the `(` (a Rule 17 violation):
+```python
+subprocess.run(
+    [
+        "ffmpeg",
+        "-y",
+    ],
+    capture_output=True,
 )
 ```
 
@@ -378,13 +392,20 @@ def run()
 
 ## 17. Inline Literals Stay with Their Call
 
-When a literal (dict or list) is passed to a call and its opening bracket sits
-inline on the call line (`name({` / `name([`), keep the pair bound at both ends:
-the closing bracket and the call's closing paren share one line (`})` / `])`
-at the enclosing indent), never two separate lines. Dropping the opening
-bracket onto its own line under a bare `(` is the mirror-image violation of
-this rule (it takes precedence over Rule 15's "closing paren on its own line"
-for exactly this shape).
+When a literal (dict or list) is the first argument of a call, its opening
+bracket sits inline on the call line (`name({` / `name([`) and the pair stays
+bound at both ends: the closing bracket and the call's closing paren share
+one line (`})` / `])` at the enclosing indent), never two separate lines.
+Dropping the opening bracket onto its own line under a bare `(` is a
+violation (it takes precedence over Rule 15's "closing paren on its own
+line" for exactly this shape). A literal that is not the first argument
+cannot open inline: its bracket starts its own parameter line.
+
+When a bound literal spans multiple lines, every element gets its own line
+with a trailing comma — never two elements on one line.
+
+An empty literal (`[]` / `{}`) is atomic: it may sit on its own parameter
+line in a multi-line call.
 
 **Do:**
 ```python
@@ -397,6 +418,14 @@ lines = "\n".join([
     f"title: {title}",
     body,
 ])
+
+subprocess.run([
+    "ffmpeg",
+    "-y",
+    str(staged_path),
+],
+capture_output=True,
+)
 ```
 
 **Don't:**
@@ -413,6 +442,14 @@ lines = "\n".join(
         f"title: {title}",
         body,
     ]
+)
+
+subprocess.run([
+    "ffmpeg", "-y",
+    "-f", "concat",
+    str(staged_path),
+],
+capture_output=True,
 )
 ```
 
