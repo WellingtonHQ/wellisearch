@@ -49,32 +49,6 @@ def first_url(markdown: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _seed_freshly_crawled(hit: dict | None, seeded_at: dt.datetime) -> bool:
-    """True when the seeded page's last_crawled is at/after the seed time."""
-    if hit is None:
-        return False
-    ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=dt.timezone.utc)
-    return ts >= seeded_at - dt.timedelta(seconds=5)
-
-
-async def _wait_for_seed_drain(
-    c: httpx.AsyncClient,
-    seed_probe: str,
-    seeded_at: dt.datetime,
-) -> bool:
-    """Poll the pages surface until the seed was freshly crawled (60s)."""
-    for _ in range(30):
-        rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
-        rows = rr.json().get("pages", []) if rr.status_code == 200 else []
-        hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
-        if _seed_freshly_crawled(hit, seeded_at):
-            return True
-        await asyncio.sleep(2)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -530,12 +504,13 @@ async def test_window_logs(c: httpx.AsyncClient) -> None:
     """GET /api/window + GET /api/logs: window shape, clamping, merged log stream."""
     r = await c.get("/api/window", params={"secs": "86400"})
     j = r.json()
+    searches = j.get("searches", {})
     check(
         "window: 200 + shape + searches>=1",
         r.status_code == 200 and j.get("secs") == 86400
-        and (j.get("searches", {}).get("total") or 0) >= 1
+        and (searches.get("total") or 0) >= 1
         and "by_status" in j.get("crawls", {})
-        and "local_rate" in j.get("searches", {}),
+        and "local_rate" in searches,
         json.dumps(j)[:160]
     )
     r = await c.get("/api/window", params={"secs": "1"})
@@ -688,6 +663,32 @@ def _load_api_key() -> str:
 KEY = _load_api_key()
 H = {"X-API-Key": KEY}
 PASS, FAIL = 0, 0
+
+
+def _seed_freshly_crawled(hit: dict | None, seeded_at: dt.datetime) -> bool:
+    """True when the seeded page's last_crawled is at/after the seed time."""
+    if hit is None:
+        return False
+    ts = dt.datetime.fromisoformat(str(hit["last_crawled"]))
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=dt.timezone.utc)
+    return ts >= seeded_at - dt.timedelta(seconds=5)
+
+
+async def _wait_for_seed_drain(
+    c: httpx.AsyncClient,
+    seed_probe: str,
+    seeded_at: dt.datetime,
+) -> bool:
+    """Poll the pages surface until the seed was freshly crawled (60s)."""
+    for _ in range(30):
+        rr = await c.get("/api/pages", params={"sort": "last_crawled", "limit": "50"})
+        rows = rr.json().get("pages", []) if rr.status_code == 200 else []
+        hit = next((p for p in rows if p["url"] == seed_probe and p.get("last_crawled")), None)
+        if _seed_freshly_crawled(hit, seeded_at):
+            return True
+        await asyncio.sleep(2)
+    return False
 
 
 async def _all_page_urls(c: httpx.AsyncClient) -> list[str]:

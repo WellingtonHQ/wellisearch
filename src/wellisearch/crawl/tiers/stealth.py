@@ -142,7 +142,11 @@ def _run_worker(
         sender.close()
 
 
-async def _run_worker_process(url: str, timeout_s: float, profile: str) -> Rendered:
+async def _run_worker_process(
+    url: str,
+    timeout_s: float,
+    profile: str,
+) -> Rendered:
     """Spawn the sync worker, await its result, and guarantee its death."""
     context = multiprocessing.get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)

@@ -677,7 +677,10 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
             row += [jmed("faithfulness"), jmed("noise_removal"), jmed("preservation")]
         data.append(row)
 
-    widths = [max(len(cols[i]), *(len(r[i]) for r in data)) for i in range(len(cols))]
+    widths = []
+    for i in range(len(cols)):
+        col_widths = [len(r[i]) for r in data]
+        widths.append(max(len(cols[i]), *col_widths))
 
     def line(cells: list[str]) -> str:
         """Format a row of cells to fixed widths (first left, rest right-aligned)."""
@@ -739,7 +742,8 @@ def main() -> None:
     if args.command in ("all", "sample"):
         pages = asyncio.run(build_sample(cfg))
         save_sample(cfg, pages)
-        domains = sorted({p_["domain"] for p_ in pages})
+        domain_set = {p_["domain"] for p_ in pages}
+        domains = sorted(domain_set)
         log(f"[sample] {len(pages)} pages across {len(domains)} domains -> {cfg.sample_file}")
 
     if args.command in ("all", "run"):

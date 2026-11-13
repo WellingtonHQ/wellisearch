@@ -299,16 +299,16 @@ def _pids_pin_gate(
     SUSTAINED_LIMIT_S (a sign of cascading launch failures). Returns
     (FAIL reason, updated pinned_since); the reason is None unless the
     gate trips."""
-    if cg is not None and cg["pids"] >= PIDS_PIN_THRESHOLD:
-        if pinned_since is None:
-            return None, now
-        if now - pinned_since >= SUSTAINED_LIMIT_S:
-            return (
-                f"PIDs pinned at/above {PIDS_PIN_THRESHOLD} for {SUSTAINED_LIMIT_S:.0f}s",
-                pinned_since,
-            )
-        return None, pinned_since
-    return None, None
+    if cg is None or cg["pids"] < PIDS_PIN_THRESHOLD:
+        return None, None
+    if pinned_since is None:
+        return None, now
+    if now - pinned_since >= SUSTAINED_LIMIT_S:
+        return (
+            f"PIDs pinned at/above {PIDS_PIN_THRESHOLD} for {SUSTAINED_LIMIT_S:.0f}s",
+            pinned_since,
+        )
+    return None, pinned_since
 
 
 def _soft_mem_gate(
@@ -442,9 +442,12 @@ def _build_summary(
         verdict = "WARN"
         reasons.append(f"{pids_limit_total} PID-limit events during the run (contained)")
 
-    peak_mem_gib = max((s["mem_bytes"] for s in samples if "mem_bytes" in s), default=0) / 2**30
+    mem_bytes = [s["mem_bytes"] for s in samples if "mem_bytes" in s]
+    peak_mem_bytes = max(mem_bytes, default=0)
+    peak_mem_gib = peak_mem_bytes / 2**30
     peak_pids = max((s["pids"] for s in samples if "pids" in s), default=0)
-    latencies = sorted(s["health_ms"] for s in samples if s.get("health_ms") is not None)
+    health_ms = [s["health_ms"] for s in samples if s.get("health_ms") is not None]
+    latencies = sorted(health_ms)
     p95_health = (
         latencies[int(len(latencies) * 0.95)]
         if len(latencies) > 20

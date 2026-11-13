@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import NoReturn
-
+from typing import Any, NoReturn
 from unittest.mock import AsyncMock, Mock, patch
 
 from wellisearch.config import get_settings
@@ -346,14 +345,14 @@ class FakeShortSession:
         """Enter the context, returning the session itself."""
         return self
 
-    async def __aexit__(self, *exc_info) -> bool:
+    async def __aexit__(self, *exc_info: object) -> bool:
         """Exit the context, suppressing nothing."""
         return False
 
     async def get(
         self,
         url: str,
-        **kwargs,
+        **kwargs: Any,
     ) -> FakeShortResponse:
         """Return the canned final-URL response for any GET."""
         return FakeShortResponse(self.final_url)
@@ -373,7 +372,7 @@ with patch("curl_cffi.requests.AsyncSession", return_value=FakeShortSession(FINA
     assert asyncio.run(resolve_short_url(SHORT_URL)) == FINAL_URL
 
 
-def _shorturl_boom(**kwargs) -> NoReturn:
+def _shorturl_boom(**kwargs: Any) -> NoReturn:
     """Simulate a network failure on the short-URL request."""
     raise RuntimeError("network down")
 

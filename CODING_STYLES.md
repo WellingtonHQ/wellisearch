@@ -53,10 +53,11 @@ async def _drain_queue(deadline: float) -> dict: ...
 
 ## 3. Alphabetical Sorting
 
-Sort collections of equal elements alphabetically — enum members, list
-literals, provider lists, and comment enumerations — unless business logic
-dictates a specific order (e.g. `SEARCH_PROVIDERS = "tavily,brave,exa,youcom"`
-is priority order, not alphabetical). Import ordering is covered by Rule 7.
+Sort collections of equal elements alphabetically: enum members, list
+literals, provider lists, and comment enumerations. The one exception is
+when business logic dictates a specific order (e.g. `SEARCH_PROVIDERS =
+"tavily,brave,exa,youcom"` is priority order, not alphabetical). Import
+ordering is covered by Rule 7.
 
 **Do:**
 ```python
@@ -72,7 +73,7 @@ class CrawlStatus(str, Enum):
 
 ## 4. Function Length
 
-A function should not exceed ~100 lines. If it does, break it into smaller
+A function shouldn't exceed ~100 lines. If it does, break it into smaller
 sub-functions with clear names that describe their purpose.
 
 **Do:**
@@ -113,7 +114,7 @@ async def _log_event(message: str, info: dict | None = None) -> None:
 ## 6. Line Length Cap
 
 Soft cap at **110 characters**; hard cap at **125**. Docstrings, SQL, and URLs
-may approach the hard cap; code should stay under the soft cap — wrap strings
+may approach the hard cap. Code should stay under the soft cap. Wrap strings
 across lines, put function arguments on separate lines, or extract to a variable.
 
 **Do:**
@@ -131,7 +132,7 @@ log.info(
 `from __future__ import annotations` first, then three groups separated by
 blank lines: standard library, third-party packages, local modules (relative
 imports in this package). Sort alphabetically **within each group**, by the
-full import path — so parent-package (`..`) imports come before sibling (`.`)
+full import path, so parent-package (`..`) imports come before sibling (`.`)
 imports. Business logic may dictate a specific order (e.g. a provider priority
 list); that overrides alphabetical.
 
@@ -161,14 +162,14 @@ third-party imports, or leave any group in arbitrary order (e.g. sandwiching
 ## 8. Type Hints Everywhere
 
 Require type hints on all function and class signatures, public and `_prefixed`
-helpers alike. Use modern syntax (`list[str]`, `dict`, `str | None`) — the
+helpers alike. Use modern syntax (`list[str]`, `dict`, `str | None`). The
 project requires Python 3.12+.
 
 **Do:**
 ```python
 async def crawl_url(url: str, trigger: str) -> dict: ...
 
-async def _crawl_and_store(url: str, trigger: str) -> dict: ...  # private — hints required too
+async def _crawl_and_store(url: str, trigger: str) -> dict: ...  # private: hints required too
 ```
 
 ---
@@ -176,7 +177,7 @@ async def _crawl_and_store(url: str, trigger: str) -> dict: ...  # private — h
 ## 9. Docstrings
 
 Every module gets a docstring stating its purpose (reference the BLUEPRINT
-section when applicable). Every function gets one too — a one-liner is fine
+section when applicable). Every function gets one too. A one-liner is fine
 for trivial helpers; entry points and multi-step functions get a fuller
 description.
 
@@ -195,7 +196,7 @@ async def tick() -> dict:
 ## 10. Magic Numbers → Settings or Named Constants
 
 Tunable behavior belongs in the `Settings` class in `config.py` (UPPER_CASE
-fields, env-overridable) — never as bare literals at the call site. One-off
+fields, env-overridable), never as bare literals at the call site. One-off
 meaningful numbers that aren't tunables become module-level `UPPER_CASE`
 constants.
 
@@ -243,9 +244,9 @@ async def tick() -> dict:
 ## 12. String Formatting
 
 Use f-strings for building response bodies, SQL-adjacent strings, and user-facing
-text. For **logging calls only**, use lazy `%s`/`%d` formatting with arguments —
-never f-strings, so the interpolation is skipped when the level is disabled and
-no secrets are formatted on the hot path.
+text. For **logging calls only**, use lazy `%s`/`%d` formatting with arguments,
+never f-strings. The interpolation is then skipped when the level is disabled,
+and no secrets are formatted on the hot path.
 
 **Do:**
 ```python
@@ -280,9 +281,9 @@ log.warning("queue crawl failed for %s: %s", url, e)
 
 Separate top-level sections with a three-line divider: a line of dashes, a short
 Title Cased label, and a closing line of dashes (see Rule 2). This is the one
-way to do separators/headings in code — never a single-line `# ----...---- label`.
-Leave exactly **one empty line** between the divider's closing dashes and the
-following element (function, class, variable, etc.).
+way to do separators/headings in code. Never use a single-line `# ----...----
+label`. Leave exactly **one empty line** between the divider's closing dashes
+and the following element (function, class, variable, etc.).
 
 **Do:**
 ```python
@@ -313,12 +314,15 @@ def _helper() -> None: ...
 
 ## 15. Multi-line Call Parameters
 
-When a call spans multiple lines, break immediately after the opening paren —
-no parameter may sit on the same line as `(` — indent the parameters with a
+When a call spans multiple lines, break immediately after the opening paren.
+No parameter may sit on the same line as `(`. Indent the parameters with a
 4-space hanging indent (not aligned to the opening paren) and put the closing
-paren on its own line. The one exception is a literal (dict or list) that opens
-inline right after the opening paren; it stays bound per Rule 17, so its
-closing bracket shares the call's closing-paren line (`})` / `])`).
+paren on its own line.
+
+The one exception is a literal (dict or list) that opens inline right after
+the opening paren (`name([` / `name({`): it is not a parameter for this rule.
+It is never dropped below the `(`, and it stays bound per Rule 17, so
+its closing bracket shares the call's closing-paren line (`})` / `])`).
 
 **Do:**
 ```python
@@ -341,11 +345,22 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
 ```
 
-**Don't:** first parameter left on the call line while the rest hang below —
-break right after `(`:
+**Don't:** first parameter left on the call line while the rest hang below.
+Break right after `(`:
 ```python
 print(f"  {done}/{total} (ok={stats['ok']} unchanged={stats['unchanged']} "
     f"failed={stats['failed']}) eta={eta_min:.0f}m", flush=True
+)
+```
+
+**Don't:** dropping an inline literal below the `(` (a Rule 17 violation):
+```python
+subprocess.run(
+    [
+        "ffmpeg",
+        "-y",
+    ],
+    capture_output=True,
 )
 ```
 
@@ -377,13 +392,20 @@ def run()
 
 ## 17. Inline Literals Stay with Their Call
 
-When a literal (dict or list) is passed to a call and its opening bracket sits
-inline on the call line (`name({` / `name([`), keep the pair bound at both ends:
-the closing bracket and the call's closing paren share one line — `})` / `])`
-at the enclosing indent — never two separate lines. Dropping the opening
-bracket onto its own line under a bare `(` is the mirror-image violation of
-this rule (this takes precedence over Rule 15's "closing paren on its own line"
-for exactly this shape).
+When a literal (dict or list) is the first argument of a call, its opening
+bracket sits inline on the call line (`name({` / `name([`) and the pair stays
+bound at both ends: the closing bracket and the call's closing paren share
+one line (`})` / `])` at the enclosing indent), never two separate lines.
+Dropping the opening bracket onto its own line under a bare `(` is a
+violation (it takes precedence over Rule 15's "closing paren on its own
+line" for exactly this shape). A literal that is not the first argument
+cannot open inline: its bracket starts its own parameter line.
+
+When a bound literal spans multiple lines, every element gets its own line
+with a trailing comma — never two elements on one line.
+
+An empty literal (`[]` / `{}`) is atomic: it may sit on its own parameter
+line in a multi-line call.
 
 **Do:**
 ```python
@@ -396,6 +418,14 @@ lines = "\n".join([
     f"title: {title}",
     body,
 ])
+
+subprocess.run([
+    "ffmpeg",
+    "-y",
+    str(staged_path),
+],
+capture_output=True,
+)
 ```
 
 **Don't:**
@@ -413,4 +443,93 @@ lines = "\n".join(
         body,
     ]
 )
+
+subprocess.run([
+    "ffmpeg", "-y",
+    "-f", "concat",
+    str(staged_path),
+],
+capture_output=True,
+)
 ```
+
+---
+
+## 18. No Nested or Over-Packed Expressions
+
+One expression does one thing. If you have to read a line twice, split it
+into separate statements with named intermediates, one operation per line. A
+nested expression is a violation even when the line is short. A long line
+that does one simple thing is not (that is Rule 6's territory).
+
+Check every comprehension and generator line against the two classes below.
+When in doubt, split it. A named intermediate is never wrong.
+
+**A. Nested comprehension or generator. Always a violation.** A comprehension
+or generator is nested when any of these is true:
+- its iterable, element expression, or filter is itself a comprehension or
+  generator. The common `next(...)` idiom counts:
+  `next((t for t in (f(x) for x in xs) if t is not None), None)`. So does a
+  list comprehension written over a generator:
+  `[line for line in (f(k) for k in fields) if line is not None]`;
+- it has more than one `for` clause, flattening a nested structure:
+  `[z for x in A for y in B if pred]`;
+- it star-unpacks a generator in its element expression:
+  `[max(a, *(g(x) for x in xs)) for ...]`.
+
+**B. Over-packed single expression. A violation.** One expression doing more
+than one thing on a line:
+- a comprehension combined with another operation on the same line (a slice,
+  `sorted(...)`, a `+`): `[x for x in xs if pred][: n]`;
+- an `and`/`or` side that chains several distinct transforms: a nested
+  `.get`, a conversion, a casefold, a comparison. Example:
+  `isinstance(item, dict) and str(item.get("@type", "")).lower() == "jobposting"`.
+  An `and`/`or` whose sides are each one clear operation is fine. The
+  `isinstance(x, str) and x.strip()` idiom is not a violation.
+
+**Break them up, one operation per line:**
+```python
+# next((t for t in (f(x) for x in xs) if pred), None)  ->  loop with early return.
+for x in xs:
+    t = f(x)
+    if t is not None:
+        return t
+return None
+
+# Map, then filter: two readable steps.
+addresses = [_location_address(loc) for loc in locs]
+addresses = [a for a in addresses if a is not None]
+
+# Comprehension + slice: name the filtered list, then slice on its own line.
+fresh = [r for r in similar if r.get("url") not in seen]
+extra = fresh[: s.SEARCH_TOP_BY_SIM]
+
+# Per-column widths: compute the inner values in a named step first.
+widths = []
+for i in range(len(cols)):
+    col_widths = [len(r[i]) for r in data]
+    widths.append(max(len(cols[i]), *col_widths))
+
+# Two-for flattening: plain nested loop, same order.
+urls = []
+for results in phase_results.values():
+    for r in results:
+        if r.get("ok"):
+            urls.append(r["url"])
+
+# Guard clause + named intermediate for a multi-step condition.
+if not isinstance(item, dict):
+    continue
+job_type = str(item.get("@type", "")).lower()
+if job_type == "jobposting":
+    return item
+```
+
+**Not violations. Don't reformat these:**
+- a single-level comprehension or generator with one `for` clause, with or
+  without an `if`: `[k for k in keys if k in d]`,
+  `next((p for p in rows if p.get("url") == url), None)`;
+- a `for` statement (not a comprehension) iterating a single-level generator:
+  `for task in (t for t in tasks if not t.done()):`;
+- regular nested `for` loops (statements, not expressions);
+- a short chain that reads as one operation: `open(f).read().split()`.

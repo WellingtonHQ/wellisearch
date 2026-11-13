@@ -289,14 +289,10 @@ def _candidate_rows(local_rows: list[dict], k: int) -> list[dict]:
     s = get_settings()
     head = local_rows[: max(s.SEARCH_GATE_MIN_K, k)]
     seen = {r.get("url") for r in head}
-    extra = [
-        r
-        for r in sorted(
-            (r for r in local_rows if r.get("similarity") is not None),
-            key=lambda r: -(r["similarity"]),
-        )
-        if r.get("url") not in seen
-    ][: s.SEARCH_TOP_BY_SIM]
+    similar = [r for r in local_rows if r.get("similarity") is not None]
+    similar.sort(key=lambda r: -(r["similarity"]))
+    fresh = [r for r in similar if r.get("url") not in seen]
+    extra = fresh[: s.SEARCH_TOP_BY_SIM]
     return head + extra
 
 

@@ -120,7 +120,11 @@ class _HtmlDownload:
         self._record_header(name.strip().lower(), value)
         return len(chunk)
 
-    def _record_header(self, name: bytes, value: bytes) -> None:
+    def _record_header(
+        self,
+        name: bytes,
+        value: bytes,
+    ) -> None:
         """Record one content-type/length/location header of the current block."""
         if name == b"content-type":
             self.content_type = value.strip().decode("latin-1")
