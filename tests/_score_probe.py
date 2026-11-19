@@ -35,7 +35,11 @@ async def main() -> None:
             (q, qvec if qvec is not None else None),
         )
         top = [(r["url"].split("/")[-1][:34], round(float(r["score"]), 3)) for r in rows[:3]]
-        gate = "PASS" if rows and float(rows[0]["score"]) >= s.SEARCH_MIN_SCORE else "miss"
+        if rows:
+            score = float(rows[0]["score"])
+            gate = "PASS" if score >= s.SEARCH_MIN_SCORE else "miss"
+        else:
+            gate = "miss"
         print(f"{kind:<9} {q:<42} {gate:<8} {top}")
     await db.close()
 

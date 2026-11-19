@@ -461,8 +461,9 @@ other_rows = [{"url": f"https://{d}/a"} for d in ("byjlw.com", "graphapp.dev", "
 rows = board_rows + other_rows
 capped = _cap_per_domain(rows, 2)
 assert len(capped) == 5, [r["url"] for r in capped]
-assert [r["url"] for r in capped[:2]] == [u["url"] for u in rows[0:2]], \
-    "first two linkedin kept in order"
+first_urls = [r["url"] for r in capped[:2]]
+expected_urls = [u["url"] for u in rows[0:2]]
+assert first_urls == expected_urls, "first two linkedin kept in order"
 assert all("linkedin.com" not in r["url"] for r in capped[2:])
 
 # _candidate_rows: a high-similarity row buried by lexical mass is still included

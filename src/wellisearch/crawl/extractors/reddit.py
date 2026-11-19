@@ -66,8 +66,11 @@ class RedditExtractor:
         """Accept a post once comments are present, or Reddit reports none."""
         if f.flags.get("extractor") != "reddit":
             return GenericExtractor().accept(f)
+        if not f.title:
+            return False
         required = int(f.signals.get("comments_required", 1))
-        return bool(f.title) and int(f.signals.get("comments", 0)) >= required
+        comments = int(f.signals.get("comments", 0))
+        return comments >= required
 
 
 def comment_request_url(url: str) -> str:

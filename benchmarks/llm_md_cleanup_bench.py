@@ -569,18 +569,26 @@ def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         ok = [r for r in recs if "error" not in r and r.get("output")]
         failed = [r for r in recs if "error" in r]
         m = [r["metrics"] for r in ok if r.get("metrics")]
+        no_addition = [x["no_addition"] for x in m]
+        preservation = [x["preservation"] for x in m]
+        boilerplate_removed = [x["boilerplate_removed"] for x in m]
+        length_ratio = [x["length_ratio"] for x in m]
+        ttft_ms = [r["ttft_ms"] for r in ok if r.get("ttft_ms") is not None]
+        total_ms = [r["total_ms"] for r in ok if r.get("total_ms") is not None]
+        tok_s = [r["tok_s"] for r in ok if r.get("tok_s")]
+        completion_tokens = [r["completion_tokens"] for r in ok if r.get("completion_tokens")]
         agg = {
             "pages_total": len(recs),
             "pages_ok": len(ok),
             "pages_failed": len(failed),
-            "no_addition": _stat([x["no_addition"] for x in m]),
-            "preservation": _stat([x["preservation"] for x in m]),
-            "boilerplate_removed": _stat([x["boilerplate_removed"] for x in m]),
-            "length_ratio": _stat([x["length_ratio"] for x in m]),
-            "ttft_ms": _stat([r["ttft_ms"] for r in ok if r.get("ttft_ms") is not None]),
-            "total_ms": _stat([r["total_ms"] for r in ok if r.get("total_ms") is not None]),
-            "tok_s": _stat([r["tok_s"] for r in ok if r.get("tok_s")]),
-            "completion_tokens": _stat([r["completion_tokens"] for r in ok if r.get("completion_tokens")]),
+            "no_addition": _stat(no_addition),
+            "preservation": _stat(preservation),
+            "boilerplate_removed": _stat(boilerplate_removed),
+            "length_ratio": _stat(length_ratio),
+            "ttft_ms": _stat(ttft_ms),
+            "total_ms": _stat(total_ms),
+            "tok_s": _stat(tok_s),
+            "completion_tokens": _stat(completion_tokens),
         }
         if payload["config"].get("judge_model"):
             jf = [
@@ -598,9 +606,12 @@ def aggregate(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 for r in ok
                 if r.get("judge", {}).get("scores", {}).get("preservation") is not None
             ]
-            agg["judge_faithfulness"] = _stat([float(x) for x in jf])
-            agg["judge_noise_removal"] = _stat([float(x) for x in jn])
-            agg["judge_preservation"] = _stat([float(x) for x in jp])
+            faith = [float(x) for x in jf]
+            noise = [float(x) for x in jn]
+            presv = [float(x) for x in jp]
+            agg["judge_faithfulness"] = _stat(faith)
+            agg["judge_noise_removal"] = _stat(noise)
+            agg["judge_preservation"] = _stat(presv)
         out[label] = agg
     return out
 
@@ -635,7 +646,8 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
         wall_s = sum(r.get("total_ms", 0.0) for r in ok) / 1000.0
         secs_doc = wall_s / len(ok) if (wall_s > 0 and len(ok) > 0) else 0.0
         docs_s = len(ok) / wall_s if wall_s > 0 else 0.0
-        tok_s = _median([r["tok_s"] for r in ok if r.get("tok_s")])
+        tok_rates = [r["tok_s"] for r in ok if r.get("tok_s")]
+        tok_s = _median(tok_rates)
 
         row = [
             label,

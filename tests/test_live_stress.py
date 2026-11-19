@@ -367,15 +367,13 @@ def main() -> None:
 
     final = monitor.samples[-1] if monitor.samples else {}
     verdict, reasons = assess(monitor, phase_results)
+    peak_mem = max((s["mem_bytes"] for s in monitor.samples if "mem_bytes" in s), default=0)
     summary = {
         "result": verdict.lower(),
         "run_id": run_id,
         "baseline": baseline,
         "final": final,
-        "peak_memory_gib": round(
-            max((s["mem_bytes"] for s in monitor.samples if "mem_bytes" in s), default=0) / 2**30,
-            2,
-        ),
+        "peak_memory_gib": round(peak_mem / 2**30, 2),
         "peak_pids": max((s["pids"] for s in monitor.samples if "pids" in s), default=0),
         "gate_reasons": monitor.gate_reasons,
         "pages_stored": len(stored_urls),

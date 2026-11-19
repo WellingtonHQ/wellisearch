@@ -254,9 +254,8 @@ class FastEmbedRunner:
 
     def encode(self, texts: list[str]) -> np.ndarray:
         """Encode a batch of texts to L2-normalized float32 vectors."""
-        X = np.stack([
-            np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)
-        ])
+        arrs = [np.asarray(v, dtype=np.float32) for v in self.model.embed(texts, batch_size=self.batch)]
+        X = np.stack(arrs)
         return _l2_normalize(X)
 
     def encode_one(self, text: str) -> np.ndarray:
@@ -342,7 +341,9 @@ def run_model(
     doc_texts = [runner.truncate(runner.doc_prefix + chunks[i]["text"]) for i in order]
     q_texts = [runner.truncate(runner.query_prefix + q["q"]) for q in queries]
 
-    total_toks = sum(runner.tok_count(t) for t in doc_texts) + sum(runner.tok_count(t) for t in q_texts)
+    doc_toks = sum(runner.tok_count(t) for t in doc_texts)
+    q_toks = sum(runner.tok_count(t) for t in q_texts)
+    total_toks = doc_toks + q_toks
 
     t0 = time.perf_counter()
     D = runner.encode(doc_texts)
@@ -355,6 +356,7 @@ def run_model(
         None if args.no_latency
         else measure_latency(runner.encode_one, runner.tok_count, doc_texts, args.latency_n)
     )
+    page_urls = {c["url"] for c in chunks}
 
     return {
         "model": model_id,
@@ -371,7 +373,7 @@ def run_model(
         "data": {
             "n_chunks": len(chunks),
             "n_queries": len(queries),
-            "n_pages": len({c["url"] for c in chunks}),
+            "n_pages": len(page_urls),
         },
         "env": {
             "python": sys.version.split()[0],
@@ -452,9 +454,11 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     chunks, queries, truth = load_data(args.data)
+    page_urls = {c["url"] for c in chunks}
+    n_pages = len(page_urls)
     print(
         f"Loaded test set: {len(chunks)} chunks, {len(queries)} queries, "
-        f"{len({c['url'] for c in chunks})} pages"
+        f"{n_pages} pages"
     )
     print(f"Models: {', '.join(args.model)}\n")
 
