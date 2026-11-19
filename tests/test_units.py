@@ -105,6 +105,8 @@ print("OK url normalization")
 # ---------------------------------------------------------------------------
 
 class _FakeTitleEl:
+    """Fake <title> element returning stored text via get_all_text for stealth title tests."""
+
     def __init__(self, text: str) -> None:
         """Store the title text."""
         self._text = text
@@ -115,6 +117,8 @@ class _FakeTitleEl:
 
 
 class _FakeStealthPage:
+    """Fake stealth page whose css("title") returns a _FakeTitleEl per stored title text."""
+
     def __init__(self, texts: list[str]) -> None:
         """Store the candidate title texts."""
         self._texts = texts

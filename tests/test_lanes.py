@@ -34,12 +34,16 @@ CLEAN_HTML = (
 # ---------------------------------------------------------------------------
 
 class FakeResp:
+    """Fake page response carrying a status code, returned by FakePage.goto."""
+
     def __init__(self, status: int) -> None:
         """Initialize a fake response with a status."""
         self.status = status
 
 
 class FakeMouse:
+    """Fake mouse that counts clicks; FakePage uses it so tests can assert turnstile clicks."""
+
     def __init__(self) -> None:
         """Initialize a fake mouse click counter."""
         self.clicks = 0
@@ -124,6 +128,8 @@ class FakePage:
 
 
 class FakeContext:
+    """Fake browser context whose new_page returns the single wrapped FakePage."""
+
     def __init__(self, page: FakePage) -> None:
         """Initialize a fake context wrapping a page."""
         self._page = page
@@ -134,6 +140,8 @@ class FakeContext:
 
 
 class FakePool:
+    """Fake browser pool serving one FakeContext and recording acquire, invalidate, and release."""
+
     def __init__(self, page: FakePage) -> None:
         """Initialize a fake pool wrapping a fake context."""
         self._ctx = FakeContext(page)
@@ -244,6 +252,8 @@ print("OK fast-lane clean page succeeds")
 # ---------------------------------------------------------------------------
 
 class ClosedContext(FakeContext):
+    """FakeContext whose new_page raises the closed-transport error, forcing a pool retry."""
+
     async def new_page(self) -> FakePage:
         """Simulate the closed Playwright transport seen in production."""
         raise RuntimeError(
@@ -270,6 +280,8 @@ print("OK browser tier replaces a closed context and retries once")
 # ---------------------------------------------------------------------------
 
 class TimeoutContext(FakeContext):
+    """FakeContext whose new_page raises an ordinary timeout, not a closed-transport error."""
+
     async def new_page(self) -> FakePage:
         """Simulate a page timeout unrelated to a closed browser context."""
         raise TimeoutError("navigation timed out")
@@ -318,6 +330,8 @@ called = []
 
 
 class FakeSem:
+    """Fake semaphore recording its lane name on enter, used to assert crawl_deduped picks by lane."""
+
     def __init__(self, name: str) -> None:
         """Initialize a fake semaphore with a name."""
         self.name = name
@@ -373,6 +387,8 @@ print("OK crawl_deduped picks semaphore by lane")
 # ---------------------------------------------------------------------------
 
 class ChallengeTier:
+    """Fake http tier whose fetch raises ChallengeDetected, used to test engine propagation."""
+
     name = "http"
 
     async def fetch(
@@ -407,6 +423,8 @@ print("OK engine propagates ChallengeDetected")
 # ---------------------------------------------------------------------------
 
 class FakeDB:
+    """Fake db for worker drain: serves one challenge row and records claims, done, and CF routing."""
+
     def __init__(self) -> None:
         """Initialize a fake db with recorded calls."""
         self.routed = []
@@ -469,6 +487,8 @@ print("OK worker routes ChallengeDetected to CF lane")
 # ---------------------------------------------------------------------------
 
 class BackoffDB:
+    """Fake db for _crawl_and_store: no-op sinks plus a recorded refresh_fail_bump streak."""
+
     def __init__(self) -> None:
         """Initialize a fake db recording streak bumps."""
         self.bumped = []
@@ -534,6 +554,8 @@ WALLED = "https://example.com/walled"
 
 
 class FakeRefreshDB:
+    """Fake db for the watchlist refresh: serves one stale page and records enqueue, routing, bumps."""
+
     def __init__(
         self,
         enqueue_ok: bool = True,
@@ -650,6 +672,8 @@ print("OK failed refresh backs off the selected legacy URL alias")
 # ---------------------------------------------------------------------------
 
 class KickDB:
+    """Fake db recording enqueues and CF routing, reporting a configurable insert result for kick tests."""
+
     def __init__(self, insert_ok: bool) -> None:
         """Initialize a fake db that records enqueue/route calls."""
         self.inserted = []

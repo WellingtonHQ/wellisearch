@@ -184,6 +184,8 @@ BOTWALL_HTML = '<html><body>Just a moment...<div class="cf-turnstile"></div></bo
 
 
 class FakeTier:
+    """Fake http tier returning fixed GOOD_HTML, used to exercise the engine's success path."""
+
     name = "http"
 
     async def fetch(
@@ -287,6 +289,8 @@ assert hd_cat_result.flags.get("extractor") == "generic"  # non-product page -> 
 
 
 class BotwallHttpTier:
+    """Fake http tier that returns the botwall page, driving the engine's botwall failure path."""
+
     name = "http"
 
     async def fetch(
@@ -299,6 +303,8 @@ class BotwallHttpTier:
 
 
 class FakeBotwallTier:
+    """Fake browser tier returning the botwall page, so the crawl fails on both tiers."""
+
     name = "browser"
 
     async def fetch(
