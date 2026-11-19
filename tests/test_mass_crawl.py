@@ -535,9 +535,18 @@ _TASK_BREAKDOWN_SCRIPT = (
 def _task_breakdown(container: str) -> dict[str, int] | None:
     """Total kernel tasks (processes + threads) per process name, top 8."""
     try:
-        out = subprocess.run(
-            ["docker", "exec", container, "python3", "-c", _TASK_BREAKDOWN_SCRIPT],
-            capture_output=True, text=True, timeout=15, check=False,
+        out = subprocess.run([
+            "docker",
+            "exec",
+            container,
+            "python3",
+            "-c",
+            _TASK_BREAKDOWN_SCRIPT,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
         )
         return dict(ast.literal_eval(out.stdout.strip()))
     except Exception as e:
