@@ -480,10 +480,14 @@ async def run_model(
     await warmup(client, cfg, tag)
     sem = asyncio.Semaphore(cfg.concurrency)
 
-    return list(await asyncio.gather(*(
-        _process_page(client, cfg, sem, label, tag, p, i, len(pages))
-        for i, p in enumerate(pages)
-    )))
+    return list(
+        await asyncio.gather(
+            *(
+                _process_page(client, cfg, sem, label, tag, p, i, len(pages))
+                for i, p in enumerate(pages)
+            )
+        )
+    )
 
 async def ensure_models(
     client: httpx.AsyncClient,
