@@ -84,6 +84,24 @@ def _print_preview(urls: list[str], total: int) -> None:
         print(f"  ... and {total - PREVIEW_LIMIT} more")
 
 
+async def _process_page(url: str, stats: dict[str, int]) -> None:
+    """Re-crawl one page via crawl_url and tally the outcome into stats.
+
+    Never raises: one bad page must not stop the run."""
+    try:
+        r = await crawl_url(url, "recrawl")
+        status = (r or {}).get("status", "ok")
+    except Exception as e:
+        status = "error"
+        log.warning("recrawl %s failed: %s", url, e)
+    if status == "error":
+        stats["failed"] += 1
+    elif status == "unchanged":
+        stats["unchanged"] += 1
+    else:
+        stats["ok"] += 1
+
+
 async def _run(
     limit: int,
     dry_run: bool,
@@ -123,25 +141,10 @@ async def _run(
         stats = {"ok": 0, "unchanged": 0, "failed": 0}
         t0 = time.monotonic()
 
-        async def process(url: str) -> None:
-            """Re-crawl one page via crawl_url and tally the outcome into stats."""
-            try:
-                r = await crawl_url(url, "recrawl")
-                status = (r or {}).get("status", "ok")
-            except Exception as e:  # keep going; one bad page shouldn't stop the run
-                status = "error"
-                log.warning("recrawl %s failed: %s", url, e)
-            if status == "error":
-                stats["failed"] += 1
-            elif status == "unchanged":
-                stats["unchanged"] += 1
-            else:
-                stats["ok"] += 1
-
         done = 0
         for i in range(0, total, BATCH):
             batch = urls[i:i + BATCH]
-            await asyncio.gather(*(process(u) for u in batch))
+            await asyncio.gather(*(_process_page(u, stats) for u in batch))
             done += len(batch)
             elapsed = time.monotonic() - t0
             rate = done / elapsed if elapsed > 0 else 0.0

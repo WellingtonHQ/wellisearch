@@ -479,37 +479,11 @@ async def run_model(
     """Run one model over all pages (concurrency-limited), collecting outputs, metrics, and judge scores."""
     await warmup(client, cfg, tag)
     sem = asyncio.Semaphore(cfg.concurrency)
-    results: list[dict[str, Any]] = []
 
-    async def one(page: dict[str, Any], idx: int) -> dict[str, Any]:
-        """Process one page: stream the cleanup, compute metrics, and (optionally) call the judge."""
-        async with sem:
-            rec: dict[str, Any] = {
-                "model": label,
-                "url": page["url"],
-                "domain": page["domain"],
-                "input_chars": page["input_chars"],
-            }
-            who = f"[run] {label} · page {idx + 1}/{len(pages)} · {page['url']}"
-            try:
-                out = await stream_chat(
-                    client,
-                    cfg,
-                    cfg.ollama_base_url,
-                    cfg.ollama_api_key,
-                    tag,
-                    [
-                        {"role": "system", "content": CLEANUP_SYSTEM_PROMPT},
-                        {"role": "user", "content": page["fit_markdown"]},
-                    ],
-                )
-                await _record_page_result(client, cfg, rec, who, page, out)
-            except Exception as e:
-                rec["error"] = f"{type(e).__name__}: {e}"
-                log(f"{who} — ERROR: {rec['error']}")
-            return rec
-
-    return list(await asyncio.gather(*(one(p, i) for i, p in enumerate(pages))))
+    return list(await asyncio.gather(*(
+        _process_page(client, cfg, sem, label, tag, p, i, len(pages))
+        for i, p in enumerate(pages)
+    )))
 
 async def ensure_models(
     client: httpx.AsyncClient,
@@ -668,13 +642,11 @@ def print_summary(cfg: Config, payload: dict[str, Any]) -> None:
             f"{tok_s:.2f}" if tok_s is not None else "—",
         ]
         if judge:
-            def jmed(key: str) -> str:
-                """Median judge score for one dimension, formatted to one decimal."""
-                vals = [float(r["judge"]["scores"][key]) for r in ok
-                        if r.get("judge", {}).get("scores", {}).get(key) is not None]
-                med = _median(vals)
-                return f"{med:.1f}" if med is not None else "—"
-            row += [jmed("faithfulness"), jmed("noise_removal"), jmed("preservation")]
+            row += [
+                _judge_median(ok, "faithfulness"),
+                _judge_median(ok, "noise_removal"),
+                _judge_median(ok, "preservation"),
+            ]
         data.append(row)
 
     widths = []
@@ -888,6 +860,44 @@ def _parse_judge_scores(text: str) -> dict[str, Any]:
         return scores
     return scores
 
+async def _process_page(
+    client: httpx.AsyncClient,
+    cfg: Config,
+    sem: asyncio.Semaphore,
+    label: str,
+    tag: str,
+    page: dict[str, Any],
+    idx: int,
+    total: int,
+) -> dict[str, Any]:
+    """Process one page: stream the cleanup, compute metrics, and (optionally) call the judge."""
+    async with sem:
+        rec: dict[str, Any] = {
+            "model": label,
+            "url": page["url"],
+            "domain": page["domain"],
+            "input_chars": page["input_chars"],
+        }
+        who = f"[run] {label} · page {idx + 1}/{total} · {page['url']}"
+        try:
+            out = await stream_chat(
+                client,
+                cfg,
+                cfg.ollama_base_url,
+                cfg.ollama_api_key,
+                tag,
+                [
+                    {"role": "system", "content": CLEANUP_SYSTEM_PROMPT},
+                    {"role": "user", "content": page["fit_markdown"]},
+                ],
+            )
+            await _record_page_result(client, cfg, rec, who, page, out)
+        except Exception as e:
+            rec["error"] = f"{type(e).__name__}: {e}"
+            log(f"{who} — ERROR: {rec['error']}")
+        return rec
+
+
 async def _record_page_result(
     client: httpx.AsyncClient,
     cfg: Config,
@@ -980,6 +990,13 @@ def _fmt_stat(s: dict[str, Any]) -> str:
 def _median(values: list[float]) -> float | None:
     """Median of the values, or None when empty."""
     return statistics.median(values) if values else None
+
+def _judge_median(ok: list[dict[str, Any]], key: str) -> str:
+    """Median judge score for one dimension, formatted to one decimal."""
+    vals = [float(r["judge"]["scores"][key]) for r in ok
+            if r.get("judge", {}).get("scores", {}).get(key) is not None]
+    med = _median(vals)
+    return f"{med:.1f}" if med is not None else "—"
 
 def _report_meta_lines(payload: dict[str, Any]) -> list[str]:
     """Title, run config, and the metric legend."""
