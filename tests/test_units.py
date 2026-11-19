@@ -40,7 +40,7 @@ chunks = chunk_markdown(md, 800)
 assert chunks, "no chunks"
 assert all(len(c) > 0 for c in chunks)
 for c in chunks:
-    assert c.count("```") % 2 == 0, "unbalanced fence in: " + c[:80]
+    assert c.count("```") % 2 == 0, f"unbalanced fence in: {c[:80]}"
 print("chunks:", len(chunks))
 print("OK chunker")
 
