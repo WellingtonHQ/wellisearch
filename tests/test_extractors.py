@@ -154,7 +154,7 @@ assert "reduced colic from the first week" in fitted.md  # second paragraph kept
 assert fitted.md.index("### 1. Angela B") < fitted.md.index("### 2. Marcus T")
 assert fitted.signals["reviews"] == 2, fitted.signals
 assert fitted.signals["reviews_reported"] == 12345, fitted.signals
-rev_order = [fitted.md.index(h) for h in ("Product details", "Amazon reviews")]
+rev_order = [fitted.md.index(h) for h in ("Amazon reviews", "Product details")]
 assert rev_order == sorted(rev_order), fitted.md
 # limit: only the first review is kept
 with patch(
@@ -301,7 +301,7 @@ assert "Model: 90AT100AT01" in fitted.md, fitted.md[:400]
 assert "SKU: 1009919869" in fitted.md, fitted.md[:400]
 assert "Internet #: 325993266" in fitted.md, fitted.md[:400]
 assert "Weight: 9 lb" in fitted.md, fitted.md[:400]
-order = [fitted.md.index(h) for h in ("Product description", "Product details", "Home Depot reviews")]
+order = [fitted.md.index(h) for h in ("Home Depot reviews", "Product description", "Product details")]
 assert order == sorted(order), fitted.md
 # top reviews: heading, per-review fields, displayed order, after details
 assert "## Home Depot reviews (up to 5)" in fitted.md, fitted.md[:600]

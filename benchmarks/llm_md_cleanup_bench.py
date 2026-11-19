@@ -721,7 +721,7 @@ def main() -> None:
     """CLI entry point: parse args and dispatch sample/run/report/all."""
     _load_dotenv()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["sample", "run", "report", "all"])
+    p.add_argument("command", choices=["all", "report", "run", "sample"])
     p.add_argument("--models", help="comma list label=ollama_tag (default: the 5 benchmark models)")
     p.add_argument("--sample-size", type=int, help="number of pages (default 5)")
     p.add_argument("--no-judge", action="store_true", help="skip the 27B LLM judge")

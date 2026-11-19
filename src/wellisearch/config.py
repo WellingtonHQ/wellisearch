@@ -135,10 +135,10 @@ class Settings(BaseSettings):
     # matching any SEARCH_JOB_INTENT_TERMS skips the penalty entirely.
     SEARCH_JOB_BOARD_PENALTY: float = 0.5
     SEARCH_JOB_BOARDS: str = (
-        "linkedin.com/jobs,indeed.com,glassdoor.com/Job,ziprecruiter.com/Jobs,"
-        "monster.com,naukri.com,jobs.lever.co,boards.greenhouse.io"
+        "boards.greenhouse.io,glassdoor.com/Job,indeed.com,jobs.lever.co,"
+        "linkedin.com/jobs,monster.com,naukri.com,ziprecruiter.com/Jobs"
     )
-    SEARCH_JOB_INTENT_TERMS: str = "job, jobs, hiring, open roles, careers"
+    SEARCH_JOB_INTENT_TERMS: str = "careers, hiring, job, jobs, open roles"
     # Vector-leg row cap for fn_search_local (HNSW early-stop keeps it cheap);
     # a wider leg lets semantically close but lexically thin pages enter the
     # fusion at all instead of missing the pool entirely.
