@@ -775,12 +775,13 @@ def _pick_from_domain(
     picked: list[dict[str, Any]],
 ) -> bool:
     """Pick the next row for a domain if within the cap and not already seen."""
-    if round_idx < min(cap, len(rows)):
-        row = rows[round_idx]
-        if row["url"] not in seen:
-            seen.add(row["url"])
-            picked.append(row)
-            return True
+    if round_idx >= min(cap, len(rows)):
+        return False
+    row = rows[round_idx]
+    if row["url"] not in seen:
+        seen.add(row["url"])
+        picked.append(row)
+        return True
     return False
 
 def _one_round(
