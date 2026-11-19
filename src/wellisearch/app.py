@@ -49,6 +49,10 @@ log = logging.getLogger("wellisearch.app")
 STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 
 
+# ---------------------------------------------------------------------------
+# App Setup
+# ---------------------------------------------------------------------------
+
 class FetchBody(BaseModel):
     """Request body for POST /api/fetch: the URL to fetch, with optional
     ``max_chars`` and ``format`` overrides."""
