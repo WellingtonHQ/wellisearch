@@ -2,6 +2,8 @@
 
 Rules for keeping this codebase readable and maintainable. Applies to all `.py`
 files in `src/wellisearch/`, `tests/`, and `benchmarks/`.
+The SQL list rule also applies to standalone and embedded SQL throughout the
+repository.
 
 ---
 
@@ -533,3 +535,27 @@ if job_type == "jobposting":
   `for task in (t for t in tasks if not t.done()):`;
 - regular nested `for` loops (statements, not expressions);
 - a short chain that reads as one operation: `open(f).read().split()`.
+
+---
+
+## 19. SQL Lists
+
+In SQL lists, put each column and each corresponding value or placeholder on
+its own line. Keep corresponding columns and values in the same order. This
+applies to SQL embedded in application code as well as standalone SQL.
+
+**Do:**
+```sql
+INSERT INTO users (
+    id,
+    name
+) VALUES (
+    :id,
+    :name
+);
+```
+
+**Don't:**
+```sql
+INSERT INTO users (id, name) VALUES (:id, :name);
+```
