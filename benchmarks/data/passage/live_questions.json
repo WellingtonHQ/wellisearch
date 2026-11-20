@@ -1,0 +1,21 @@
+[
+  {"id":"oracle-named", "page":"000e771038", "query":"How do administrators save credentials for later use?", "answer":"Credentials are stored within Enterprise Manager as"},
+  {"id":"oracle-privilege", "page":"000e771038", "query":"Which permission is needed to create a named credential?", "answer":"CREATE\\_CREDENTIAL privilege"},
+  {"id":"oracle-auth", "page":"000e771038", "query":"How does the agent authenticate host credentials using PAM?", "answer":"With PAM authentication, the Agent uses"},
+  {"id":"processor-size", "page":"00305bbc05", "query":"Which processor has the smaller transistor size?", "answer":"Has a smaller size transistor"},
+  {"id":"processor-antutu", "page":"00305bbc05", "query":"What are the AnTuTu 11 CPU benchmark results?", "answer":"### AnTuTu 11"},
+  {"id":"colima-install", "page":"0050180918", "query":"How do I install Colima with Homebrew?", "answer":"brew install colima"},
+  {"id":"colima-start", "page":"0050180918", "query":"How do I start the container runtime with default options?", "answer":"colima start"},
+  {"id":"colima-config", "page":"0050180918", "query":"How can I edit the configuration when starting Colima?", "answer":"colima start --edit"},
+  {"id":"shelly-model", "page":"00765dd538", "query":"What is the device model identifier?", "answer":"S3EM-002CXCEU"},
+  {"id":"shelly-logs", "page":"00765dd538", "query":"How long does the device keep data logs?", "answer":"Data logs stored on device for up to 10 days"},
+  {"id":"shelly-channels", "page":"00765dd538", "query":"How many electrical channels can the meter monitor?", "answer":"Single phase, two channels", "answers":["Single phase, two channels", "up to 2 current transformers"]},
+  {"id":"homebrew-intel", "page":"007863f00d", "query":"Why are bottles unavailable for Intel Macs?", "answer":"Homebrew has stopped building prebuilt"},
+  {"id":"homebrew-cve", "page":"007863f00d", "query":"How does Homebrew scan for security vulnerabilities?", "answer":"brew vulns: Built-In CVE Scanning"},
+  {"id":"homebrew-workflow", "page":"007863f00d", "query":"Which GitHub Actions branch was removed?", "answer":"Homebrew/actions@master"},
+  {"id":"lineage-prerequisites", "page":"00969f3b16", "query":"What computer and device do I need before building?", "answer":"A relatively recent x86"},
+  {"id":"lineage-adb", "page":"00969f3b16", "query":"Where are adb and fastboot installed?", "answer":"Install the platform-tools"},
+  {"id":"desk-premium", "page":"00cffb382a", "query":"Which cable management tray is the most premium?", "answer":"Daily Sleek Tray stands out as the most premium"},
+  {"id":"desk-floor", "page":"00cffb382a", "query":"How can I organize cables on the floor without attaching a tray?", "answer":"Orico Cable Management Box gets your cables down to the floor"},
+  {"id":"debian-vote", "page":"00acdc4c8d", "query":"What was the outcome of Debian's generative AI code vote?", "answer":"The Debian developers picked Choice 5"}
+]

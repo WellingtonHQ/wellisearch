@@ -219,23 +219,37 @@ def _tool_fetch_page(server: MCPServer) -> None:
         name="fetch_page",
         description=(
             "Load one URL as clean/fit Markdown for reading. Returns a "
-            "Markdown document: a Title/URL/From Index/Chars/Truncated header "
-            "plus a Time line (total ms, split into index: ms and — when the "
-            "page had to be crawled — crawl: ms), then the page body. Indexed "
-            "pages are served instantly from the local index; unknown URLs are "
-            "crawled on demand and stored. Bumps the page's fetch_count "
-            "(priority + prominence). A failed fetch returns a URL/Status/Error "
-            "header. Set format=\"json\" for the structured JSON envelope "
-            "instead of Markdown."
+            "Markdown document: a Title/URL/From Index header, then the "
+            "navigation context (Mode, Found, Match, Window) when a navigation "
+            "param is used, then Chars/Truncated plus a Time line (total ms, "
+            "split into index: ms and — when the page had to be crawled — "
+            "crawl: ms), then the page body. Indexed pages are served instantly "
+            "from the local index; unknown URLs are crawled on demand and "
+            "stored. Bumps the page's fetch_count (priority + prominence). "
+            "Navigation (at most one of find/query): find=literal text to jump "
+            "to (case-insensitive, e.g. an error code, key, or heading); "
+            "query=open-ended question — reads from the most relevant section "
+            "(full-text + embedding); its Match line reports "
+            "semantic_similarity (meaning), coverage (query words present), "
+            "and margin (clear winner vs. coin flip) so you can judge whether "
+            "the section really answers the question. offset=start char "
+            "position (for reading block by block, or to search from a "
+            "position). The response carries start/end/next offsets so you can "
+            "continue reading with offset=next_offset. A failed fetch returns a "
+            "URL/Status/Error header. Set format=\"json\" for the structured "
+            "JSON envelope instead of Markdown."
         ),
     )
     async def fetch_page(
         url: str,
         max_chars: int | None = None,
+        find: str | None = None,
+        query: str | None = None,
+        offset: int | None = None,
         format: str = "markdown",
     ) -> str:
         """Load one URL and render the result in the requested format."""
-        out = await _fetch_page(url, max_chars=max_chars)
+        out = await _fetch_page(url, max_chars=max_chars, find=find, query=query, offset=offset)
         return _fmt(out, format, render_fetch_page_markdown)
 
 

@@ -51,9 +51,14 @@ STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 
 class FetchBody(BaseModel):
     """Request body for POST /api/fetch: the URL to fetch, with optional
-    ``max_chars`` and ``format`` overrides."""
+    ``max_chars`` and ``format`` overrides, plus navigation — at most one of
+    ``find`` (literal text to jump to) and ``query`` (open-ended relevance) —
+    and an optional ``offset`` start position."""
     url: str
     max_chars: int | None = None
+    find: str | None = None
+    query: str | None = None
+    offset: int | None = None
     format: str | None = None  # "json" | "markdown" (default markdown)
 
 
@@ -185,7 +190,17 @@ async def api_fetch(body: FetchBody, request: Request) -> Any:
     """Fetch one URL (index hit or live crawl) and return it as markdown or JSON."""
     if not _valid_url(body.url):
         raise HTTPException(400, "invalid or non-http(s) url")
-    out = await fetch_page(body.url, max_chars=body.max_chars)
+    if body.find is not None and body.query is not None:
+        raise HTTPException(400, "find and query are mutually exclusive")
+    if body.offset is not None and body.offset < 0:
+        raise HTTPException(400, "offset must be >= 0")
+    out = await fetch_page(
+        body.url,
+        max_chars=body.max_chars,
+        find=body.find,
+        query=body.query,
+        offset=body.offset,
+    )
     return _respond(out, _negotiate(body.format, request), render_fetch_page_markdown)
 
 

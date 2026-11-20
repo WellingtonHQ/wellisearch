@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>wellisearch</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d1117">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="wellisearch">
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
@@ -37,6 +44,11 @@
                     border-radius: 50%; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  .nowrap { white-space: nowrap; }
+  .clip-220 { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .clip-340 { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+  .clip-420 { max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+  .clip-860 { max-width: 860px; overflow: hidden; text-overflow: ellipsis; }
   th { color: var(--dim); font-weight: normal; white-space: nowrap; }
   td.num, th.num { text-align: right; }
   .bar { height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; min-width: 80px; }
@@ -64,6 +76,38 @@
            border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;
            opacity: 0; transition: opacity .3s; z-index: 10; max-width: 420px; }
   #toast.show { opacity: 1; }
+  /* Mobile: the three wide tables render as stacked cards (one card per row). */
+  @media (max-width: 720px) {
+    #providers, #recent-queries, #log-table { display: block; }
+    #providers thead, #recent-queries thead, #log-table thead { display: none; }
+    #providers tbody, #recent-queries tbody, #log-table tbody { display: block; }
+    #providers tr, #recent-queries tr, #log-table tr {
+      display: block; background: #0d1117; border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 8px; overflow: hidden;
+    }
+    #providers td, #recent-queries td, #log-table td {
+      display: grid; grid-template-columns: max-content minmax(0, 1fr);
+      align-items: center; gap: 4px 10px; padding: 5px 10px;
+      border-bottom: 1px solid var(--border); text-align: left; overflow-wrap: anywhere;
+    }
+    #providers tr > td:last-child, #recent-queries tr > td:last-child,
+    #log-table tr > td:last-child { border-bottom: none; }
+    #providers td::before, #recent-queries td::before, #log-table td::before {
+      content: attr(data-label); color: var(--dim); flex: 0 0 auto;
+    }
+    #providers td.card-head, #recent-queries td.card-head, #log-table td.card-head {
+      display: block; font-weight: bold; font-size: 14px; padding: 7px 10px;
+    }
+    #providers td.card-head::before, #recent-queries td.card-head::before,
+    #log-table td.card-head::before { content: none; }
+    #recent-queries td.card-head::before { content: attr(data-arrow) "  "; color: var(--dim); }
+    #recent-queries tr > td:first-child { display: none; }
+    #recent-queries tr.sq-detail > td { display: block; padding: 5px 10px; }
+    .clip-220, .clip-340, .clip-420, .clip-860 {
+      max-width: none; overflow: visible; text-overflow: clip; white-space: normal;
+    }
+    .nowrap { white-space: normal; }
+  }
 </style>
 </head>
 <body>
@@ -180,6 +224,12 @@
 
 </main>
 <div id="toast"></div>
+
+<script>
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
 
 <script>
 const $ = (s) => document.querySelector(s);
@@ -396,17 +446,17 @@ function renderProviders(prov) {
          </span>`
       : `<span class="num">1</span>`;
     return `<tr>
-      <td><b>${esc(p.name)}</b></td>
-      <td class="num">${prio}</td>
-      <td>${status}</td>
-      <td class="num">${used}${limit ? " / " + limit : ""}</td>
-      <td><div class="bar"><div class="${over ? "over" : ""}" style="width:${pct}%"></div></div></td>
-      <td class="num"><input type="number" min="0" placeholder="env" style="width:90px"
+      <td class="card-head"><b>${esc(p.name)}</b></td>
+      <td class="num" data-label="priority">${prio}</td>
+      <td data-label="status">${status}</td>
+      <td class="num" data-label="quota">${used}${limit ? " / " + limit : ""}</td>
+      <td data-label="usage"><div class="bar"><div class="${over ? "over" : ""}" style="width:${pct}%"></div></div></td>
+      <td class="num" data-label="limit"><span><input type="number" min="0" placeholder="env" style="width:90px"
           value="${limVal === "" ? "" : (limVal ?? "")}"
           onchange="setLimit('${esc(p.name)}', this)">
-          <span class="muted">${p.limit_default ? "env:" + p.limit_default : "no env limit"}</span></td>
-      <td>${p.last_served ? ts(p.last_served) : "—"}</td>
-      <td class="muted" style="max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(p.last_error)}">${esc(p.last_error) || "—"}</td>
+          <span class="muted">${p.limit_default ? "env:" + p.limit_default : "no env limit"}</span></span></td>
+      <td data-label="served">${p.last_served ? ts(p.last_served) : "—"}</td>
+      <td class="muted clip-220" data-label="error" title="${esc(p.last_error)}">${esc(p.last_error) || "—"}</td>
       <td>
         <button class="${p.enabled ? "" : "on"}" onclick="setProvider('${esc(p.name)}', ${!p.enabled})">
           ${p.enabled ? "disable" : "enable"}</button>
@@ -506,9 +556,9 @@ function renderLog(logs) {
     const entries = infoEntries(l.info);
     const info = infoHtml(l.info);
     return `<tr>
-      <td style="white-space:nowrap">${ts(l.ts)} <span class="muted">(${age(l.ts)})</span></td>
-      <td style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(l.message)}">${esc(l.message)}</td>
-      <td class="muted" style="max-width:340px;overflow:hidden;text-overflow:ellipsis" title="${esc(infoPlain(entries))}">${info || "—"}</td>
+      <td class="card-head nowrap">${ts(l.ts)} <span class="muted">(${age(l.ts)})</span></td>
+      <td class="clip-420" data-label="message" title="${esc(l.message)}"><span>${esc(l.message)}</span></td>
+      <td class="muted clip-340" data-label="info" title="${esc(infoPlain(entries))}"><span>${info || "—"}</span></td>
     </tr>`;
   }).join("");
   $("#log-title").textContent = "Log (last " + winLabel() + ")";
@@ -556,18 +606,19 @@ function renderRecentQueries(searches, total) {
   const rows = list.map(s => {
     const urls = s.urls || [];
     const open = sqExpanded.has(String(s.id));
+    const arrow = open ? "▾" : "▸";
     const detail = open && urls.length
-      ? `<tr><td></td><td colspan="4" style="background:#0d1117">` +
+      ? `<tr class="sq-detail"><td></td><td colspan="4" style="background:#0d1117">` +
           urls.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(u)}" ` +
-            `style="display:block;max-width:860px;overflow:hidden;text-overflow:ellipsis">${esc(u)}</a>`).join("") +
+            `class="clip-860" style="display:block">${esc(u)}</a>`).join("") +
         `</td></tr>`
       : "";
     return `<tr onclick="toggleSearchesRow(${s.id}, event)" style="cursor:pointer">
-      <td class="muted">${open ? "▾" : "▸"}</td>
-      <td style="white-space:nowrap">${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></td>
-      <td style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(s.query)}">${esc(s.query)}</td>
-      <td>${sqSourceTag(s.source)}</td>
-      <td class="num">${s.n_results ?? urls.length}</td>
+      <td class="muted">${arrow}</td>
+      <td class="nowrap" data-label="time"><span>${ts(s.ts)} <span class="muted">(${age(s.ts)})</span></span></td>
+      <td class="card-head clip-420" data-arrow="${arrow}" title="${esc(s.query)}">${esc(s.query)}</td>
+      <td data-label="source">${sqSourceTag(s.source)}</td>
+      <td class="num" data-label="results">${s.n_results ?? urls.length}</td>
     </tr>` + detail;
   }).join("");
   $("#recent-queries tbody").innerHTML = rows

@@ -5,6 +5,9 @@ on-demand read path (plan §7).
   native crawler and stores it (the read path is the real indexing loop).
 - Bumps fetch_count for every page fetched (priority + prominence).
 - Never crawls a URL twice concurrently (shared in-flight set).
+- fetch_page supports optional navigation: `find` (literal match), `query`
+  (open-ended relevance over stored chunks), and `offset` (start position);
+  the response always carries start/end/next offsets (passage.py).
 - fetch_pages allocates a shared char budget with swappable, boundary-safe
   truncation strategies (truncation.py).
 - The pipelines return structured dicts; render_fetch_page_markdown /
@@ -33,6 +36,15 @@ from .crawl.probe import reset_probe_budget, set_probe_budget
 from .crawl.results import ChallengeDetected
 from .crawl.shorturl import resolve_short_url
 from .db import db
+from .embed import embed_one
+from .passage import (
+    _NEG_INF,
+    chunk_body_offset,
+    fuse_ranks,
+    locate_literal,
+    make_window,
+    rank_indices,
+)
 from .serialize import format_timing
 from .truncation import (
     STRATEGIES,
@@ -53,7 +65,8 @@ _probe_tasks: set[asyncio.Task] = set()
 
 def render_fetch_page_markdown(out: dict) -> str:
     """The fetch_page response as plain Markdown (no JSON envelope): a
-    Title/URL/From Index/Chars/Truncated header followed by the page body.
+    Title/URL/From Index header, then the navigation context (Mode, Found,
+    Match, Window) when present, then Chars/Truncated, then the page body.
     A failed fetch is a URL/Status/Error header only."""
     if not out.get("ok"):
         lines = [
@@ -69,6 +82,26 @@ def render_fetch_page_markdown(out: dict) -> str:
         f"Title: {out.get('title') or out.get('url') or ''}",
         f"URL: {out.get('url') or ''}",
         f"From Index: {'true' if out.get('from_index') else 'false'}",
+    ]
+    mode = out.get("mode")
+    if mode:
+        lines.append(f"Mode: {mode}")
+    if out.get("found") is not None:
+        lines.append(f"Found: {'true' if out['found'] else 'false'}")
+    if out.get("semantic_similarity") is not None:
+        lines.append(
+            f"Match: semantic_similarity {out['semantic_similarity']:.3f}, "
+            f"coverage {out.get('coverage') or 0:.2f}, margin {out.get('margin') or 0:.4f}"
+        )
+    total = out.get("total_chars")
+    if total is not None:
+        window = (
+            f"Window: {out.get('start_offset', 0)}-{out.get('end_offset', 0)} of {total}"
+        )
+        if out.get("next_offset") is not None:
+            window += f", next {out['next_offset']}"
+        lines.append(window)
+    lines += [
         f"Chars: {out.get('chars') or 0}",
         f"Truncated: {'true' if out.get('truncated') else 'false'}",
     ]
@@ -142,8 +175,22 @@ def render_fetch_pages_markdown(out: dict) -> str:
     return "\n\n".join(["\n".join(lines), "\n\n".join(sections)])
 
 
-async def fetch_page(url: str, max_chars: int | None = None) -> dict:
-    """Single-URL read: stored or crawled-on-demand, fetch_count bumped."""
+async def fetch_page(
+    url: str,
+    max_chars: int | None = None,
+    find: str | None = None,
+    query: str | None = None,
+    offset: int | None = None,
+) -> dict:
+    """Single-URL read: stored or crawled-on-demand, fetch_count bumped.
+
+    Optional navigation (mutually-exclusive `find`/`query`):
+      find   -> literal (case-insensitive) search; read from the match
+      query  -> open-ended relevance over stored chunks; read from the winner
+      offset -> start reading / searching from this body offset
+    The response always carries start/end/next offsets + total_chars so a
+    caller can read the page block by block. No mode = default head truncation.
+    """
     t_start = time.monotonic()
 
     def _timing(**extra: int) -> dict:
@@ -154,6 +201,10 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
 
     if not _valid_url(url):
         return {"ok": False, "error": f"invalid or non-http(s) url: {url!r}", "url": url, "timing": _timing()}
+    if find is not None and query is not None:
+        return {"ok": False, "error": "find and query are mutually exclusive", "url": url, "timing": _timing()}
+    if offset is not None and offset < 0:
+        return {"ok": False, "error": f"offset must be >= 0 (got {offset})", "url": url, "timing": _timing()}
 
     try:
         page = await _resolve_page(url)
@@ -164,30 +215,80 @@ async def fetch_page(url: str, max_chars: int | None = None) -> dict:
     # Bump the canonical row (a short-URL request serves its final URL's content).
     await db.bump_fetch_count(normalize_url(page["url"]))
 
-    truncated = False
-    omitted = 0
-    text = page["content"]
-    if max_chars is not None and max_chars > 0 and len(text) > max_chars:
-        text = truncate_page(text, max_chars, "head")[0]
-        truncated = True
-        omitted = len(page["content"]) - len(text)
-        text = text + "\n" + truncation_marker(omitted, "head")
+    body = page["content"]
+    title = page["title"]
+    start = offset if offset is not None else 0
+    mode = "head"
+    found: bool | None = None
+    match_similarity: float | None = None
+    match_coverage = 0.0
+    match_margin = 0.0
+    rank_ms = 0
+
+    if find is not None:
+        mode = "find"
+        pos = locate_literal(body, find, start)
+        found = pos is not None
+        if pos is None:
+            # No match at/after offset: report it with an empty window.
+            return {
+                "ok": True,
+                "url": page["url"],
+                "title": title,
+                "markdown": "",
+                "chars": 0,
+                "truncated": False,
+                "from_index": page["from_index"],
+                "mode": mode,
+                "found": False,
+                "start_offset": start,
+                "end_offset": start,
+                "next_offset": None,
+                "total_chars": len(body),
+                "timing": _timing(index_ms=page.get("index_ms", 0)),
+            }
+        window = make_window(body, pos, max_chars)
+    elif query is not None:
+        mode = "query"
+        t_rank = time.monotonic()
+        ranked = await _rank_query(body, title, page["url"], query, start)
+        rank_ms = int((time.monotonic() - t_rank) * 1000)
+        match_similarity = ranked["similarity"]
+        match_coverage = ranked["coverage"]
+        match_margin = ranked["margin"]
+        window = make_window(body, ranked["offset"], max_chars)
+    else:
+        window = make_window(body, start, max_chars)
 
     timing = _timing(index_ms=page.get("index_ms", 0))
     if page.get("crawl_ms"):
         timing["crawl_ms"] = page["crawl_ms"]
+    if rank_ms:
+        timing["rank_ms"] = rank_ms
 
-    return {
+    out = {
         "ok": True,
         # The canonical URL: short-URL requests resolve to their final destination.
         "url": page["url"],
-        "title": page["title"],
-        "markdown": text,
-        "chars": len(text),
-        "truncated": truncated,
+        "title": title,
+        "markdown": window.window,
+        "chars": len(window.window),
+        "truncated": window.truncated,
         "from_index": page["from_index"],
+        "mode": mode,
+        "start_offset": window.start_offset,
+        "end_offset": window.end_offset,
+        "next_offset": window.next_offset,
+        "total_chars": len(body),
         "timing": timing,
     }
+    if mode == "find":
+        out["found"] = found
+    if mode == "query":
+        out["semantic_similarity"] = match_similarity
+        out["coverage"] = match_coverage
+        out["margin"] = match_margin
+    return out
 
 
 async def fetch_pages(
@@ -298,6 +399,68 @@ async def shutdown_probes() -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _rank_query(
+    body: str,
+    title: str | None,
+    url: str,
+    query: str,
+    offset: int,
+) -> dict:
+    """Rank the page's stored chunks for an open-ended query and map the winner
+    to a body offset. Returns {offset, similarity, fts, matched}.
+
+    A chunk is eligible when it has content at/after `offset` (it extends past
+    the offset), so `offset` scopes the search without reading back before it:
+    the window then starts at max(chunk_start, offset). A page stored as one
+    large chunk still honors `offset` this way. When no chunk extends past the
+    offset (it is at/past end-of-content) there is nothing to rank. The query
+    embed is best-effort: on failure the ranking degrades to full-text only
+    (similarity stays None).
+    """
+    qvec: list[float] | None
+    try:
+        qvec = await asyncio.to_thread(embed_one, query)
+    except Exception as e:
+        log.warning("query embed failed for %s: %s", url, e)
+        qvec = None
+    rows = await db.page_chunk_ranks(url, query, qvec)
+    if not rows:
+        return {"offset": offset, "similarity": None, "coverage": 0.0, "margin": 0.0, "matched": False}
+    starts = [chunk_body_offset(body, title, r["text"]) for r in rows]
+    eligible = [
+        i for i, r in enumerate(rows)
+        if starts[i] is not None and starts[i] + len(r["text"]) > offset
+    ]
+    if not eligible:
+        # offset is at/past the end of the content: nothing to rank
+        return {"offset": offset, "similarity": None, "coverage": 0.0, "margin": 0.0, "matched": False}
+    lexical = [
+        float(rows[i]["fts_and"]) if rows[i]["fts_and"] > 0 else float(rows[i]["fts_or"])
+        for i in eligible
+    ]
+    semantic = [
+        float(rows[i]["similarity"]) if rows[i]["similarity"] is not None else _NEG_INF
+        for i in eligible
+    ]
+    fused = fuse_ranks(lexical, semantic)
+    ranked = rank_indices(fused)
+    top = ranked[0]
+    gi = eligible[top]
+    # The winner's lead over the runner-up as a fraction of its own score
+    # (0..1): 0.0 = coin flip / single candidate, higher = a clear section.
+    if len(ranked) > 1 and fused[top] > 0:
+        margin = (fused[top] - fused[ranked[1]]) / fused[top]
+    else:
+        margin = 0.0
+    return {
+        "offset": max(starts[gi], offset),
+        "similarity": rows[gi]["similarity"],
+        "coverage": float(rows[gi]["coverage"]),
+        "margin": margin,
+        "matched": True,
+    }
+
 
 def _valid_url(url: str) -> bool:
     """True when the URL is http(s) with a host."""

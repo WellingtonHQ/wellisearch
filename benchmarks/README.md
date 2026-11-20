@@ -1,5 +1,11 @@
 # Benchmarks
 
+For the page-local query navigation evaluation, see
+[`docs/passage-navigation-evaluation.md`](../docs/passage-navigation-evaluation.md)
+and run `python benchmarks/passage_bench.py` with the application dependencies.
+For the read-only live-index experiment, run `python benchmarks/passage_live_bench.py`
+in an environment configured to reach the index database.
+
 Two CPU-only benchmarks for wellisearch, both fixed and reproducible:
 
 | Benchmark | Script | What it measures |

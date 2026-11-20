@@ -24,6 +24,15 @@ jobs:
       - name: Run unit tests
         run: python tests/test_units.py
 
+      - name: Run passage benchmark tests
+        run: python tests/test_passage_bench.py
+
+      - name: Run live passage benchmark tests
+        run: python tests/test_passage_live_bench.py
+
+      - name: Run passage navigation tests
+        run: python tests/test_passage.py
+
       - name: Run dashboard polling tests
         run: node tests/test_dashboard_polling.mjs
 
