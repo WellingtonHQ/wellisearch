@@ -130,31 +130,9 @@ async def main(health_url: str) -> None:
     errors = []
     stop = asyncio.Event()
 
-    async def _probe_once(client: httpx.AsyncClient) -> None:
-        """One timed health probe: record the latency or the failure class."""
-        started = time.perf_counter()
-        try:
-            response = await client.get(health_url)
-            assert response.status_code == 200 and response.json()["status"] == "ok"
-            latencies.append(time.perf_counter() - started)
-        except Exception as error:
-            errors.append(type(error).__name__)
-
-    async def _probe_pause() -> None:
-        """Sleep one health interval, woken early by stop."""
-        with suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), timeout=HEALTH_INTERVAL_S)
-
-    async def probe() -> None:
-        """Measure API responsiveness while real browser processes turn over."""
-        async with httpx.AsyncClient(timeout=5) as client:
-            while not stop.is_set():
-                await _probe_once(client)
-                await _probe_pause()
-
     baseline = sample()
     snapshots = [baseline]
-    heartbeat = asyncio.create_task(probe())
+    heartbeat = asyncio.create_task(_probe_health(health_url, stop, latencies, errors))
     try:
         with tempfile.TemporaryDirectory(prefix="wellisearch-soak-") as root:
             settings = get_settings().model_copy(
@@ -198,6 +176,41 @@ async def main(health_url: str) -> None:
 # ---------------------------------------------------------------------------
 # Exercise Tiers
 # ---------------------------------------------------------------------------
+
+async def _probe_once(
+    client: httpx.AsyncClient,
+    health_url: str,
+    latencies: list[float],
+    errors: list[str],
+) -> None:
+    """One timed health probe: record the latency or the failure class."""
+    started = time.perf_counter()
+    try:
+        response = await client.get(health_url)
+        assert response.status_code == 200 and response.json()["status"] == "ok"
+        latencies.append(time.perf_counter() - started)
+    except Exception as error:
+        errors.append(type(error).__name__)
+
+
+async def _probe_pause(stop: asyncio.Event) -> None:
+    """Sleep one health interval, woken early by stop."""
+    with suppress(TimeoutError):
+        await asyncio.wait_for(stop.wait(), timeout=HEALTH_INTERVAL_S)
+
+
+async def _probe_health(
+    health_url: str,
+    stop: asyncio.Event,
+    latencies: list[float],
+    errors: list[str],
+) -> None:
+    """Measure API responsiveness while real browser processes turn over."""
+    async with httpx.AsyncClient(timeout=5) as client:
+        while not stop.is_set():
+            await _probe_once(client, health_url, latencies, errors)
+            await _probe_pause(stop)
+
 
 async def _exercise_http(
     base: str,

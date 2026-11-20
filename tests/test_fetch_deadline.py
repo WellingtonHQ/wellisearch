@@ -76,6 +76,8 @@ _records: list[str] = []
 
 
 class _Capture(logging.Handler):
+    """logging.Handler that appends each record's message to the module's _records list."""
+
     def emit(self, record: logging.LogRecord) -> None:
         """Append the record's message to the captured log list."""
         _records.append(record.getMessage())

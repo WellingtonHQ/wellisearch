@@ -106,7 +106,10 @@ class WalmartExtractor:
         """Gate: structured fit needs title + price; legacy fit needs a price and real content."""
         if f.flags.get("structured"):
             return bool(f.title) and bool(f.signals.get("price"))
-        return bool(f.signals.get("price")) and len(f.md.strip()) >= MIN_PRODUCT_CHARS
+        if not f.signals.get("price"):
+            return False
+        md_len = len(f.md.strip())
+        return md_len >= MIN_PRODUCT_CHARS
 
 
 def needs_refresh(url: str, md: str) -> bool:

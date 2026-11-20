@@ -100,11 +100,12 @@ class AmazonExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: title + price + at least one feature bullet (real product content)."""
-        return (
-            bool(f.title)
-            and bool(f.signals.get("price"))
-            and int(f.signals.get("bullets", 0)) >= 1
-        )
+        if not f.title:
+            return False
+        if not f.signals.get("price"):
+            return False
+        bullets = int(f.signals.get("bullets", 0))
+        return bullets >= 1
 
 
 def needs_refresh(url: str, md: str) -> bool:

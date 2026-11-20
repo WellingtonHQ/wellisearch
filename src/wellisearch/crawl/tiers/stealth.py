@@ -195,11 +195,16 @@ def _kill_process_tree(process: multiprocessing.Process) -> None:
     if not process.is_alive():
         return
     try:
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            capture_output=True,
-            check=False,
-            timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S,
+        subprocess.run([
+            "taskkill",
+            "/PID",
+            str(process.pid),
+            "/T",
+            "/F",
+        ],
+        capture_output=True,
+        check=False,
+        timeout=get_settings().CRAWL_BROWSER_CLEANUP_TIMEOUT_S,
         )
     except (OSError, subprocess.TimeoutExpired):
         log.warning("stealth process-tree termination failed; killing worker directly")

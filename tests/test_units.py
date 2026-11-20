@@ -40,7 +40,7 @@ chunks = chunk_markdown(md, 800)
 assert chunks, "no chunks"
 assert all(len(c) > 0 for c in chunks)
 for c in chunks:
-    assert c.count("```") % 2 == 0, "unbalanced fence in: " + c[:80]
+    assert c.count("```") % 2 == 0, f"unbalanced fence in: {c[:80]}"
 print("chunks:", len(chunks))
 print("OK chunker")
 
@@ -105,6 +105,8 @@ print("OK url normalization")
 # ---------------------------------------------------------------------------
 
 class _FakeTitleEl:
+    """Fake <title> element returning stored text via get_all_text for stealth title tests."""
+
     def __init__(self, text: str) -> None:
         """Store the title text."""
         self._text = text
@@ -115,6 +117,8 @@ class _FakeTitleEl:
 
 
 class _FakeStealthPage:
+    """Fake stealth page whose css("title") returns a _FakeTitleEl per stored title text."""
+
     def __init__(self, texts: list[str]) -> None:
         """Store the candidate title texts."""
         self._texts = texts
@@ -457,8 +461,9 @@ other_rows = [{"url": f"https://{d}/a"} for d in ("byjlw.com", "graphapp.dev", "
 rows = board_rows + other_rows
 capped = _cap_per_domain(rows, 2)
 assert len(capped) == 5, [r["url"] for r in capped]
-assert [r["url"] for r in capped[:2]] == [u["url"] for u in rows[0:2]], \
-    "first two linkedin kept in order"
+first_urls = [r["url"] for r in capped[:2]]
+expected_urls = [u["url"] for u in rows[0:2]]
+assert first_urls == expected_urls, "first two linkedin kept in order"
 assert all("linkedin.com" not in r["url"] for r in capped[2:])
 
 # _candidate_rows: a high-similarity row buried by lexical mass is still included

@@ -350,11 +350,13 @@ async def test_provider_order(c: httpx.AsyncClient) -> None:
     )
     r = await c.get("/api/providers")
     j = r.json()
+    names = [p["name"] for p in j.get("providers", [])]
+    orders = [p["order"] for p in j.get("providers", [])]
     check(
         "order: GET reflects runtime order (reversed)",
         j.get("order") == rev and j.get("order_source") == "runtime"
-        and [p["name"] for p in j.get("providers", [])] == rev
-        and [p["order"] for p in j.get("providers", [])] == list(range(len(rev))),
+        and names == rev
+        and orders == list(range(len(rev))),
         json.dumps(j.get("order"))[:160]
     )
     # stats surface the same order
@@ -396,9 +398,12 @@ async def test_worker_pause(c: httpx.AsyncClient) -> None:
     seed_probe = "https://example.com"
 
     r0 = await c.get("/api/stats")
-    prior_paused = bool(
-        ((r0.json().get("runtime") or {}).get("worker") or {}).get("paused")
-    ) if r0.status_code == 200 else False
+    if r0.status_code == 200:
+        runtime = r0.json().get("runtime") or {}
+        worker = runtime.get("worker") or {}
+        prior_paused = bool(worker.get("paused"))
+    else:
+        prior_paused = False
     try:
         # normalize to running before the roundtrip
         r = await c.patch("/api/worker", json={"paused": False})
@@ -418,7 +423,8 @@ async def test_worker_pause(c: httpx.AsyncClient) -> None:
             r.text[:160],
         )
         r = await c.get("/api/stats")
-        w = ((r.json().get("runtime") or {}).get("worker") or {})
+        runtime = r.json().get("runtime") or {}
+        w = runtime.get("worker") or {}
         top = r.json().get("worker") or {}
         check(
             "paused: /api/stats shows it on runtime.worker AND top-level worker",
@@ -453,7 +459,8 @@ async def test_worker_pause(c: httpx.AsyncClient) -> None:
             r.text[:160],
         )
         r = await c.get("/api/stats")
-        w = ((r.json().get("runtime") or {}).get("worker") or {})
+        runtime = r.json().get("runtime") or {}
+        w = runtime.get("worker") or {}
         top = r.json().get("worker") or {}
         check(
             "resumed: /api/stats back to running on both surfaces",
@@ -482,8 +489,11 @@ async def test_stats_logs(c: httpx.AsyncClient, url: str) -> None:
     """GET /api/stats, POST /api/refresh, GET /api/logs/crawls + /api/logs/searches."""
     r = await c.get("/api/stats")
     j = r.json()
-    pages = j.get("index", {}).get("pages") or 0
-    searches_24h = j.get("search_trends", {}).get("24h", {}).get("total") or 0
+    index_stats = j.get("index", {})
+    pages = index_stats.get("pages") or 0
+    search_trends = j.get("search_trends", {})
+    trends_24h = search_trends.get("24h", {})
+    searches_24h = trends_24h.get("total") or 0
     check(
         "stats: index pages>=1, 24h searches>=1",
         pages >= 1 and searches_24h >= 1,
@@ -565,7 +575,7 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
         "fetch json: 200 + content-type json + envelope keys",
         r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
         and all(k in j for k in ("chars", "from_index", "markdown", "ok", "title", "truncated", "url")),
-        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
+        f"{r.headers.get('content-type', '')} {json.dumps(j)[:100]}"
     )
     check(
         "fetch json: timing object with total_ms + index_ms",
@@ -586,7 +596,7 @@ async def test_format_json(c: httpx.AsyncClient, url: str) -> None:
         "fetch-bulk json: 200 + content-type json + envelope keys",
         r.status_code == 200 and r.headers.get("content-type", "").startswith("application/json")
         and all(k in j for k in ("ok", "pages", "pages_fetched", "strategy", "total_chars")),
-        r.headers.get("content-type", "") + " " + json.dumps(j)[:100]
+        f"{r.headers.get('content-type', '')} {json.dumps(j)[:100]}"
     )
     check(
         "fetch-bulk json: pages list with content/chars",

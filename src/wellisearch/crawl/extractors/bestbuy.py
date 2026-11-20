@@ -28,7 +28,10 @@ class BestBuyExtractor:
 
     def accept(self, f: Fitted) -> bool:
         """Gate: a price signal and real product content (not a stub)."""
-        return bool(f.signals.get("price")) and len(f.md.strip()) >= MIN_PRODUCT_CHARS
+        if not f.signals.get("price"):
+            return False
+        md_len = len(f.md.strip())
+        return md_len >= MIN_PRODUCT_CHARS
 
 
 def _jsonld_price(html: str) -> str | None:

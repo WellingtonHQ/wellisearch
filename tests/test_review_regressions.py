@@ -405,8 +405,9 @@ class ReviewRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(out["ok"])
         # The two b-variants collapse into one served page (first-seen order).
         self.assertEqual(out["pages_fetched"], 2)
-        self.assertEqual(
-            [p["url"] for p in out["pages"]],
+        self.assertEqual([
+            p["url"] for p in out["pages"]
+        ],
             ["https://example.com/a?utm_source=test", "https://example.com/b?gclid=x"],
         )
         fake_db.bump_fetch_counts.assert_awaited_once_with([
